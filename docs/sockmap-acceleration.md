@@ -20,6 +20,22 @@ selection, and health checking still happen in userspace exactly as before —
 acceleration is handed the connection pair only after the proxy has decided
 where the traffic goes.
 
+## What it guarantees
+
+Acceleration is a performance optimization and nothing more. On a patched
+kernel it keeps the seven guarantees below. Each is checked by a suite in
+`cicd/sockmap-fullproxy/` (see [Testing](#testing)).
+
+| # | guarantee | details |
+|---|---|---|
+| 1 | **Integrity.** The kernel relays exactly the bytes userspace would have: nothing duplicated, lost or reordered. An unpatched kernel breaks this, and loxilb cannot prevent it | [Kernel requirement](#kernel-requirement) |
+| 2 | **No data is passed up.** A socket runs the verdict program only once it has a peer to redirect to, so the verdict never hands data back to the socket | [Verifying it is engaged](#verifying-it-is-engaged) |
+| 3 | **Same as `off`.** On a service that may be accelerated, the client and the backend observe the same thing they would with `off`: status line, headers, body bytes, framing, keep-alive reuse and pipelining order. Only CPU differs. A service where userspace would change a byte is not allowed to accelerate. The one difference is described under [Connection lifetime](#connection-lifetime) | [Eligibility](#eligibility) |
+| 4 | **Per-service isolation.** Whether a connection is accelerated is decided by the service that handled it. A service with `off` is never accelerated, whatever shares its addresses | [How services are kept apart](#how-services-are-kept-apart) |
+| 5 | **Control.** Configuration changes apply to new connections, and an explicit action closes the connections already accelerated. Neither drops bytes mid-stream | [Stopping it on connections that are already running](#stopping-it-on-connections-that-are-already-running) |
+| 6 | **Opt-in, refused out loud.** Both a daemon flag and a per-service mode are required. A combination that would break guarantee 3 is rejected when it is configured, never silently ignored or downgraded | [Enabling it](#enabling-it), [Eligibility](#eligibility) |
+| 7 | **Protocol scope.** Only plaintext HTTP/1.1 over TCP and IPv4, in FullProxy mode, is accelerated. HTTP/2, h2c and TLS connections work in every mode and fall back to the userspace relay | [When a connection is accelerated](#when-a-connection-is-accelerated) |
+
 ## Enabling it
 
 Acceleration is opt-in at two levels. Both must be set.
@@ -146,8 +162,7 @@ A service is rejected at configuration time unless all of these hold:
 | plaintext service (no TLS) | see below |
 | IPv4 external IP | current implementation limit |
 | daemon started with `--sockmapsupport` | the BPF assets must be loaded |
-| the data plane changes no byte per request: no `sse_mode`, no `pd_disagg_mode`, no declared
-`api_key_auth`, and no attached L7 policy | see below |
+| the data plane changes no byte per request: no `sse_mode`, no `pd_disagg_mode`, no declared `api_key_auth`, and no attached L7 policy | see below |
 
 Setting `sockMapMode` on a service that does not qualify returns
 `sockmap-accel requires plaintext tcp fullproxy ipv4 service`, or
@@ -201,6 +216,35 @@ A further check happens per connection in the datapath: **only plaintext
 HTTP→HTTP is accelerated.** If TLS is in play on either side — TLS termination,
 TLS transit, or TLS origination — the connection falls back to the userspace
 relay. Those paths use kTLS offload (`--ktlssupport`) instead.
+
+Once these checks pass, userspace changes no byte in either direction on the
+service. Other per-request code exists: `X-Forwarded-Proto` and `-Host`
+injection, `Location` rewriting and HSTS. All of it runs only on TLS
+connections, which are never accelerated. The backend therefore receives the
+request exactly as the client sent it, and the client receives the response
+exactly as the backend sent it. That is what the equivalence suite compares.
+
+## Connection lifetime
+
+Opening, reusing and closing a connection behaves as with `off`, with one
+exception.
+
+**A client that half-closes** (sends its request, then shuts down its write
+side while still reading) is answered only when the response direction is
+accelerated (`response` or `both`). With `off` and `request`, the userspace
+relay closes the connection when it sees the client's FIN. A response still in
+flight is lost. The relay has no reliable signal that a response is complete,
+so it cannot wait for one. This limitation of the plain FullProxy relay predates
+acceleration. The equivalence suite records it as an expected failure on those
+two modes.
+
+On `response` and `both`, the kernel is still carrying bytes that userspace
+never sees. When the client closes first, loxilb therefore shuts down only the
+read side of the client socket. It closes the pair after a short delay: 50ms,
+checked every 25ms, so at most about 75ms. A backend that closes first gets the
+same delay. The only visible effect is that sockets of a closing accelerated
+connection stay around that much longer. Connections of services with `off` or
+`request` close immediately.
 
 ## Kernel requirement
 
@@ -383,20 +427,22 @@ traffic is being relayed in userspace and the configuration is having no effect.
 
 ## Testing
 
-`cicd/sockmap-fullproxy/` holds the testbed and validation scenarios:
+`cicd/sockmap-fullproxy/` holds the testbed and validation scenarios. Its
+`README.md` covers prerequisites, run order and the port map.
 
-| script | covers |
-|---|---|
-| `validation.sh` | BPF assets attach, rules register, offload engages, AI gateway services refuse a `sockMapMode` |
-| `validation_concurrent.sh` | concurrent connection handling |
-| `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup |
-| `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |
-| `validation_request_path.sh` | h2c through every mode, split and streamed and pipelined requests, half-closed clients, mode change and delete under a live connection, no verdict pass |
-| `validation_equivalence.sh` | what the client and the backend observe on an accelerated rule is identical to `off`: one rule per mode over one endpoint, compared record by record, plus chunked, pipelined, streamed, truncated, 204/304/HEAD and half-closed shapes |
-| `validation_control.sh` | stopping acceleration on live connections: the action drops one rule's accelerated connections and nothing else, a mode reduction and a delete do the same, and the maps return to their baseline |
-| `validation_perf.sh` | throughput, acceleration on vs off, on a pair of services sharing every port |
-| `validation-cpu.sh` | CPU comparison on the same pair |
-| `validation-sse-cpu.sh` | CPU per token on SSE streaming, including `request` / `response` arms |
+| script | covers | guarantee |
+|---|---|---|
+| `validation.sh` | BPF assets attach, rules register, offload engages, AI gateway services refuse a `sockMapMode` | 6 |
+| `validation_integrity.sh` | the relayed stream compared byte by byte against a predictable body, accelerated vs `off` | 1 |
+| `validation_concurrent.sh` | concurrent connection handling, maps drain after close, an `off` control arm | 4 |
+| `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup | 4, 7 |
+| `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints | 4 |
+| `validation_request_path.sh` | h2c through every mode, split and streamed and pipelined requests, half-closed clients, mode change and delete under a live connection, no verdict pass | 2, 7 |
+| `validation_equivalence.sh` | what the client and the backend observe on an accelerated rule is identical to `off`: one rule per mode over one endpoint, compared record by record, plus chunked, pipelined, streamed, truncated, 204/304/HEAD and half-closed shapes | 3 |
+| `validation_control.sh` | stopping acceleration on live connections: the action drops one rule's accelerated connections and nothing else, a mode reduction and a delete do the same, and the maps return to their baseline | 5 |
+| `validation_perf.sh` | throughput, acceleration on vs off, on a pair of services sharing every port | — |
+| `validation-cpu.sh` | CPU comparison on the same pair | — |
+| `validation-sse-cpu.sh` | CPU per token on SSE streaming, including `request` / `response` arms | — |
 
 Some cases in `validation_equivalence.sh` and `validation_control.sh` describe
 where the feature is going rather than where it is: those report `XFAIL` with the
