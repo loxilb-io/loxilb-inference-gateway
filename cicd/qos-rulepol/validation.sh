@@ -78,7 +78,17 @@ run_bw() {
     # --connect-timeout for a control connection that cannot establish, and a
     # hard timeout for the nastier mode where the handshake completes but the
     # session then blackholes mid-exchange (unbounded retransmit otherwise).
-    raw=$(timeout $((secs+20)) $dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" 2>&1)
+    #
+    # stdin comes from /dev/null, and that is load-bearing rather than tidy.
+    # `dexec` is "sudo docker exec -i", and -i holds stdin open on the docker
+    # client. Run from an interactive shell, that client lands in a process
+    # group that is not its terminal's foreground group, so its first stdin
+    # read raises SIGTTIN and the process STOPS. A stopped process does not
+    # act on SIGTERM until it is continued, so `timeout` above fires into the
+    # void and both bounds this function documents are silently defeated -
+    # measured at 18h on a `timeout 25`. iperf3 is never fed stdin here, so
+    # closing it costs nothing and is what keeps the timeout able to bite.
+    raw=$(timeout $((secs+20)) $dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1)
     if ! echo "$raw" | grep -q receiver; then
         echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
     fi
@@ -87,11 +97,11 @@ run_bw() {
 }
 
 api_post_policy() {
-    $dexec llb1 curl -s -X POST -H 'Content-Type: application/json' -d "$1" $API/config/policy
+    $dexec llb1 curl -s -X POST -H 'Content-Type: application/json' -d "$1" $API/config/policy </dev/null
 }
 
 api_del_policy() {
-    $dexec llb1 curl -s -X DELETE $API/config/policy/ident/$1
+    $dexec llb1 curl -s -X DELETE $API/config/policy/ident/$1 </dev/null
 }
 
 # --- L1: baseline, no policer ---
