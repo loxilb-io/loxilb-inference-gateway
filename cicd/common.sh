@@ -723,6 +723,38 @@ function require_host_tools() {
   return 1
 }
 
+# require_host_python <module>... - refuse to run when a python module the
+# scenario's mocks import is missing from the interpreter that RUNS them.
+#
+# The environment matters more than the module here. Mocks are launched with
+# `hexec` ("sudo ip netns exec"), so they execute as root and import from
+# root's sys.path. Probing with a bare `python3 -c "import x"` checks the
+# CALLING user instead, and those two disagree the moment anyone runs
+# `pip3 install --user`: the probe passes while the mock still cannot import,
+# so the gate waves through exactly the bed it exists to catch.
+#
+# A scenario may bridge its own user-site by exporting PYTHONPATH into the
+# hexec'd command (the KV-cache scenarios do). This check is for the ones that
+# do not, which is every scenario that simply runs `hexec ... python3 x.py`.
+#
+# Returns 0 when root can import every module, 1 otherwise. Install them with
+# cicd/preflight-deps.sh, which targets root-visible locations on purpose.
+function require_host_python() {
+  local missing="" m
+  for m in "$@"; do
+    sudo python3 -c "import $m" >/dev/null 2>&1 || missing="$missing $m"
+  done
+  if [[ -z "$missing" ]]; then
+    return 0
+  fi
+  echo "  FATAL: this scenario's mocks need python modules that root cannot import:$missing"
+  echo "         They run under hexec ('sudo ip netns exec'), so the interpreter that"
+  echo "         matters is root's - a 'pip3 install --user' as your own user does not"
+  echo "         satisfy them, however convincing 'python3 -c import' looks afterwards."
+  echo "         Install them:  cd cicd && ./preflight-deps.sh"
+  return 1
+}
+
 #Arg1: host name
 #Arg2: <prefix/mask>
 #Arg3: <nexthop-ip>
