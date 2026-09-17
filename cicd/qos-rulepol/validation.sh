@@ -88,7 +88,19 @@ run_bw() {
     # void and both bounds this function documents are silently defeated -
     # measured at 18h on a `timeout 25`. iperf3 is never fed stdin here, so
     # closing it costs nothing and is what keeps the timeout able to bite.
-    raw=$(timeout $((secs+20)) $dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1)
+    # The bound is `sudo timeout`, NOT `timeout sudo`, and the order is the
+    # whole point. dexec is "sudo docker exec -i": written as
+    # `timeout N $dexec ...` the timeout runs as the calling user and its
+    # SIGTERM lands on a root-owned sudo, which is EPERM. The signal is never
+    # delivered, timeout keeps waiting on a child it cannot kill, and the
+    # bound silently does nothing. Measured: a `timeout 10` in that form ran
+    # 70s and only stopped when an outer guard killed it, leaving the work
+    # behind; moving timeout inside sudo returned at 10s with rc=124.
+    #
+    # stdin is closed for a second, independent reason: -i holds stdin open on
+    # the docker client, so an interactive run can stop on SIGTTIN, and a
+    # stopped process cannot act on SIGTERM at all.
+    raw=$(sudo timeout $((secs+20)) docker exec -i l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1)
     if ! echo "$raw" | grep -q receiver; then
         echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
     fi
