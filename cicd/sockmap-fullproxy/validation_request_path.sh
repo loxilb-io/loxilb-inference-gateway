@@ -151,9 +151,8 @@ for port in "$H1_REQ_PORT" "$H1_BOTH_PORT"; do
   sockmap_result "$label: pipelined requests in order" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
   # Whether a half-closed client is ANSWERED is case E-11 of
-  # validation_equivalence.sh: sockproxy closes such a connection without
-  # answering, with or without sockmap (issue 3, PR-C). What this suite checks is
-  # the separate property that such a client does not disturb the service.
+  # validation_equivalence.sh. What this suite checks is the separate property
+  # that such a client does not disturb the service.
   $hexec l3h1 python3 "$CLIENT" halfclose "$VIP" "$port" >/dev/null 2>&1
   out=$($hexec l3h1 python3 "$CLIENT" keepalive "$VIP" "$port" 1 50 2>&1)
   sockmap_result "$label: service undisturbed by a half-closed client" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"

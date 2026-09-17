@@ -332,14 +332,14 @@ def mode_special(host, port):
 ABORT_N = 50000
 
 
-def mode_abort(host, port, n=1):
+def mode_abort(host, port, n=1, delay=0):
     """Repeated on purpose. When the response direction is accelerated the
     backend's FIN can beat its own redirected bytes to the client, and that race
     is lost only some of the time — a single attempt reports a defect present as
     a pass most runs, which is worse than not testing it."""
     bad = []
     for i in range(n):
-        err = _abort_once(host, port)
+        err = _abort_once(host, port, delay)
         if err:
             bad.append(err)
     # The count is always reported, in a fixed shape the suite parses, so a rate
@@ -349,12 +349,12 @@ def mode_abort(host, port, n=1):
     return 'OK 0/%d early' % n
 
 
-def _abort_once(host, port):
+def _abort_once(host, port, delay=0):
     """Returns None when the truncation looked as it does without acceleration,
     or a description of how it differed."""
     s = connect(host, port)
     r = Reader(s)
-    head, _ = request('GET', '/abort?abort=%d' % ABORT_N, host)
+    head, _ = request('GET', '/abort?abort=%d&delay=%d' % (ABORT_N, delay), host)
     s.sendall(head)
     try:
         while b'\r\n\r\n' not in r.buf:
