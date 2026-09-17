@@ -687,6 +687,42 @@ function cli_preflight() {
   return 1
 }
 
+# require_host_tools <tool>... - refuse to score anything when a tool the
+# assertions depend on is missing from the HOST.
+#
+# Scenarios reach the gateway through `hexec` ("ip netns exec"), which swaps
+# the network namespace and keeps the host filesystem. A tool installed into
+# the llb1 container with `dexec` ("docker exec") is therefore NOT on this
+# PATH, however convincing the install looked.
+#
+# This matters because the usual extractors fail QUIETLY. An absent `jq`
+# writes nothing to stdout, so an assertion reading its output sees an empty
+# string - which is exactly what a gateway omitting the field would produce.
+# Every such assertion then reports a product defect that was never measured,
+# and a bed problem is read as a broken gateway.
+#
+# Hosted CI runners ship these tools preinstalled, so a bed that lacks one
+# fails nowhere else, and fails here as a pile of invented product defects.
+# A missing extractor is a lost measurement, not a verdict: refuse instead.
+#
+# Returns 0 when every tool is present, 1 otherwise. Call it as
+# `require_host_tools jq || exit 1` before the first assertion.
+function require_host_tools() {
+  local missing="" t
+  for t in "$@"; do
+    command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+  done
+  if [[ -z "$missing" ]]; then
+    return 0
+  fi
+  echo "  FATAL: this scenario's assertions need host tools that are absent:$missing"
+  echo "         They run on the host, not inside llb1 - hexec is 'ip netns exec',"
+  echo "         which keeps the host filesystem. Without them the assertions read"
+  echo "         empty values and report gateway defects that were never measured."
+  echo "         Install them:  sudo apt-get update && sudo apt-get install -y$missing"
+  return 1
+}
+
 #Arg1: host name
 #Arg2: <prefix/mask>
 #Arg3: <nexthop-ip>
