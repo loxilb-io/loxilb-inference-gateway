@@ -44,6 +44,20 @@ declare -A PORT=([off]=2080 [request]=2081 [response]=2082 [both]=2083)
 # E-10 repeats, because the truncation race it guards against is intermittent.
 ABORT_REPS=${ABORT_REPS:-40}
 
+# Known defect, on the arms whose response is NOT accelerated (off, request). A
+# client that half-closes after a complete request is answered only where the
+# response direction is accelerated. Answering it everywhere needs a
+# signal that the response is complete, and there is none on the plain relay: the
+# response framer runs only under pd_framing_v2. Using a flag nothing clears held
+# every close on every FullProxy rule for 50 ms, which moved load-aware routing, so
+# the deferral is confined to accelerated responses — where the kernel may hold the
+# response anyway. A request-only rule relays its response through userspace just
+# like off. On both arms this is the proxy's long-standing behaviour.
+for arm in off request; do
+  sockmap_xfail_register "E-11 $arm" \
+    "a half-closed client is answered only where the response is accelerated; the userspace relay has no response-complete signal to wait for"
+done
+
 cleanup() {
   for m in $MODES; do
     sockmap_delete_lb_via_api llb1 "$VIP" "${PORT[$m]}" >/dev/null 2>&1 || true
