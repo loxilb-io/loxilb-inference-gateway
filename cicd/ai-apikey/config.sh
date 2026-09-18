@@ -131,8 +131,23 @@ for i in $(seq 1 40); do
   sleep 2
 done
 
-# Ensure jq is available in the llb1 container (required for check_json() assertions in validation.sh)
-$dexec llb1 bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y jq -qq 2>/dev/null" || true
+# validation.sh extracts every JSON field with `jq`, and it runs jq on THIS
+# host: its requests go out through `hexec` ("ip netns exec"), which swaps the
+# network namespace but keeps the host filesystem. jq therefore has to be on
+# the host PATH. Installing it into the llb1 container with `dexec` instead
+# leaves the assertions with no extractor at all, and a missing extractor
+# reads as the gateway omitting the field rather than as a broken bed.
+#
+# Neither half of this may be silent. Without `apt-get update` the package
+# lists can be empty and the install answers "Unable to locate package jq"
+# while still exiting 0, so the verdict comes from probing for the binary
+# afterwards, never from the installer's own exit status.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Installing jq on the host (validation.sh extracts JSON fields with it)"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq
+fi
+require_host_tools jq || exit 1
 
 echo "#########################################"
 echo "Creating admin user and authenticating"

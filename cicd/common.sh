@@ -687,6 +687,74 @@ function cli_preflight() {
   return 1
 }
 
+# require_host_tools <tool>... - refuse to score anything when a tool the
+# assertions depend on is missing from the HOST.
+#
+# Scenarios reach the gateway through `hexec` ("ip netns exec"), which swaps
+# the network namespace and keeps the host filesystem. A tool installed into
+# the llb1 container with `dexec` ("docker exec") is therefore NOT on this
+# PATH, however convincing the install looked.
+#
+# This matters because the usual extractors fail QUIETLY. An absent `jq`
+# writes nothing to stdout, so an assertion reading its output sees an empty
+# string - which is exactly what a gateway omitting the field would produce.
+# Every such assertion then reports a product defect that was never measured,
+# and a bed problem is read as a broken gateway.
+#
+# Hosted CI runners ship these tools preinstalled, so a bed that lacks one
+# fails nowhere else, and fails here as a pile of invented product defects.
+# A missing extractor is a lost measurement, not a verdict: refuse instead.
+#
+# Returns 0 when every tool is present, 1 otherwise. Call it as
+# `require_host_tools jq || exit 1` before the first assertion.
+function require_host_tools() {
+  local missing="" t
+  for t in "$@"; do
+    command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+  done
+  if [[ -z "$missing" ]]; then
+    return 0
+  fi
+  echo "  FATAL: this scenario's assertions need host tools that are absent:$missing"
+  echo "         They run on the host, not inside llb1 - hexec is 'ip netns exec',"
+  echo "         which keeps the host filesystem. Without them the assertions read"
+  echo "         empty values and report gateway defects that were never measured."
+  echo "         Install them:  sudo apt-get update && sudo apt-get install -y$missing"
+  return 1
+}
+
+# require_host_python <module>... - refuse to run when a python module the
+# scenario's mocks import is missing from the interpreter that RUNS them.
+#
+# The environment matters more than the module here. Mocks are launched with
+# `hexec` ("sudo ip netns exec"), so they execute as root and import from
+# root's sys.path. Probing with a bare `python3 -c "import x"` checks the
+# CALLING user instead, and those two disagree the moment anyone runs
+# `pip3 install --user`: the probe passes while the mock still cannot import,
+# so the gate waves through exactly the bed it exists to catch.
+#
+# A scenario may bridge its own user-site by exporting PYTHONPATH into the
+# hexec'd command (the KV-cache scenarios do). This check is for the ones that
+# do not, which is every scenario that simply runs `hexec ... python3 x.py`.
+#
+# Returns 0 when root can import every module, 1 otherwise. Install them with
+# cicd/preflight-deps.sh, which targets root-visible locations on purpose.
+function require_host_python() {
+  local missing="" m
+  for m in "$@"; do
+    sudo python3 -c "import $m" >/dev/null 2>&1 || missing="$missing $m"
+  done
+  if [[ -z "$missing" ]]; then
+    return 0
+  fi
+  echo "  FATAL: this scenario's mocks need python modules that root cannot import:$missing"
+  echo "         They run under hexec ('sudo ip netns exec'), so the interpreter that"
+  echo "         matters is root's - a 'pip3 install --user' as your own user does not"
+  echo "         satisfy them, however convincing 'python3 -c import' looks afterwards."
+  echo "         Install them:  cd cicd && ./preflight-deps.sh"
+  return 1
+}
+
 #Arg1: host name
 #Arg2: <prefix/mask>
 #Arg3: <nexthop-ip>

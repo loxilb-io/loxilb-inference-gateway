@@ -1,5 +1,13 @@
 #!/bin/bash
 source ../common.sh
+
+# The assertions below extract JSON with `jq`, which runs on the HOST:
+# hexec is "ip netns exec", so a jq inside the llb1 container is not on
+# this PATH. An absent jq prints nothing and every read comes back empty,
+# which is indistinguishable from the gateway returning an empty field.
+# Refuse rather than score defects that were never measured.
+require_host_tools jq || exit 1
+
 echo CLUSTER-1
 
 function myfunc() {

@@ -9,6 +9,19 @@ source ../common.sh
 echo SCENARIO-ai-apikey
 code=0
 
+# ── preflight: the JSON extractor must exist BEFORE anything is scored ───────
+#
+# check_json() and the key extraction below shell out to `jq` on the HOST, not
+# inside llb1: `hexec` is `ip netns exec`, which swaps the network namespace
+# and keeps the host filesystem, so a jq installed into the container is never
+# on this PATH. An absent jq writes nothing to stdout and every assertion then
+# reads got='' — exactly what a gateway omitting the field would produce.
+# A missing extractor is a lost measurement, so it is refused here, before a
+# single assertion is allowed to score.
+require_host_tools jq || { echo "SCENARIO-ai-apikey [FAILED]"; exit 1; }
+JQ_ERR=$(mktemp)
+trap 'rm -f "$JQ_ERR"' EXIT
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 check() {
   local label="$1" want="$2" got="$3"
@@ -20,10 +33,31 @@ check() {
   fi
 }
 
+# check_json <label> <field> <want> <json>
+#
+# Three different things used to arrive here as got='': the gateway omitted the
+# field, the body was empty, and the extractor never ran. Only the first is a
+# product answer; the other two are failures of the measurement and now say so
+# in their own words, so a broken bed can never be read as a broken gateway.
 check_json() {
   local label="$1" field="$2" want="$3" json="$4"
-  local got
-  got=$(echo "$json" | jq -r "$field" 2>/dev/null)
+  local got rc
+  if [[ -z "$json" ]]; then
+    echo "  $label [FAILED] — LOST MEASUREMENT: the response body was empty,"
+    echo "      so field='$field' was never read (expected='$want')"
+    code=1
+    return
+  fi
+  got=$(printf '%s' "$json" | jq -r "$field" 2>"$JQ_ERR")
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "  $label [FAILED] — LOST MEASUREMENT: the extractor failed (jq exit $rc),"
+    echo "      field='$field' expected='$want'"
+    echo "      jq said: $(tr '\n' ' ' < "$JQ_ERR")"
+    echo "      body was: $json"
+    code=1
+    return
+  fi
   if [[ "$got" == "$want" ]]; then
     echo "  $label [OK]"
   else

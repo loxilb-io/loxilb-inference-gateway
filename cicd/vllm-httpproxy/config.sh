@@ -2,6 +2,13 @@
 
 source ../common.sh
 
+# This setup reads JSON with `jq`, which runs on the HOST: hexec is
+# "ip netns exec", so a jq inside the llb1 container is not on this PATH.
+# An absent jq prints nothing and every read comes back empty, so the bed
+# would be built from values that were never actually read. Refuse instead.
+require_host_tools jq || exit 1
+
+
 # Ensure a shared HuggingFace cache on the host BEFORE spawning endpoints.
 # common.sh mounts /tmp/hf-cache into every vllm-server container when it exists,
 # so all endpoints share ONE model cache. Without it each endpoint downloads the
