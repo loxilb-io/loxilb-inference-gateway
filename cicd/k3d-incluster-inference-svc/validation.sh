@@ -7,6 +7,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/../common/k8s-inference/k3d_common.sh"
 igw_env_load "$HERE" || exit 1
 
+# Every assertion below extracts JSON with `jq`. An absent jq prints nothing,
+# so each read comes back empty - indistinguishable from the cluster returning
+# an empty field, and the scenario would invent defects it never measured.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "FATAL: jq is not installed on this host, and every assertion here needs"
+  echo "       it to read a response field. Install it:"
+  echo "       sudo apt-get update && sudo apt-get install -y jq"
+  echo "SCENARIO-k3d-incluster-inference-svc [FAILED]"
+  exit 1
+fi
+
 SVC=vllm-qwen3-svc
 PORT=8000
 MODEL="Qwen/Qwen3-0.6B"

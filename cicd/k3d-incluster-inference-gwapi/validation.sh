@@ -8,6 +8,17 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 [ -f "$HERE/.env" ] || { echo "FATAL: $HERE/.env missing - run ./config.sh first"; exit 1; }
 . "$HERE/.env"; export KUBECONFIG
+
+# Every assertion below extracts JSON with `jq`. An absent jq prints nothing,
+# so each read comes back empty - indistinguishable from the cluster returning
+# an empty field, and the scenario would invent defects it never measured.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "FATAL: jq is not installed on this host, and every assertion here needs"
+  echo "       it to read a response field. Install it:"
+  echo "       sudo apt-get update && sudo apt-get install -y jq"
+  echo "SCENARIO-k3d-incluster-inference-gwapi [FAILED]"
+  exit 1
+fi
 VIP="$NODE_IP"
 CLIENT="igw-client-$CLUSTER"
 GW_PORT="${GW_PORT:-8080}"

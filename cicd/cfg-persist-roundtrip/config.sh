@@ -18,6 +18,13 @@
 export LLB_HOST_PORTS=""
 source ../common.sh
 
+# This setup reads JSON with `jq`, which runs on the HOST: hexec is
+# "ip netns exec", so a jq inside the llb1 container is not on this PATH.
+# An absent jq prints nothing and every read comes back empty, so the bed
+# would be built from values that were never actually read. Refuse instead.
+require_host_tools jq || exit 1
+
+
 CFGDIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Idempotency: always self-clean a prior aborted run first.
