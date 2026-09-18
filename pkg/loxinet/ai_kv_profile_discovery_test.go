@@ -187,7 +187,7 @@ func TestKvProfileDiscoveryReloadRace(t *testing.T) {
 	}
 
 	// Reload swaps the generation: p-old disappears, p-new appears.
-	rootNew := t.TempDir()
+	rootNew := kvTrustedTempDir(t)
 	kvWriteProfileFixture(t, rootNew, "p-new", "acme/race-m2", []byte("tok-new"))
 	if err := KvProfileRegistryLoadFrom(rootNew); err != nil {
 		t.Fatalf("load gen2: %v", err)
