@@ -1,0 +1,99 @@
+#!/usr/bin/env bpftrace
+/*
+ * psock-drops.bt - where the kernel's sockmap machinery frees data instead of
+ * delivering it.
+ *
+ * The verdict's own counters (sockmap_stats) end at the verdict: REDIRECT_DROP
+ * counts a redirect whose target lookup failed, and nothing after that is
+ * visible to BPF. The kernel can still drop an skb the verdict redirected
+ * successfully:
+ *
+ *   sk_psock_verdict_apply  the verdict returned SK_DROP (REDIRECT_DROP), or
+ *                           the skb could not be queued on the source socket
+ *   sk_psock_skb_redirect   the target socket has no psock, is SOCK_DEAD, or its
+ *                           psock is no longer TX-enabled (it is being torn down)
+ *   sk_psock_backlog        sending to the target failed with an error other
+ *                           than -EAGAIN
+ *
+ * Every one of these goes through sock_drop(), i.e. sk_drops_add() plus
+ * kfree_skb(). So the cheap first check needs no tool at all: the "d" field of
+ * `ss -tmi` skmem counts them on the SOURCE socket of the redirect (the backend
+ * socket for a lost response, the client socket for a lost request). This
+ * script attributes
+ * them: it counts kfree_skb calls made inside those three functions, by
+ * function, drop reason and source socket (local port, remote port).
+ *
+ * Run it on the host (the containers share its kernel), reproduce, then Ctrl-C:
+ *
+ *   sudo bpftrace debug/psock-drops.bt
+ *   sudo timeout 30 bpftrace debug/psock-drops.bt      # bounded run
+ *
+ * Bytes are dropped after the peer ACKed them, so any count here is a stream
+ * that stalled or lost data. During a sockmapreset or a connection teardown a
+ * few drops in sk_psock_skb_redirect are expected: the closing socket's psock
+ * stops accepting redirects while data is still in flight. That connection is
+ * over either way.
+ */
+
+BEGIN
+{
+  printf("tracing sockmap drops (kfree_skb inside sk_psock_*)... Ctrl-C to end\n");
+}
+
+/* kfree_skb's location is resolved to a symbol only in userspace, so it cannot
+ * be filtered on in the kernel. The functions that can drop are marked per
+ * thread instead: 1 = sk_psock_verdict_apply, 2 = sk_psock_skb_redirect (called
+ * from it), 3 = sk_psock_backlog (workqueue). A kfree_skb while a mark is set is
+ * a drop by that function or by something it called. Freed-after-use skbs go
+ * through consume_skb, which has its own tracepoint, so they are not counted. */
+kprobe:sk_psock_verdict_apply
+{
+  @where[tid] = 1;
+  @src[tid] = ((struct sk_psock *)arg0)->sk;
+}
+kretprobe:sk_psock_verdict_apply { delete(@where[tid]); delete(@src[tid]); }
+kprobe:sk_psock_skb_redirect { @where[tid] = 2; }
+kretprobe:sk_psock_skb_redirect { if (@where[tid] == 2) { @where[tid] = 1; } }
+kprobe:sk_psock_backlog
+{
+  /* arg0 is &psock->work.work (a delayed_work inside struct sk_psock). */
+  @where[tid] = 3;
+  @src[tid] = ((struct sk_psock *)(arg0 - offsetof(struct sk_psock, work)))->sk;
+}
+kretprobe:sk_psock_backlog { delete(@where[tid]); delete(@src[tid]); }
+
+/* The dropped skb no longer carries a socket, so drops are attributed to the
+ * psock being processed: the SOURCE socket of the redirect, i.e. the one whose
+ * ingress data was lost (the backend socket for a lost response). That is also
+ * the socket whose `ss -tmi` skmem "d" counter moves. */
+tracepoint:skb:kfree_skb
+/ @where[tid] /
+{
+  $skb = (struct sk_buff *)args->skbaddr;
+  $sk = (struct sock *)@src[tid];
+  $fn = @where[tid] == 1 ? "sk_psock_verdict_apply" :
+        (@where[tid] == 2 ? "sk_psock_skb_redirect" : "sk_psock_backlog");
+  @drops[$fn, args->reason] = count();
+  @bytes[$fn] = sum($skb->len);
+  if ($sk != 0) {
+    @by_socket[$fn, $sk->__sk_common.skc_num,
+               bswap($sk->__sk_common.skc_dport)] = count();
+  } else {
+    @by_socket[$fn, 0, 0] = count();
+  }
+}
+
+END
+{
+  clear(@where);
+  clear(@src);
+  printf("\n== drops by function and reason ==\n");
+  print(@drops);
+  printf("\n== dropped bytes by function ==\n");
+  print(@bytes);
+  printf("\n== drops by function, local port, remote port of the source socket ==\n");
+  print(@by_socket);
+  clear(@drops);
+  clear(@bytes);
+  clear(@by_socket);
+}
