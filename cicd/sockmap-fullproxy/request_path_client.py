@@ -34,6 +34,11 @@ on OK.
                                     repeated n times (the race is intermittent)
   idle      <host> <port> <secs>    connect, wait secs sending nothing, then use
                                     the connection (it was never accelerated)
+  volume    <host> <port> [hold]    one connection, the echo sequence then the
+                                    sizes sequence: a fixed byte volume in both
+                                    directions for the counter comparison. With
+                                    hold, prints DONE and keeps the connection
+                                    open for hold seconds before closing it
 
 The echo mode is the only one that prints records rather than OK/FAIL: the
 equivalence suite diffs its output across acceleration modes.
@@ -307,6 +312,32 @@ def mode_sizes(host, port):
     return 'OK sizes %s' % ','.join(str(n) for n in SIZES)
 
 
+def mode_volume(host, port, hold=0):
+    s = connect(host, port)
+    r = Reader(s)
+    n = 0
+    for method, path, blen in ECHO_SEQ:
+        payload = pattern(blen)
+        head, body = request(method, path, host, payload)
+        s.sendall(head + body)
+        status, _, _ = r.response_full()
+        if status != 200:
+            return 'FAIL status %d at %s' % (status, path)
+        n += 1
+    for size in SIZES:
+        head, _ = request('GET', '/size?bytes=%d' % size, host)
+        s.sendall(head)
+        status, _, body = r.response_full()
+        if status != 200 or len(body) != size:
+            return 'FAIL bytes=%d: status %d, received %d' % (size, status, len(body))
+        n += 1
+    if hold:
+        print('DONE %d requests' % n, flush=True)
+        time.sleep(hold)
+    s.close()
+    return 'OK %d requests' % n
+
+
 def mode_special(host, port):
     s = connect(host, port)
     r = Reader(s)
@@ -433,7 +464,7 @@ MODES = {'split': mode_split, 'stream': mode_stream, 'pipeline': mode_pipeline,
          'halfclose': mode_halfclose, 'halfpartial': mode_halfpartial,
          'keepalive': mode_keepalive, 'echo': mode_echo, 'chunked': mode_chunked,
          'sizes': mode_sizes, 'special': mode_special, 'abort': mode_abort,
-         'idle': mode_idle}
+         'idle': mode_idle, 'volume': mode_volume}
 
 
 def main():

@@ -58,6 +58,7 @@ cd cicd/sockmap-fullproxy
 | `validation_request_path.sh` | h2c through every mode, split / streamed / pipelined requests, and rule changes under a live connection |
 | `validation_equivalence.sh` | **invariant I3**: what the client and the backend observe on an accelerated rule is identical to `off`. Four rules over one endpoint, compared record by record (cases E-*) |
 | `validation_control.sh` | **invariant I5**: stopping acceleration on live connections (cases C-*). The admin action does not exist yet, so this suite is mostly XFAIL and BLOCKED |
+| `validation_observability.sh` | what an operator can see of accelerated traffic: the rule's endpoint counter against `off` (O-3), a connection closed by the reset action (O-5), a refused redirect counted as `REDIRECT_DROP` (O-2), and `debug/psock-drops.bt` attributing a drop (O-6) |
 | `validation_integrity.sh` | byte-level integrity of a streamed response against a sequence oracle — the suite that can see the kernel's duplication defect |
 | `validation_perf.sh` | throughput, on vs off, over two rules that share every port |
 | `validation-cpu.sh` | loxilb CPU, on vs off, on that same pair |
@@ -97,6 +98,7 @@ A working order for a full pass:
 ./validation_request_path.sh
 ./validation_equivalence.sh
 ./validation_control.sh
+./validation_observability.sh
 ./validation.sh          # last: it deletes R1
 ```
 
@@ -117,10 +119,11 @@ enforces it, and a collision shows up as a rule replace, not as an error.
 | 2070–2075 | `validation_request_path.sh` |
 | 2080–2083 | `validation_equivalence.sh` |
 | 2090–2092 | `validation_control.sh` (2099 is deliberately ruleless) |
+| 2100–2105 | `validation_observability.sh` |
 
 Backend ports: 8080 (`config.sh`), 8260/8261 (`validation.sh`, no listener
 needed), 9080–9083 (perf and CPU), 9090/9091 (directional), 9092/9093 (request
-path, equivalence, control), 9100–9106 (refcount), 9160–9170 (integrity).
+path, equivalence, control, observability), 9100–9106 (refcount), 9160–9170 (integrity).
 
 ## Reading a result
 
@@ -153,7 +156,7 @@ RESULT: SCENARIO-sockmap-fullproxy-control [OK] (6 known defect(s) xfailed) (7 c
 |---|---|
 | `sockmap_common.sh` | every suite: map readers, counters, rule helpers, the verdict vocabulary above |
 | `request_path_server.js` | HTTP/1.1 backend that echoes the request headers it received, with `?bytes=`, `?status=` and `?abort=` response shapes |
-| `request_path_client.py` | raw HTTP/1.1 client, one request shape per mode (`split`, `stream`, `pipeline`, `chunked`, `sizes`, `special`, `abort`, `halfclose`, `halfpartial`, `idle`, `keepalive`, `echo`) |
+| `request_path_client.py` | raw HTTP/1.1 client, one request shape per mode (`split`, `stream`, `pipeline`, `chunked`, `sizes`, `special`, `abort`, `halfclose`, `halfpartial`, `idle`, `keepalive`, `echo`, `volume`) |
 | `equivalence_diff.py` | compares two `echo` runs; normalizes only the Host port and `Date`, and exempts no header |
 | `h2c_server.js` | prior-knowledge HTTP/2 backend |
 | `sse_server.js`, `sse_client.js`, `sse_raw_probe.js` | SSE streaming load and the integrity oracle |
@@ -165,7 +168,13 @@ Artifacts from a run land in `artifacts/` and are cleared by `rmconfig.sh`.
 
 ## `debug/`
 
-Diagnostics from investigations that are now closed. They are kept because each
+`psock-drops.bt` is an operator diagnostic rather than an investigation record:
+it attributes data the kernel's sockmap code freed instead of delivering (after
+the verdict, where `sockmap_stats` cannot see) to the function and source socket
+that lost it. Run it on the host with `sudo bpftrace debug/psock-drops.bt`, then
+Ctrl-C. `validation_observability.sh` O-6 exercises it.
+
+The shell scripts are diagnostics from investigations that are now closed. They are kept because each
 is a re-runnable probe for a class of problem that can come back, and because
 their headers record how the answers were reached. None of them is part of a
 normal run.
