@@ -53,11 +53,52 @@ if [[ "$iperf_up" != 1 ]]; then
     echo "iperf3 server never began listening on l3ep1:8080" ; code=1
 fi
 
+# The topology is not ready until llb1 holds L2 state for both hosts. E1 is
+# this suite's unpoliced baseline, so its first connection must not double as
+# the ARP-resolution trigger: a handshake that races neighbour resolution
+# exercises the resolution path, not the policer under test, and that race is
+# what wedges the datapath's conntrack. Each host pings its gateway so the ARP
+# exchange teaches llb1 both MACs, and the gate then asserts llb1 really
+# learned them - a dead veth is a topology defect, and every later leg would
+# otherwise be measuring noise.
+$dexec l3h1 ping -c1 -W2 10.10.10.254 > /dev/null 2>&1
+$dexec l3ep1 ping -c1 -W2 31.31.31.254 > /dev/null 2>&1
+for h in 10.10.10.1 31.31.31.1; do
+    if ! $dexec llb1 ip neigh </dev/null | grep -q "^$h "; then
+        echo "topology not ready: llb1 never learned a neighbour entry for $h" ; code=1
+    fi
+done
+
 # Transit Mbits/s through the VIP (iperf3 receiver side). A run with no
 # receiver summary yields "" and surfaces iperf3's own error on the console.
 run_bw() {
     local secs=$1 raw; shift
-    raw=$($dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs "$@" 2>&1)
+    # Two bounds, so a wedged datapath surfaces through the no-receiver-summary
+    # branch below instead of hanging: --connect-timeout for a control
+    # connection that never establishes, and a hard timeout for the nastier
+    # mode where the handshake completes and the session then blackholes
+    # mid-exchange. That second mode is the one measured here - a `-t 5` run
+    # seen retransmitting for nine minutes against a client socket reading
+    # ESTAB/unacked-37/segs_in:1, with no matching socket on the endpoint at
+    # all - and without a timeout the only bound was the runner's 1800s.
+    #
+    # stdin is closed for the same reason it is in qos-rulepol: dexec is
+    # "sudo docker exec -i", and -i lets an interactive run stop on SIGTTIN,
+    # which leaves the timeout above firing at a stopped process that cannot
+    # act on it until it is continued.
+    # The bound is `sudo timeout`, NOT `timeout sudo`, and the order is the
+    # whole point. dexec is "sudo docker exec -i": written as
+    # `timeout N $dexec ...` the timeout runs as the calling user and its
+    # SIGTERM lands on a root-owned sudo, which is EPERM. The signal is never
+    # delivered, timeout keeps waiting on a child it cannot kill, and the
+    # bound silently does nothing. Measured: a `timeout 10` in that form ran
+    # 70s and only stopped when an outer guard killed it, leaving the work
+    # behind; moving timeout inside sudo returned at 10s with rc=124.
+    #
+    # stdin is closed for a second, independent reason: -i holds stdin open on
+    # the docker client, so an interactive run can stop on SIGTTIN, and a
+    # stopped process cannot act on SIGTERM at all.
+    raw=$(sudo timeout $((secs+20)) docker exec -i l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1)
     if ! echo "$raw" | grep -q receiver; then
         echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
     fi
@@ -74,7 +115,7 @@ host_egr_bw() {
     sleep 1
     $dexec llb1 sh -c "curl -s -m 6 -T /dev/zero -o /dev/null -w '%{speed_upload}' http://31.31.31.1:9099/up 2>/dev/null" | \
         awk '{printf "%d", $1/1024}'
-    $dexec l3ep1 pkill -f "nc -l" 2>/dev/null
+    $dexec l3ep1 pkill -f "nc -l" </dev/null 2>/dev/null
 }
 
 # --- E1: baseline host-originated upload ---
@@ -85,7 +126,7 @@ if [[ -z "$hbw0" || "$hbw0" -lt 12288 ]]; then
 fi
 
 # --- E2: egress policer caps host-originated upload ---
-res=$($dexec llb1 curl -s -X POST -H 'Content-Type: application/json' -d "$EGR_JSON" $API/config/policy)
+res=$($dexec llb1 curl -s -X POST -H 'Content-Type: application/json' -d "$EGR_JSON" $API/config/policy </dev/null)
 echo "E2 attach: $res"
 if [[ "$res" != *"Success"* ]]; then
     echo "E2 egress policer attach FAILED: $res" ; code=1
@@ -116,7 +157,7 @@ elif [[ "$bw3" -lt 1 ]]; then
 fi
 
 # --- E4: detach restores host-originated upload ---
-res=$($dexec llb1 curl -s -X DELETE $API/config/policy/ident/qegr1)
+res=$($dexec llb1 curl -s -X DELETE $API/config/policy/ident/qegr1 </dev/null)
 echo "E4 detach: $res"
 sleep 2
 hbw2=$(host_egr_bw)
