@@ -50,6 +50,10 @@ var server = http.createServer(function (req, res) {
   req.on('end', function () {
     var abort = query(req.url, 'abort');
     if (abort !== null) {
+      // ?delay=ms holds the FIN back after the short write. It isolates a race:
+      // if a truncation only loses bytes when the FIN follows immediately, the
+      // bytes were still in flight when the connection was torn down.
+      var delay = query(req.url, 'delay');
       // Headers promise more than is sent, then the socket dies: the client must
       // see the same truncation with and without acceleration.
       res.writeHead(200, { 'Content-Type': 'application/octet-stream',
@@ -57,7 +61,11 @@ var server = http.createServer(function (req, res) {
       res.write(pattern(abort));
       // FIN, not RST: a reset can make the client's stack discard the bytes it
       // already buffered, which would make the truncation length flaky.
-      res.socket.end();
+      if (delay) {
+        setTimeout(function () { res.socket.end(); }, delay);
+      } else {
+        res.socket.end();
+      }
       return;
     }
 
