@@ -47,13 +47,6 @@ BT_OUT="$SOCKMAP_ARTIFACTS_DIR/psock-drops.txt"
 HOLD_OUT="$SOCKMAP_ARTIFACTS_DIR/observability-hold.txt"
 KA_OUT="$SOCKMAP_ARTIFACTS_DIR/observability-keepalive.txt"
 
-NO_FOLD="kernel-relayed bytes are not folded into the rule's endpoint counter"
-sockmap_xfail_register "O-3 response" "$NO_FOLD"
-sockmap_xfail_register "O-3 both" "$NO_FOLD"
-sockmap_xfail_register "O-5" "$NO_FOLD"
-sockmap_xfail_register "O-2" \
-  "the verdict counts a redirect before issuing it and has no REDIRECT_DROP counter"
-
 cleanup() {
   for p in $ALL_PORTS; do
     sockmap_delete_lb_via_api llb1 "$VIP" "$p" >/dev/null 2>&1 || true
