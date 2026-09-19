@@ -406,7 +406,19 @@ bpftool map dump name sockmap_stats
 | `sockmap_ep_portset` | one entry per endpoint address and port of accelerated services |
 | `sock_proxy_map` | every live socket of an accelerated service (redirect targets) |
 | `sock_verdict_map` | the sockets of accelerated connections whose incoming direction is accelerated, added once their pair is in `peer_map` |
-| `sockmap_stats` | verdict counters: redirects (total, request, response), peer misses |
+| `peer_map` | one entry per accelerated direction of a connection: the socket to redirect to, and the bytes and segments redirected so far |
+| `sockmap_stats` | verdict counters, by index (below) |
+
+| index | `sockmap_stats` counter | meaning |
+|---|---|---|
+| 0 | redirects | redirects the kernel accepted, both directions |
+| 1 | peer misses | a socket ran the verdict without a pair. Must stay 0 |
+| 2 | ineligible | retired, always 0 |
+| 3, 4 | request / response redirects | index 0 split by direction |
+| 5 | response bytes | bytes redirected in the response direction |
+| 6 | refused redirects | the redirect target was missing from `sock_proxy_map`, so the kernel dropped bytes the sender already considers delivered, and that stream stalls. Must stay 0 |
+
+The array is per CPU; sum each index across CPUs.
 
 After a `sockmapreset`, or after lowering a mode, `sock_verdict_map` and
 `peer_map` return to the size they had before those connections existed. A
@@ -414,8 +426,9 @@ residue there is a leak worth reporting.
 
 A non-zero peer miss count means a socket ran the verdict without a pair. The
 proxy removes a socket from `sock_verdict_map` before its pair, so the count
-stays at zero; a growing count is a bug worth reporting. The ineligible counter
-is retired and always reads zero.
+stays at zero; a growing count is a bug worth reporting. A growing refused
+redirect count is a bug worth reporting too: the proxy never removes a socket
+from `sock_proxy_map` while it is still a redirect target.
 
 Each portset entry carries `refs` (accelerated services using it) and
 `verdict_refs` (how many of them accelerate the direction a matching socket
@@ -424,6 +437,38 @@ datapath no longer reads `verdict_refs`; it is the loader's bookkeeping.
 
 An empty `sock_proxy_map` under load means acceleration is not engaging; the
 traffic is being relayed in userspace and the configuration is having no effect.
+
+### Service statistics
+
+A service's endpoint counter (`packets:bytes` in the load balancer list) counts
+the bytes delivered to clients, including bytes the kernel relayed. Two
+differences from `off`:
+
+- **Kernel-relayed bytes are added when the connection ends.** While an
+  accelerated connection is open, the counter shows only what userspace relayed
+  on it, which on `response` and `both` is nothing. A long stream appears in
+  full when it closes, including when `sockmapreset` or a mode change closes it.
+- **The packet count is not comparable.** Userspace counts writes; the kernel
+  counts segments. Compare bytes.
+
+Deleting a service discards its statistics, and that includes connections that
+were still open.
+
+### Data the kernel dropped after the verdict
+
+Refused redirects are the drops the verdict can see. The kernel can still drop
+data after accepting a redirect, for example when the target socket is already
+being torn down. `sockmap_stats` cannot see these. Look for them in two steps:
+
+1. `ss -tmi` on the proxy's sockets. The `d` field of `skmem` counts these
+   drops on the socket the data came **from**: the backend socket for a lost
+   response, the client socket for a lost request. No tooling is needed.
+2. `cicd/sockmap-fullproxy/debug/psock-drops.bt` (bpftrace, run on the host)
+   attributes each drop to the kernel function that made it, the drop reason and
+   the source socket's ports. During a `sockmapreset` or a connection close a few
+   drops are expected, because the closing socket stops accepting redirects while
+   data is in flight, and that connection is over either way. Drops on
+   connections that are not closing are a bug worth reporting.
 
 ## Testing
 
@@ -434,6 +479,7 @@ traffic is being relayed in userspace and the configuration is having no effect.
 |---|---|---|
 | `validation.sh` | BPF assets attach, rules register, offload engages, AI gateway services refuse a `sockMapMode` | 6 |
 | `validation_integrity.sh` | the relayed stream compared byte by byte against a predictable body, accelerated vs `off` | 1 |
+| `validation_observability.sh` | service statistics equal to `off`, including connections closed by `sockmapreset`; a refused redirect counted as one; `psock-drops.bt` attributing a drop | 3 |
 | `validation_concurrent.sh` | concurrent connection handling, maps drain after close, an `off` control arm | 4 |
 | `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup | 4, 7 |
 | `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints | 4 |

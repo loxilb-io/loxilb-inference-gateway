@@ -58,6 +58,7 @@ else
 fi
 
 PEER_MISS_START=$(sockmap_peer_miss_count llb1)
+DROP_START=$(sockmap_redirect_drop_count llb1)
 
 # ---------- Step 2: backends ----------
 sockmap_section 2 "Backends"
@@ -193,6 +194,7 @@ fi
 # ---------- Step 6: counters and logs ----------
 sockmap_section 6 "Verdict passes and failure logs"
 sockmap_assert_no_pass llb1 "$PEER_MISS_START" "no socket ran the verdict without a peer"
+sockmap_assert_no_redirect_drop llb1 "$DROP_START" "no redirect found its target missing"
 fail_cnt=$(sockmap_log_failure_count llb1)
 if (( fail_cnt == 0 )); then
   sockmap_result "no sockmap failure messages in the daemon logs" "OK"

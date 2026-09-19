@@ -353,11 +353,15 @@ fi
 # The raw recorder is the forwarding oracle: it answers nothing and keeps
 # every byte, so "nothing was forwarded" is read from the recorded bytes,
 # never inferred from a client-side reset.
-# python3-h2 must be importable on the host (the namespaces share it).
-if ! python3 -c "import h2" 2>/dev/null; then
-  echo "FATAL: python3 'h2' package missing (pip3 install --break-system-packages h2)"
-  exit 1
-fi
+# The h2 mocks below are launched with `hexec`, which is "sudo ip netns exec":
+# they run as ROOT and import from root's sys.path. This scenario exports no
+# PYTHONPATH into those commands, so root's interpreter is the only one that
+# counts, and it is the one probed here.
+#
+# Probing as the calling user instead would be worse than not probing: a
+# `pip3 install --user h2` satisfies the caller and leaves root untouched, so
+# the gate would pass and the backends would fail afterwards, obscurely.
+require_host_python h2 || exit 1
 $hexec l3ep1 sh -c "rm -f /tmp/ai-jwtauth-rawsink.out; nohup python3 $SDIR/rawsink.py 8091 /tmp/ai-jwtauth-rawsink.out >/tmp/ai-jwtauth-rawsink.log 2>&1 &"
 $hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-llama 8090 >/tmp/ai-jwtauth-h2echo.log 2>&1 &"
 for i in $(seq 1 20); do

@@ -21,6 +21,8 @@ SOCKMAP_STAT_PEER_MISS=1
 SOCKMAP_STAT_INELIGIBLE=2
 SOCKMAP_STAT_REDIRECT_REQ=3
 SOCKMAP_STAT_REDIRECT_RESP=4
+SOCKMAP_STAT_RESP_BYTES=5
+SOCKMAP_STAT_REDIRECT_DROP=6
 
 # result tracking
 SOCKMAP_FAIL_COUNT=0
@@ -437,6 +439,69 @@ sockmap_redirect_req_count() {
 # Increases only in response/both mode; must stay 0 in request-only mode.
 sockmap_redirect_resp_count() {
   sockmap_stat_sum "$1" "$SOCKMAP_STAT_REDIRECT_RESP"
+}
+
+# Cumulative redirects the kernel refused (bpf_sk_redirect_hash found no usable
+# target in sock_proxy_map, so the verdict returned SK_DROP). The dropped bytes
+# were already ACKed, so the stream stalls. Must not grow in normal operation.
+# Reads 0 on a build that predates the counter.
+sockmap_redirect_drop_count() {
+  sockmap_stat_sum "$1" "$SOCKMAP_STAT_REDIRECT_DROP"
+}
+
+# Records a result line asserting that no redirect was refused since $2 (a
+# sockmap_redirect_drop_count taken earlier).
+#   $1 llb, $2 REDIRECT_DROP before, $3 label
+sockmap_assert_no_redirect_drop() {
+  local llb=$1 before=$2 label=$3
+  local delta=$(( $(sockmap_redirect_drop_count "$llb") - before ))
+  if (( delta == 0 )); then
+    sockmap_result "$label" "OK"
+  else
+    sockmap_result "$label" "FAILED" "REDIRECT_DROP +$delta; a redirect found no target"
+  fi
+}
+
+# Bytes of a rule's first endpoint counter ("packets:bytes" in the LB list). For
+# a FullProxy rule this is the bytes the proxy delivered to clients (responses).
+#   $1 llb, $2 VIP, $3 VIP port
+sockmap_ep_counter_bytes() {
+  local llb=$1 vip=$2 vport=$3
+  _sm_dexec "$llb" curl -s http://localhost:11111/netlox/v1/config/loadbalancer/all \
+    | python3 -c '
+import json, sys
+vip, port = sys.argv[1], int(sys.argv[2])
+for r in json.load(sys.stdin).get("lbAttr", []):
+    a = r["serviceArguments"]
+    if a.get("externalIP") == vip and a.get("port") == port:
+        c = (r.get("endpoints") or [{}])[0].get("counter") or "0:0"
+        print(c.split(":")[1])
+        sys.exit(0)
+print(0)' "$vip" "$vport"
+}
+
+# Removes the client sockets of one VIP port from sock_proxy_map, so a response
+# redirected to them finds no target. A test-only fault injection: the stream it
+# is applied to stalls. Prints how many entries were removed.
+#   $1 llb, $2 VIP, $3 VIP port
+sockmap_proxy_map_drop_clients() {
+  local llb=$1 vip=$2 vport=$3 id n=0 hex
+  id=$(sockmap_map_id "$llb" "$SOCKMAP_PROXY_NAME")
+  [[ -z "$id" ]] && { echo 0; return 0; }
+  while read -r hex; do
+    [[ -z "$hex" ]] && continue
+    _sm_dexec "$llb" bpftool map delete id "$id" key hex $hex >/dev/null 2>&1 && n=$((n + 1))
+  done < <(_sm_dexec "$llb" bpftool -j map dump id "$id" 2>/dev/null | python3 -c '
+import json, sys
+vip = [int(o) for o in sys.argv[1].split(".")]
+port = int(sys.argv[2])
+# struct llb_sockmap_key: dip, sip, dport, sport; a client socket has the VIP as
+# its local address (sip) and the VIP port in the low half of sport, net order.
+for e in json.load(sys.stdin):
+    k = [int(x, 16) for x in e["key"]]
+    if k[4:8] == vip and (k[12] << 8 | k[13]) == port:
+        print(" ".join("%02x" % b for b in k))' "$vip" "$vport")
+  echo "$n"
 }
 
 # Counts sockmap failure messages. The daemon writes to /var/log/loxilb*.log

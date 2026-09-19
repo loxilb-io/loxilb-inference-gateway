@@ -265,6 +265,13 @@ scenario_preflight() {
   local rc=0
   echo "==== preflight ===="
 
+  # Host dependencies first: they are the cheapest gate and the one whose
+  # absence is least legible downstream. A bed without jq does not fail with
+  # "jq missing" - it fails as dozens of assertions reading an empty field,
+  # which reads as a broken gateway. Settle it before anything else runs.
+  echo "--- preflight: host dependencies"
+  bash "$(dirname "${BASH_SOURCE[0]}")/preflight-deps.sh" || rc=1
+
   # The C header and the Go export must agree on arity: a mismatch is a link
   # or a silent ABI error, not a compile error.
   echo "--- preflight: source invariants (incl. C/Go arity lockstep)"
