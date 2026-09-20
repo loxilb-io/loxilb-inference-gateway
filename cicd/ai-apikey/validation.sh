@@ -180,6 +180,137 @@ else
   code=1
 fi
 
+# ── metric helpers ───────────────────────────────────────────────────────────
+#
+# This scenario drives every precondition the AI key-authorization and quota
+# families need -- a disallowed model, a per-key rps ceiling, a per-tenant rps
+# ceiling, a tenant token quota and per-model token quotas -- and scored none of
+# them. A REST read-back proves the row reached the DATABASE; the gauges below
+# are collected from the LIVE rate-limiter store and the counters are written at
+# the point of denial, so they cover the half a read-back cannot reach.
+
+# metric_sum <family> [label-substr] [label-substr] -> the summed value of every
+# series in the family carrying ALL the given label fragments, or "unreadable".
+#
+# Fragments are matched independently, so an assert does not depend on the order
+# the exposition format happens to serialise a label set in.
+#
+# "unreadable" is NOT zero. An absent family legitimately reads 0 -- but so does
+# a scrape that never completed, and a delta taken across one silently reports
+# "nothing happened". Every arm below refuses to score on it.
+metric_sum() {
+  local fam="$1"; shift
+  local body
+  body=$($hexec llb1 curl -s --max-time 8 \
+    -H "Authorization: Bearer $TOKEN" \
+    http://localhost:11111/netlox/v1/metrics 2>/dev/null)
+  case "$body" in
+    *loxilb_*) ;;
+    *) echo "unreadable"; return ;;
+  esac
+  printf '%s\n' "$body" | awk -v fam="$fam" -v a="${1:-}" -v b="${2:-}" '
+    $0 ~ "^" fam "([{ ]|$)" {
+      if (a != "" && index($0, a) == 0) next
+      if (b != "" && index($0, b) == 0) next
+      v = $NF; if (v + 0 == v) { s += v }
+    }
+    END { printf "%.0f", s + 0 }'
+}
+
+# metric_label_set <family> <label-name> -> the sorted, comma-joined set of that
+# label's values across the family, or "unreadable".
+#
+# A per-label oracle needs the SET, not a count: a family that grew a child for
+# a model nobody configured reads exactly like one that lost a child, if all you
+# compare is how many there are.
+metric_label_set() {
+  local body
+  body=$($hexec llb1 curl -s --max-time 8 \
+    -H "Authorization: Bearer $TOKEN" \
+    http://localhost:11111/netlox/v1/metrics 2>/dev/null)
+  case "$body" in
+    *loxilb_*) ;;
+    *) echo "unreadable"; return ;;
+  esac
+  printf '%s\n' "$body" | awk -v fam="$1" -v key="$2" '
+    $0 ~ "^" fam "{" {
+      if (match($0, key "=\"[^\"]*\"")) {
+        v = substr($0, RSTART + length(key) + 2, RLENGTH - length(key) - 3)
+        print v
+      }
+    }' | sort -u | paste -sd, -
+}
+
+# wait_metric <family> <label-substr> <want> <secs> -> the last value read.
+#
+# The limiter store is refreshed from the key store, so a gauge is not
+# guaranteed to carry a just-POSTed value on the very next scrape. Poll the
+# MECHANISM rather than sleeping a guessed interval, and hand back what was
+# actually seen so the assert reports the real number on a timeout.
+wait_metric() {
+  local fam="$1" lab="$2" want="$3" secs="${4:-20}" got=""
+  local i
+  for i in $(seq 1 "$secs"); do
+    got=$(metric_sum "$fam" "$lab")
+    [[ "$got" == "$want" ]] && { echo "$got"; return; }
+    sleep 1
+  done
+  echo "$got"
+}
+
+# check_delta <label> <want> <before> <after>
+check_delta() {
+  local label="$1" want="$2" before="$3" after="$4"
+  if [[ "$before" == "unreadable" || "$after" == "unreadable" ]]; then
+    echo "  $label [FAILED] — LOST MEASUREMENT: a /metrics scrape did not complete"
+    echo "      (before='$before' after='$after'), so the delta was never taken"
+    code=1
+    return
+  fi
+  local got=$(( after - before ))
+  if [[ "$got" -eq "$want" ]]; then
+    echo "  $label [OK] (delta=$got)"
+  else
+    echo "  $label [FAILED] — expected delta $want, got $got (before=$before after=$after)"
+    code=1
+  fi
+}
+
+# burst_429 <tmpdir> <n> -> how many of the n parallel responses were 429, or
+# "lost:<k>" when k of them carry no status at all.
+#
+# An empty file is a curl that never completed, not a request the gateway
+# allowed. Counting it as "not 429" turns a bed that failed to spawn into a
+# product that failed to throttle -- and the count is used below as the exact
+# oracle for the metric delta, so a dropped response would show up as the
+# COUNTER being wrong. Refuse the measurement instead of guessing at it.
+burst_429() {
+  local dir="$1" n="$2" i c got=0 lost=0
+  for i in $(seq 1 "$n"); do
+    c=$(cat "$dir/$i" 2>/dev/null)
+    case "$c" in
+      429)            got=$((got + 1)) ;;
+      [1-5][0-9][0-9]) ;;
+      *)              lost=$((lost + 1)) ;;
+    esac
+  done
+  if [[ $lost -gt 0 ]]; then echo "lost:$lost"; else echo "$got"; fi
+}
+
+# check_metric <label> <want> <got> -- exact equality, "unreadable"-aware.
+check_metric() {
+  local label="$1" want="$2" got="$3"
+  if [[ "$got" == "unreadable" ]]; then
+    echo "  $label [FAILED] — LOST MEASUREMENT: the /metrics scrape did not complete"
+    code=1
+  elif [[ "$got" == "$want" ]]; then
+    echo "  $label [OK] ($got)"
+  else
+    echo "  $label [FAILED] — expected '$want', got '$got'"
+    code=1
+  fi
+}
+
 # ── T5: Set tenant rate limit ─────────────────────────────────────────────────
 echo ""
 echo "T5: Set tenant rate limit via POST /config/ai/tenant/ratelimit"
@@ -201,6 +332,23 @@ get_rl=$($hexec llb1 curl -s \
 echo "  response: $get_rl"
 check "get rate limit has rps"           "50"   "$get_rl"
 check "get rate limit has tokens_per_min" "2000" "$get_rl"
+
+# ── NOTE: the tenant/per-model token-quota gauges are NOT coverable here ─────
+#
+# loxilb_ai_token_quota_limit_tokens and its model-scoped siblings are produced
+# by a collector walking the LIVE rate-limiter store at scrape time, and an
+# entry only appears in that store when a charge SETTLES against the bucket --
+# not when the limit is configured, and not when a request is merely admitted.
+# This scenario's backend is a plain HTTP echo, so no response ever carries a
+# usage object and no tokens are ever charged. Measured on the bed: after a
+# full run, with dp-tenant carrying tokens_per_min=100000 and all the DP
+# traffic behind it, the entire token_quota family set is three series and
+# contains no limit gauge at all.
+#
+# Asserting them here would have produced a check that reads 0 forever and a
+# "utilization is 0" that passes because the family is ABSENT -- the vacuous
+# shape this suite exists to catch. They belong in a scenario whose backend
+# returns token usage; cicd/ai-jwtauth already carries the VIP-scoped pair.
 
 # ── T7: Unauthenticated request is rejected (VIP enforces AI Gateway auth) ────
 echo ""
@@ -274,6 +422,23 @@ else
     http://10.10.10.254:2020/)
   check "DP-T1 valid key reaches backend" "server1" "$dp1"
 
+  # ── DP-T1c: the cold-start latch fires once per PROCESS, not per request ───
+  #
+  # loxilb_ai_token_quota_cold_open_total records that this node began serving
+  # token-quota traffic with no warm peer state. It is an eager scalar, so it
+  # exists at 0 from boot and a 0 here means the writer never ran -- unlike a
+  # lazy vector, where absence and never-fired are the same reading.
+  #
+  # The gateway under test has no sync peers, so the fail-open arm is the only
+  # reachable one and the count after the first request through the limiter is
+  # exactly 1. The value is re-read at the end of the data-plane block: the
+  # contract is "at most once per process start", and a latch that re-armed per
+  # request would climb with the burst traffic while still passing a >= 1
+  # check. The flat re-read is what makes this an assertion about the latch
+  # rather than about the first request.
+  cold0=$(metric_sum loxilb_ai_token_quota_cold_open_total)
+  check_metric "DP-T1c cold-start fail-open latched exactly once" "1" "$cold0"
+
   # ── DP-T2: No key → 401 ────────────────────────────────────────────────────
   echo ""
   echo "DP-T2: No X-Api-Key header → 401 Unauthorized"
@@ -293,6 +458,14 @@ else
   # ── DP-T4: Key with model restriction, wrong model → 403 ───────────────────
   echo ""
   echo "DP-T4: Key allows llama-3 only; send X-Model: mistral-7b → 403 Forbidden"
+  # Baselines for the 403 counter. The family has two writers -- the API-key
+  # validator and its JWT sibling -- but this scenario configures no bearer
+  # arm at all, so the only reachable writer here is the key one. The llama-3
+  # child is carried alongside as the flat control: DP-T4b drives the SAME key
+  # with the model it does allow, and a writer that charged on the allowed path
+  # too would move it.
+  mna_bad0=$(metric_sum loxilb_ai_model_not_allowed_total 'model="mistral-7b"' 'tenant="dp-tenant"')
+  mna_ok0=$(metric_sum  loxilb_ai_model_not_allowed_total 'model="llama-3"'    'tenant="dp-tenant"')
   dp4=$($hexec l3h1 curl -s -w "\n%{http_code}" --max-time 8 \
     -H "X-Api-Key: $DP_MODEL_KEY" \
     -H "X-Model: mistral-7b" \
@@ -307,11 +480,24 @@ else
     http://10.10.10.254:2020/)
   check "DP-T4b correct model → backend" "server1" "$dp4b"
 
+  # One denied request, one allowed request, same key: exactly one charge, on
+  # the denied model's child only.
+  mna_bad1=$(metric_sum loxilb_ai_model_not_allowed_total 'model="mistral-7b"' 'tenant="dp-tenant"')
+  mna_ok1=$(metric_sum  loxilb_ai_model_not_allowed_total 'model="llama-3"'    'tenant="dp-tenant"')
+  check_delta "DP-T4m mistral-7b charged exactly once" 1 "$mna_bad0" "$mna_bad1"
+  check_delta "DP-T4m llama-3 flat across the allowed request" 0 "$mna_ok0" "$mna_ok1"
+
   # ── DP-T5: Per-key rate limit (burst=1, rps=1) → 429 on burst ──────────────
   echo ""
   echo "DP-T5: Burst 6 requests against rps=1 burst=1 key → at least one 429"
   # H-3 fix: send all 6 requests in parallel so they arrive together and actually
   # hit the burst window, rather than serially where token refill hides the limit.
+  # Baseline both reasons. A per-key denial and a per-tenant denial land on the
+  # SAME family and differ only in `reason`, so each arm asserts its own child
+  # AND the other one flat -- otherwise a writer charging the wrong reason
+  # reads exactly like the right one.
+  rlh_key0=$(metric_sum    loxilb_ai_rate_limit_hits_total 'tenant="dp-tenant"' 'reason="rate_limit_exceeded"')
+  rlh_tenant0=$(metric_sum loxilb_ai_rate_limit_hits_total 'tenant="dp-tenant"' 'reason="tenant_quota_exceeded"')
   dp5_tmpdir=$(mktemp -d)
   dp5_pids=()
   for i in $(seq 1 6); do
@@ -321,17 +507,37 @@ else
     dp5_pids+=($!)
   done
   wait "${dp5_pids[@]}"
-  dp5_429=0
-  for i in $(seq 1 6); do
-    if [[ "$(cat $dp5_tmpdir/$i)" == "429" ]]; then dp5_429=1; fi
-  done
+  dp5_429=$(burst_429 "$dp5_tmpdir" 6)
   rm -rf "$dp5_tmpdir"
-  if [[ $dp5_429 == 1 ]]; then
-    echo "  DP-T5 rate limit returned 429 [OK]"
-  else
-    echo "  DP-T5 rate limit NOT enforced — no 429 seen [FAILED]"
-    code=1
-  fi
+  case "$dp5_429" in
+    lost:*)
+      echo "  DP-T5 [FAILED] — LOST MEASUREMENT: ${dp5_429#lost:} of 6 responses carried no status"
+      code=1 ;;
+    0)
+      echo "  DP-T5 rate limit NOT enforced — no 429 seen [FAILED]"
+      code=1 ;;
+    *)
+      echo "  DP-T5 rate limit returned ${dp5_429} x 429 [OK]" ;;
+  esac
+
+  # The counter against the wire, not against a guess. The burst size is
+  # deliberately not asserted -- how many of six parallel requests fall inside
+  # one token window is timing -- but whatever the wire reported, the family
+  # must have charged exactly that many, under the key reason.
+  #
+  # The tenant child stays flat for a structural reason worth stating: the
+  # per-key stage runs BEFORE the per-tenant stage and returns on denial, so a
+  # request the key rejected never reaches the tenant bucket, and dp-tenant has
+  # no limit of its own yet.
+  rlh_key1=$(metric_sum    loxilb_ai_rate_limit_hits_total 'tenant="dp-tenant"' 'reason="rate_limit_exceeded"')
+  rlh_tenant1=$(metric_sum loxilb_ai_rate_limit_hits_total 'tenant="dp-tenant"' 'reason="tenant_quota_exceeded"')
+  case "$dp5_429" in
+    lost:*|0)
+      echo "  DP-T5m rate_limit_exceeded delta NOT SCORED — the drive above did not measure" ;;
+    *)
+      check_delta "DP-T5m rate_limit_exceeded charged once per observed 429" "$dp5_429" "$rlh_key0" "$rlh_key1"
+      check_delta "DP-T5m tenant_quota_exceeded flat (key stage denies first)" 0 "$rlh_tenant0" "$rlh_tenant1" ;;
+  esac
 
   # ── DP-T6: Per-tenant rate limit → 429 (set rps=1 on dp-tenant) ────────────
   echo ""
@@ -349,17 +555,33 @@ else
     dp6_pids+=($!)
   done
   wait "${dp6_pids[@]}"
-  dp6_429=0
-  for i in $(seq 1 6); do
-    if [[ "$(cat $dp6_tmpdir/$i)" == "429" ]]; then dp6_429=1; fi
-  done
+  dp6_429=$(burst_429 "$dp6_tmpdir" 6)
   rm -rf "$dp6_tmpdir"
-  if [[ $dp6_429 == 1 ]]; then
-    echo "  DP-T6 tenant rate limit returned 429 [OK]"
-  else
-    echo "  DP-T6 tenant rate limit NOT enforced — no 429 seen [FAILED]"
-    code=1
-  fi
+  case "$dp6_429" in
+    lost:*)
+      echo "  DP-T6 [FAILED] — LOST MEASUREMENT: ${dp6_429#lost:} of 6 responses carried no status"
+      code=1 ;;
+    0)
+      echo "  DP-T6 tenant rate limit NOT enforced — no 429 seen [FAILED]"
+      code=1 ;;
+    *)
+      echo "  DP-T6 tenant rate limit returned ${dp6_429} x 429 [OK]" ;;
+  esac
+
+  # The mirror of DP-T5m, and the half that makes the pair an oracle rather
+  # than two similar checks: the two arms differ in ONE field -- which limit is
+  # set to 1 -- and each expects the OTHER reason to stay put. dp-open carries
+  # rps=100/burst=200, so the key stage admits all six and every denial here is
+  # the tenant bucket's.
+  rlh_key2=$(metric_sum    loxilb_ai_rate_limit_hits_total 'tenant="dp-tenant"' 'reason="rate_limit_exceeded"')
+  rlh_tenant2=$(metric_sum loxilb_ai_rate_limit_hits_total 'tenant="dp-tenant"' 'reason="tenant_quota_exceeded"')
+  case "$dp6_429" in
+    lost:*|0)
+      echo "  DP-T6m tenant_quota_exceeded delta NOT SCORED — the drive above did not measure" ;;
+    *)
+      check_delta "DP-T6m tenant_quota_exceeded charged once per observed 429" "$dp6_429" "$rlh_tenant1" "$rlh_tenant2"
+      check_delta "DP-T6m rate_limit_exceeded flat (key admits all six)" 0 "$rlh_key1" "$rlh_key2" ;;
+  esac
   # Reset tenant limit so DP-T7 is not blocked
   $hexec llb1 curl -s -o /dev/null -X POST http://localhost:11111/netlox/v1/config/ai/tenant/ratelimit \
     -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
@@ -389,6 +611,12 @@ else
     echo "  DP-T7 revoked key NOT rejected within 10 s [FAILED]"
     code=1
   fi
+
+  # ── DP-T7c: the cold-start latch did not re-arm ────────────────────────────
+  # Same scalar, read after every DP request above -- two burst arms of six
+  # plus the model, revoke and poll traffic. Still 1.
+  cold1=$(metric_sum loxilb_ai_token_quota_cold_open_total)
+  check_delta "DP-T7c cold-start latch flat across all data-plane traffic" 0 "$cold0" "$cold1"
 
   # Cleanup remaining DP test keys
   $hexec llb1 curl -s -o /dev/null -X DELETE \
