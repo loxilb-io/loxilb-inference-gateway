@@ -1203,23 +1203,41 @@ else
   check "TH1: loxilb_ai_pd_requests_total present" 1
 fi
 
-# TH2: loxilb_ai_pd_prefill_duration_seconds present and > 0 (replaces T8b)
-TH2_LINE=$(echo "$H_METRICS" | grep -v '^#' | grep 'loxilb_ai_pd_prefill_duration_seconds' | head -1)
-echo "  prefill_duration sample: $TH2_LINE"
-if [ -n "$TH2_LINE" ]; then
-  check "TH2: loxilb_ai_pd_prefill_duration_seconds present" 0
-else
-  check "TH2: loxilb_ai_pd_prefill_duration_seconds present" 1
-fi
+# Sum a histogram family's _count series across every label set in the scrape.
+# Both P/D histograms are lazy vectors: no child is exported until its first
+# Observe, so a total of >= 1 is proof the leg actually ran, and 0 means it
+# never did. Presence of the family is the same claim stated weakly.
+h_count_sum() {
+  echo "$H_METRICS" | grep -v '^#' | awk -v n="$1_count" 'index($1, n) == 1 { s += $NF } END { printf "%d", s + 0 }'
+}
 
-# TH3: loxilb_ai_pd_decode_ttft_seconds (correct TTFT metric name per R7)
-TH3_LINE=$(echo "$H_METRICS" | grep -v '^#' | grep 'loxilb_ai_pd_decode_ttft_seconds' | head -1)
-echo "  decode_ttft sample: $TH3_LINE"
-if [ -n "$TH3_LINE" ]; then
-  check "TH3: loxilb_ai_pd_decode_ttft_seconds present (TTFT metric)" 0
-else
-  check "TH3: loxilb_ai_pd_decode_ttft_seconds present (TTFT metric)" 1
-fi
+# Sum a counter family's children that carry ALL of the given label fragments.
+# Fragments are matched independently so the assert does not depend on the
+# order Prometheus happens to serialise the label set in.
+c_label_sum() {
+  local fam="$1"; shift
+  local out
+  out=$(echo "$H_METRICS" | grep -v '^#' | grep -F "${fam}{")
+  local frag
+  for frag in "$@"; do
+    out=$(echo "$out" | grep -F "$frag")
+  done
+  echo "$out" | awk '{ s += $NF } END { printf "%d", s + 0 }'
+}
+
+# TH2: the prefill leg was timed at least once.
+# Was a bare presence grep whose own comment already claimed the stronger
+# thing ("present and > 0"); the sample count states it for real.
+TH2_COUNT=$(h_count_sum loxilb_ai_pd_prefill_duration_seconds)
+echo "  loxilb_ai_pd_prefill_duration_seconds_count total: $TH2_COUNT"
+check "TH2: loxilb_ai_pd_prefill_duration_seconds observed >= 1 sample (got $TH2_COUNT)" \
+  $([ "${TH2_COUNT:-0}" -ge 1 ] && echo 0 || echo 1)
+
+# TH3: the decode leg was timed at least once (TTFT).
+TH3_COUNT=$(h_count_sum loxilb_ai_pd_decode_ttft_seconds)
+echo "  loxilb_ai_pd_decode_ttft_seconds_count total: $TH3_COUNT"
+check "TH3: loxilb_ai_pd_decode_ttft_seconds observed >= 1 sample (got $TH3_COUNT)" \
+  $([ "${TH3_COUNT:-0}" -ge 1 ] && echo 0 || echo 1)
 
 # TH4: error label filter on loxilb_ai_pd_requests_total (use status label, per R7)
 TH4_HAS_ERROR=$(echo "$H_METRICS" | grep -v '^#' | grep 'loxilb_ai_pd_requests_total' | grep -c 'status="error"\|status="timeout"' 2>/dev/null)
@@ -1230,15 +1248,28 @@ else
   warn "TH4: loxilb_ai_pd_requests_total error/timeout entries present (may be 0 if Phase D skipped)" $([ "${TH4_HAS_ERROR:-0}" -ge 1 ] && echo 0 || echo 1)
 fi
 
-# TH5: per-EP metrics non-zero for all 4 EPs
-TH5_EP_HITS=$(echo "$H_METRICS" | grep -v '^#' | grep 'loxilb_ai_pd_prefill_duration_per_ep_seconds' | grep -c 'endpoint_ip=' 2>/dev/null)
-echo "  Per-EP prefill histogram entries: $TH5_EP_HITS"
-if [ "${TH5_EP_HITS:-0}" -ge 1 ]; then
-  check "TH5: per-EP prefill histogram entries present" 0
-else
-  # Fallback: check LB API shows all 4 EPs
-  TH5_LB=$($hexec llb1 curl -s http://localhost:11111/netlox/v1/config/loadbalancer/all 2>/dev/null)
-  TH5_EP_COUNT=$(echo "$TH5_LB" | python3 -c "
+# TH5: the P/D lifecycle closed end to end, and the control plane holds all 4 EPs.
+#
+# What this replaces: TH5 used to grep loxilb_ai_pd_prefill_duration_per_ep_seconds
+# and count endpoint_ip= label hits. That family has never existed in any build,
+# and no AI P/D family carries an endpoint label at all, so the primary branch
+# was dead from the day it was written -- the LB-config fallback below always
+# scored in its place, reported under the per-EP name. Both halves are now
+# first-class asserts, each under the claim it actually makes.
+
+# TH5a: at least one request ran the whole way through. RecordPDRequest labels a
+# healthy lifecycle phase="complete"/status="success"; every error path carries a
+# different pair, so a run that only ever failed cannot satisfy this.
+TH5A_OK=$(c_label_sum loxilb_ai_pd_requests_total 'phase="complete"' 'status="success"')
+echo "  loxilb_ai_pd_requests_total complete/success total: $TH5A_OK"
+check "TH5a: a P/D request completed end to end (complete/success = $TH5A_OK)" \
+  $([ "${TH5A_OK:-0}" -ge 1 ] && echo 0 || echo 1)
+
+# TH5b: control-plane endpoint inventory. This is a readback of configuration --
+# it says the rule still carries all four endpoints, NOT that traffic reached
+# them. Named for what it proves rather than standing in for a metric claim.
+TH5_LB=$($hexec llb1 curl -s http://localhost:11111/netlox/v1/config/loadbalancer/all 2>/dev/null)
+TH5_EP_COUNT=$(echo "$TH5_LB" | python3 -c "
 import json,sys
 try:
   d=json.load(sys.stdin)
@@ -1251,10 +1282,9 @@ try:
   print(len(found))
 except Exception: print(0)
 " 2>/dev/null)
-  echo "  EP count in LB config: $TH5_EP_COUNT"
-  check "TH5: all 4 EPs present in LB config (fallback for per-EP metrics)" $([ "${TH5_EP_COUNT:-0}" -eq 4 ] && echo 0 || echo 1)
-fi
-
+echo "  EP count in LB config: $TH5_EP_COUNT"
+check "TH5b: all 4 EPs still present in the LB config (control-plane readback)" \
+  $([ "${TH5_EP_COUNT:-0}" -eq 4 ] && echo 0 || echo 1)
 bail_check
 fi  # Phase H
 
