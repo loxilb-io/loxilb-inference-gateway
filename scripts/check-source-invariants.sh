@@ -533,6 +533,32 @@ else
   pass "no workflow invokes the product harness runner"
 fi
 
+# ---------------------------------------------------------------------------
+# A cicd assert may not name a metric family that does not exist.
+#
+# An assert that greps for a family no build exports cannot match: it does not
+# fail, it takes the other branch, silently, forever. cicd/vllm-pd-disagg
+# carried one for two months -- TH5 counted endpoint_ip= labels on a per-EP P/D
+# latency histogram that was specified in the datapath header, stubbed weak,
+# and never implemented on either side. The primary branch was dead from the
+# day it was written and an unrelated control-plane readback in the else arm
+# scored in its place, under the per-EP name, in a CI-gated scenario.
+#
+# The checker carries its own red twin (--self-test), because a gate written
+# against a tree it cannot fail on proves nothing.
+# ---------------------------------------------------------------------------
+if python3 -B scripts/check_cicd_metric_names.py; then
+  :
+else
+  fail "a cicd assert names a metric family that no build exports"
+fi
+
+if python3 -B scripts/check_cicd_metric_names.py --self-test >/dev/null; then
+  pass "cicd metric-name gate can go red (self-test)"
+else
+  fail "cicd metric-name gate self-test: a check cannot go red"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"
