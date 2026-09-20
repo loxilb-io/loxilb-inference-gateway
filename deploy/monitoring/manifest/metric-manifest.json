@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-16T11:09:01+00:00",
-  "source_revision": "53c4993833f82c5315423c78639f5ffcb7e25e09"
+  "generated_at": "2026-09-20T00:29:08+00:00",
+  "source_revision": "f65262bf1b448eb08810dc50733f2c4042826b68"
  },
  "contract": {
   "total": 250,
@@ -4391,7 +4391,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:2274",
+   "source": "api/prometheus/prometheus.go:2284",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -4401,7 +4401,7 @@
      "symbol": "SetConntrackMaxEntries",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 2269,
+     "def_line": 2279,
      "writes": "conntrackMaxGauge",
      "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step"
     },
@@ -4762,7 +4762,7 @@
      "symbol": "RunGetFwRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1738,
+     "def_line": 1757,
      "writes": "fwRuleCount",
      "note": "count of configured firewall rules; 0 is a real answer, not an absence"
     },
@@ -4831,7 +4831,7 @@
      "symbol": "RunGetFwRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1738,
+     "def_line": 1757,
      "writes": "totalDropsByFw",
      "note": "fleet-wide drop total; the per-rule family partitions the same count"
     },
@@ -4901,7 +4901,7 @@
      "symbol": "RunGetFwRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1738,
+     "def_line": 1757,
      "writes": "totalDropsByFwPerRule",
      "note": "two sites, the per-rule delta at :1775 and the reap pass at :1789"
     },
@@ -5103,7 +5103,7 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1889,
+     "def_line": 1904,
      "writes": "ipFilterBlacklistBytes"
     },
     {
@@ -5173,7 +5173,7 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1889,
+     "def_line": 1904,
      "writes": "ipFilterBlacklistPackets",
      "note": "two sites, :1934 for the per-entry delta and :1957 for the reap pass"
     },
@@ -5242,7 +5242,7 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1889,
+     "def_line": 1904,
      "writes": "ipFilterTotalRules"
     },
     {
@@ -5310,7 +5310,7 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1889,
+     "def_line": 1904,
      "writes": "ipFilterWhitelistBytes"
     },
     {
@@ -5380,7 +5380,7 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1889,
+     "def_line": 1904,
      "writes": "ipFilterWhitelistPackets"
     },
     {
@@ -11595,7 +11595,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityConnBlocked"
     },
     {
@@ -11661,7 +11661,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityConnPassed"
     },
     {
@@ -11728,7 +11728,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securitySYNBlocked",
      "note": "read from the DP security-rate maps once per cycle as a delta"
     },
@@ -11795,7 +11795,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securitySYNCookies"
     },
     {
@@ -11861,7 +11861,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securitySYNPassed"
     },
     {
@@ -11928,7 +11928,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityUDPBlocked"
     },
     {
@@ -11994,7 +11994,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityUDPBytesBlocked"
     },
     {
@@ -12058,7 +12058,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityUDPBytesPassed"
     },
     {
@@ -12124,7 +12124,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityUDPPassed"
     },
     {
@@ -12190,7 +12190,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1810,
+     "def_line": 1825,
      "writes": "securityUniqueIPs",
      "note": "a gauge of distinct source addresses seen by the rate limiter in the current window, not a cumulative total"
     },

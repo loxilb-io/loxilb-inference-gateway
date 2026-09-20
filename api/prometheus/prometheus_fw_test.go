@@ -89,3 +89,46 @@ func findLabeledValue(name string, labels map[string]string) float64 {
 	}
 	return -1
 }
+
+// TestCounterDelta pins the arithmetic both cumulative-counter collectors use.
+//
+// The reset case is the one that regressed: RunIPFilterStats charged 0 when a
+// data-plane counter came back lower than the previous sweep, discarding every
+// packet seen since the reset, while RunGetFwRule charged the full current
+// value for the identical input. The table below is the contract they now
+// share - "reset" is the row that told them apart.
+func TestCounterDelta(t *testing.T) {
+	tests := []struct {
+		name string
+		cur  uint64
+		prev uint64
+		seen bool
+		want uint64
+	}{
+		{"first sight charges the whole value", 42, 0, false, 42},
+		{"first sight ignores any stale prev", 42, 99, false, 42},
+		{"steady progress charges the difference", 150, 100, true, 50},
+		{"no progress charges nothing", 100, 100, true, 0},
+		{"reset charges the post-reset count", 7, 5000, true, 7},
+		{"reset to zero charges nothing yet", 0, 5000, true, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := counterDelta(tc.cur, tc.prev, tc.seen); got != tc.want {
+				t.Fatalf("counterDelta(%d, %d, %v) = %d, want %d",
+					tc.cur, tc.prev, tc.seen, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCounterDeltaResetIsNotSilentlyDropped states the defect directly, so the
+// regression is legible without reading the table above: a reset must not be
+// reported as "nothing happened" when packets have in fact been counted.
+func TestCounterDeltaResetIsNotSilentlyDropped(t *testing.T) {
+	const sinceReset = 12
+	if got := counterDelta(sinceReset, 900000, true); got != sinceReset {
+		t.Fatalf("a counter reset lost %d packets: counterDelta returned %d, want %d",
+			sinceReset, got, sinceReset)
+	}
+}
