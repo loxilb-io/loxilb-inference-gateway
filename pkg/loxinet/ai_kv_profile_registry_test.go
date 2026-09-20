@@ -63,7 +63,30 @@ func kvRegistryTestSetup(t *testing.T) string {
 	t.Helper()
 	KvProfileRegistryReset()
 	t.Cleanup(KvProfileRegistryReset)
-	return t.TempDir()
+	return kvTrustedTempDir(t)
+}
+
+// kvTrustedTempDir returns a temp dir the profile registry will accept as
+// trusted, independent of the ambient umask.
+//
+// t.TempDir() creates its numbered subdirectory with os.Mkdir(dir, 0777), so
+// the mode that survives is 0777 &^ umask: 0755 under the usual umask 022,
+// but 0775 under umask 002. The registry refuses a group- or world-writable
+// profile directory on purpose (kvCheckTrustedDirStat), so under umask 002
+// every test that publishes a fixture fails on the directory rather than on
+// the behaviour it means to pin -- and passes again on a host that happens to
+// be set up differently. Hosted CI runners use 022, which is why this only
+// ever bites on a self-hosted machine.
+//
+// Chmod sets the mode directly and is not filtered by umask, so the fixture
+// root is 0700 wherever the test runs.
+func kvTrustedTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatalf("chmod fixture root %s: %v", dir, err)
+	}
+	return dir
 }
 
 // kvWriteChatProfileFixture writes one chat-declaring profile document plus
@@ -108,7 +131,11 @@ func TestKvProfileRegistryTemplateCompileGate(t *testing.T) {
 	}
 	prevGen := kvProfileCurrent().Gen
 
-	badRoot := t.TempDir()
+	// Trusted mode, so this publish is refused for its UNCOMPILABLE TEMPLATE
+	// and not for a group-writable directory: under umask 002 the permission
+	// check fired first and the refusal assertion below passed without ever
+	// exercising the template gate it names.
+	badRoot := kvTrustedTempDir(t)
 	kvWriteChatProfileFixture(t, badRoot, "p-chat", "acme/reg-chat",
 		[]byte("tok-chat"), []byte("{% bogus %}"))
 	if err := KvProfileRegistryLoadFrom(badRoot); err == nil {
@@ -118,7 +145,7 @@ func TestKvProfileRegistryTemplateCompileGate(t *testing.T) {
 		t.Fatal("failed publish must leave the previous generation serving")
 	}
 
-	goodRoot := t.TempDir()
+	goodRoot := kvTrustedTempDir(t)
 	kvWriteChatProfileFixture(t, goodRoot, "p-chat", "acme/reg-chat",
 		[]byte("tok-chat"), []byte("{{ messages[0].content }}"))
 	if err := KvProfileRegistryLoadFrom(goodRoot); err != nil {
