@@ -1565,6 +1565,140 @@ echo "#########################################"
 echo "PHASE J — TIER 0 CONVERSATION STICKINESS"
 echo "#########################################"
 
+# ── metric helper for this phase ─────────────────────────────────────────────
+#
+# Phase H deliberately scrapes ONCE and reads every assert out of that one blob,
+# so all of its claims describe a single consistent snapshot. This phase needs
+# the opposite: a fresh read on each side of each drive, because what is being
+# asserted is a delta across traffic. Hence its own helper.
+#
+# Fragments are matched independently, so an assert does not depend on the order
+# the exposition format serialises a label set in. "unreadable" is NOT zero: an
+# absent family legitimately reads 0, and so does a scrape that never completed.
+pd_metric() {
+  local fam="$1"; shift
+  local body
+  body=$($hexec llb1 curl -s --max-time 8 http://localhost:11111/netlox/v1/metrics 2>/dev/null)
+  case "$body" in
+    *loxilb_*) ;;
+    *) echo "unreadable"; return ;;
+  esac
+  printf '%s\n' "$body" | awk -v fam="$fam" -v a="${1:-}" -v b="${2:-}" '
+    $0 ~ "^" fam "([{ ]|$)" {
+      if (a != "" && index($0, a) == 0) next
+      if (b != "" && index($0, b) == 0) next
+      v = $NF; if (v + 0 == v) s += v
+    }
+    END { printf "%.0f", s + 0 }'
+}
+
+# pd_delta <label> <want> <before> <after>
+pd_delta() {
+  local label="$1" want="$2" before="$3" after="$4"
+  if [ "$before" = "unreadable" ] || [ "$after" = "unreadable" ]; then
+    echo "  FAIL: $label — LOST MEASUREMENT: a /metrics scrape did not complete"
+    echo "        (before='$before' after='$after'), so the delta was never taken"
+    code=1
+    return
+  fi
+  local got=$(( after - before ))
+  if [ "$got" -eq "$want" ]; then
+    echo "  PASS: $label (delta=$got)"
+  else
+    echo "  FAIL: $label — expected delta $want, got $got (before=$before after=$after)"
+    code=1
+  fi
+}
+
+# pd_drive <count> <header-args...> -- <json-extra>
+# Serial requests to the 2P+2D P/D port. Serial, not parallel: the pin is
+# installed by the request that misses, and a second request racing it would
+# miss as well and make the hit count a timing question.
+pd_drive() {
+  local n="$1" conv="$2" user="$3" i body
+  for i in $(seq 1 "$n"); do
+    if [ -n "$user" ]; then
+      body="{\"model\":\"Qwen/Qwen3-0.6B\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"max_tokens\":8,\"user\":\"$user\"}"
+    else
+      body='{"model":"Qwen/Qwen3-0.6B","messages":[{"role":"user","content":"hello"}],"max_tokens":8}'
+    fi
+    if [ -n "$conv" ]; then
+      $dexec l3h1 curl -sk --cacert /tmp/minica.pem \
+        -H "X-Conversation-Id: ${conv}" \
+        https://10.10.10.254:2022/v1/chat/completions \
+        -H "Content-Type: application/json" -d "$body" > /dev/null 2>&1
+    else
+      $dexec l3h1 curl -sk --cacert /tmp/minica.pem \
+        https://10.10.10.254:2022/v1/chat/completions \
+        -H "Content-Type: application/json" -d "$body" > /dev/null 2>&1
+    fi
+    sleep 1
+  done
+  sleep 2
+}
+
+# ── TJ0: Tier-0 hits counted at the decision, not inferred from the backends ──
+#
+# TJ1-TJ3 read stickiness off backend log line counts, which is a shape more
+# than one router could produce and which flaps enough that the header arm is
+# only a warn. loxilb_ai_pd_session_hits_total answers the same question where
+# the decision is made, and it answers it exactly: a hit is charged only when a
+# session key is REUSED, so N serial requests over K distinct keys charge
+# exactly N-K.
+#
+# 🚨 Every key below carries a per-run nonce, and that is load-bearing, not
+# hygiene. The session table's idle TTL is 300s, so a fixed key is already
+# bound when the phase is re-run inside five minutes: the first request stops
+# being a miss and N-K quietly becomes N. This oracle was written with fixed
+# keys, passed on a freshly configured gateway, and went red on the re-run --
+# the assert was true of the first run rather than of the product. A QA
+# engineer running this twice is the case that has to hold.
+#
+# The three arms differ in ONE field each: how many distinct keys carry the
+# same request count (TJ0a vs TJ0b), and which carrier supplies the key
+# (TJ0b header vs TJ0c JSON body).
+J_RUN="$(date +%s)$$"
+echo "TJ0: Tier-0 session-hit accounting (run nonce ${J_RUN})"
+
+# TJ0a — control: same request count, every key distinct, so nothing is reused.
+# The zero only means something if the traffic reached the router at all, so
+# the whole tier-selection family is read alongside: it must move by exactly 5.
+# A dead data plane would satisfy a bare zero perfectly.
+J0A_H0=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0A_T0=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
+J0A_AN0=$(pd_metric loxilb_ai_pd_tier_selected_total)
+for i in 1 2 3 4 5; do pd_drive 1 "conv-solo-${J_RUN}-${i}" ""; done
+J0A_H1=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0A_T1=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
+J0A_AN1=$(pd_metric loxilb_ai_pd_tier_selected_total)
+pd_delta "TJ0a: drive shape — 5 prefill selections happened" 5 "$J0A_AN0" "$J0A_AN1"
+pd_delta "TJ0a: 5 requests over 5 distinct keys charge no hit" 0 "$J0A_H0" "$J0A_H1"
+pd_delta "TJ0a: and select no tier0"                          0 "$J0A_T0" "$J0A_T1"
+
+# TJ0b — the header carrier: same 5 requests, one key. 1 miss + 4 reuses.
+J0B_H0=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0B_T0=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
+pd_drive 5 "conv-reuse-${J_RUN}" ""
+J0B_H1=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0B_T1=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
+pd_delta "TJ0b: X-Conversation-Id reuse charges N-K = 4 hits" 4 "$J0B_H0" "$J0B_H1"
+# The hit counter and the tier-0 selection counter are written from the same
+# branch, one after the other. Asserting that the pair moves together is what
+# catches an edit that returns Tier-0 without charging the hit, or charges the
+# hit on a path that then falls through to another tier.
+pd_delta "TJ0b: tier0 selections move in lockstep with the hits" 4 "$J0B_T0" "$J0B_T1"
+
+# TJ0c — the JSON body carrier. Same oracle, different field supplies the key.
+J0C_H0=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0C_T0=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
+pd_drive 5 "" "user-reuse-${J_RUN}"
+J0C_H1=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0C_T1=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
+pd_delta "TJ0c: JSON user reuse charges N-K = 4 hits" 4 "$J0C_H0" "$J0C_H1"
+pd_delta "TJ0c: tier0 selections move in lockstep with the hits" 4 "$J0C_T0" "$J0C_T1"
+
+sleep 2
+
 # TJ1: 5 requests with user_id=alice — all must hit the same prefill EP
 echo "TJ1: Testing user_id=alice stickiness on port 2022..."
 J_EP1_START=$($dexec l3ep1 wc -l /tmp/vllm-server1.log 2>/dev/null | awk '{print $1}')
