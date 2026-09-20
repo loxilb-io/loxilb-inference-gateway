@@ -148,6 +148,13 @@ _sr_run() {
   local dir=$1 log=$2 cmd=$3
   : >> "$log"
   local from; from=$(wc -c < "$log")
+  # Name the log before the step runs, not after. Because output is replayed
+  # only once the step RETURNS (see above), a long step shows the console
+  # nothing at all, and silence is indistinguishable from a hang - the reason
+  # a caller cannot tell a twenty-minute scenario from a wedged one. This line
+  # costs nothing, reintroduces no pipe for a daemon to hold, and gives the
+  # caller something to follow while waiting.
+  echo "    (running; follow with: tail -f $log)"
   timeout --foreground "$SCENARIO_TIMEOUT" \
     bash -c "cd '$dir' && $cmd" >> "$log" 2>&1
   _SR_RC=$?

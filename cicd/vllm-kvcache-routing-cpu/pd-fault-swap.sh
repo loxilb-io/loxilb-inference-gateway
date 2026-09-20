@@ -84,17 +84,56 @@ port_kill() {
   return 0
 }
 
+# Children of $1, read from /proc rather than via pgrep: the comment above
+# notes pgrep can be absent, and a reaper that silently finds nothing is the
+# failure mode being fixed here.
+kv_children() {
+  local parent=$1 d line ppid
+  for d in /proc/[0-9]*; do
+    [ -r "$d/stat" ] || continue
+    read -r line < "$d/stat" 2>/dev/null || continue
+    # "pid (comm) state ppid ...". comm can contain spaces and parens, so cut
+    # after the LAST ") " rather than counting whitespace fields. Done with
+    # parameter expansion only: this runs once per process in /proc and is
+    # reached for every kill, so forking sed+cut here costs thousands of
+    # processes per run.
+    line=${line##*') '}
+    line=${line#* }
+    ppid=${line%% *}
+    [ "$ppid" = "$parent" ] && echo "${d#/proc/}"
+  done
+}
+
+
+# Kill a pid and everything under it, depth first. By PARENTAGE, never by
+# name: `ip netns exec` shares the host pid namespace, so a name match would
+# reap other scenarios' stubs.
+kv_kill_tree() {
+  local pid=$1 c
+  for c in $(kv_children "$pid"); do kv_kill_tree "$c"; done
+  kill "$pid" 2>/dev/null
+  for _ in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.2; done
+  kill -9 "$pid" 2>/dev/null
+}
+
 stub_kill() {
   local pid
   if [ -f "$PIDFILE" ]; then
     pid="$(cat "$PIDFILE" 2>/dev/null)"
+    # The recorded pid is NOT the stub. `nse` is a shell function, so
+    # `nse python3 ... &` backgrounds a SUBSHELL and $! is the subshell;
+    # under it sit `ip netns exec` and only then python3. Killing the
+    # recorded pid alone leaves the stub reparented to init, and the
+    # port_kill() below cannot see it because a `refuse` stub never binds
+    # the port it is being checked for -- so the teardown reported success
+    # while nine stubs accumulated across runs. Kill the whole tree.
     if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null
-      for _ in 1 2 3 4 5 6 7 8 9 10; do
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 0.2
-      done
-      kill -9 "$pid" 2>/dev/null
+      kv_kill_tree "$pid"
+    fi
+    # Say so rather than reporting a clean state that is not clean.
+    if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
+      echo "FATAL: $EP stub tree rooted at $pid survived teardown" >&2
+      return 1
     fi
     rm -f "$PIDFILE"
   fi

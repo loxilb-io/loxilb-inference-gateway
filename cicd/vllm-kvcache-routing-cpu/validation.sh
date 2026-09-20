@@ -1274,7 +1274,18 @@ assert "(spill control) two SEQUENTIAL requests never spill: spills +0 on every 
 # a normal 200. `hang` would also hold the connection but ends in a zero-byte close, which moves the
 # decode/prefill death counters — a fault, when what this arm needs is load.
 SPILL_HOLD_SEC=10
-STUB_DELAY="${SPILL_HOLD_SEC}" "${CFGDIR}/pd-fault-swap.sh" "$(netns_for_ep_ip "${EP_A_IP}")" slowok \
+# `sudo`, and the env assignment INSIDE it. pd-fault-swap.sh enters the netns
+# with a bare `ip netns exec`, so it only works when it is already root: every
+# other call site in this file runs it as `sudo ${PD_SWAP} ...`, and this one
+# did not, so the swap answered "setting the network namespace failed:
+# Operation not permitted" and the slowok stub never started. The spill arm
+# then measured an EP that was never held and reported a product failure that
+# had not happened.
+#
+# STUB_DELAY has to ride inside sudo: sudo does not pass the caller's
+# environment through, so leaving the assignment outside would start the stub
+# with the default hold and break the arm a second way, silently.
+sudo STUB_DELAY="${SPILL_HOLD_SEC}" "${CFGDIR}/pd-fault-swap.sh" "$(netns_for_ep_ip "${EP_A_IP}")" slowok \
     | sed 's/^/  /' || true
 sp_d_s0="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_A_IDX}")"
 sp_d_s2="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_B_IDX}")"
@@ -1302,7 +1313,13 @@ sp_d_s4a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_C_IDX}")"
 sp_d_h0a="$(tier15_hits "${EP_A_IDX}")"; sp_d_h2a="$(tier15_hits "${EP_B_IDX}")"; sp_d_h4a="$(tier15_hits "${EP_C_IDX}")"
 sp_d_seed_after="$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total")"
 wait "${spill_hold_pid}" 2>/dev/null || true
-"${CFGDIR}/pd-fault-swap.sh" "$(netns_for_ep_ip "${EP_A_IP}")" off | sed 's/^/  /' || true
+# sudo here for the same reason as the slowok above, and this half matters
+# more than it looks: while the set was silently failing, this restore was a
+# no-op that could not be seen failing. Once the set works, a restore that
+# does not leaves EP-A answering with the 10s slowok delay for the REST of
+# the run - which reads as a latency regression (median 10001ms against a
+# 2000ms ceiling) and drags the whole scenario past the runner's budget.
+sudo "${CFGDIR}/pd-fault-swap.sh" "$(netns_for_ep_ip "${EP_A_IP}")" off | sed 's/^/  /' || true
 echo "  drive: holder selected EP-A=${sp_held} (hits{${EP_A_IDX}} ${sp_d_h0}->${sp_d_h0_held}) ; spills{0,2,4} ${sp_d_s0}->${sp_d_s0a} ${sp_d_s2}->${sp_d_s2a} ${sp_d_s4}->${sp_d_s4a} (want +0/+1/+0) ; hits{0,2,4} ${sp_d_h0}->${sp_d_h0a} ${sp_d_h2}->${sp_d_h2a} ${sp_d_h4}->${sp_d_h4a} (want +1/+1/+0) ; cold_seeds ${sp_d_seed_before}->${sp_d_seed_after} (want +0)"
 sp_drv_ok=$([[ "${sp_held}" == 1 && \
                "${sp_d_s0a}" -eq "${sp_d_s0}" && $((sp_d_s2a - sp_d_s2)) -eq 1 && "${sp_d_s4a}" -eq "${sp_d_s4}" && \
