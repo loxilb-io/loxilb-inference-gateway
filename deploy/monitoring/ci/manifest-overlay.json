@@ -1765,7 +1765,7 @@
    "loxilb_security_syn_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securitySYNBlocked", "note": "read from the DP security-rate maps once per cycle as a delta" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securitySYNBlocked", "note": "read from the DP security-rate maps once per cycle as a delta" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1865. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1773,7 +1773,7 @@
    "loxilb_security_syn_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securitySYNPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securitySYNPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1866. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1781,7 +1781,7 @@
    "loxilb_security_syn_cookies_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securitySYNCookies" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securitySYNCookies" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1867. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1789,7 +1789,7 @@
    "loxilb_security_conn_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityConnBlocked" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityConnBlocked" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1868. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1797,7 +1797,7 @@
    "loxilb_security_conn_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityConnPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityConnPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1869. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1805,7 +1805,7 @@
    "loxilb_security_udp_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityUDPBlocked" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityUDPBlocked" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1870. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1813,7 +1813,7 @@
    "loxilb_security_udp_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityUDPPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityUDPPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1871. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1821,7 +1821,7 @@
    "loxilb_security_udp_bytes_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityUDPBytesBlocked" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityUDPBytesBlocked" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1872. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1829,7 +1829,7 @@
    "loxilb_security_udp_bytes_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityUDPBytesPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityUDPBytesPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1873. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1837,7 +1837,7 @@
    "loxilb_security_unique_ips": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1810, "writes": "securityUniqueIPs", "note": "a gauge of distinct source addresses seen by the rate limiter in the current window, not a cumulative total" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1825, "writes": "securityUniqueIPs", "note": "a gauge of distinct source addresses seen by the rate limiter in the current window, not a cumulative total" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1876. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1846,7 +1846,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one blacklist entry must exist: children are keyed per filter entry, so an unconfigured Gateway exposes none.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1889, "writes": "ipFilterBlacklistPackets", "note": "two sites, :1934 for the per-entry delta and :1957 for the reap pass" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1904, "writes": "ipFilterBlacklistPackets", "note": "two sites, :1934 for the per-entry delta and :1957 for the reap pass" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1934 and :1957. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1855,7 +1855,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one blacklist entry must exist; same per-entry children as the packets counter.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1889, "writes": "ipFilterBlacklistBytes" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1904, "writes": "ipFilterBlacklistBytes" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1935 and :1958. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1864,7 +1864,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one whitelist entry must exist.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1889, "writes": "ipFilterWhitelistPackets" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1904, "writes": "ipFilterWhitelistPackets" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1938 and :1960. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1873,7 +1873,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one whitelist entry must exist.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1889, "writes": "ipFilterWhitelistBytes" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1904, "writes": "ipFilterWhitelistBytes" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1939 and :1961. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1882,7 +1882,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "the gauge's children are per filter kind and are only set for kinds the Gateway actually has, so with no ipfilter configuration there is nothing to report.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1889, "writes": "ipFilterTotalRules" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1904, "writes": "ipFilterTotalRules" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1967 and :1968. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1922,7 +1922,7 @@
    "loxilb_firewall_rules": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1738, "writes": "fwRuleCount", "note": "count of configured firewall rules; 0 is a real answer, not an absence" },
+     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1757, "writes": "fwRuleCount", "note": "count of configured firewall rules; 0 is a real answer, not an absence" },
      { "tail": "prom-init-fwrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1796. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1930,7 +1930,7 @@
    "loxilb_fw_drop_packets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1738, "writes": "totalDropsByFw", "note": "fleet-wide drop total; the per-rule family partitions the same count" },
+     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1757, "writes": "totalDropsByFw", "note": "fleet-wide drop total; the per-rule family partitions the same count" },
      { "tail": "prom-init-fwrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1776. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1939,7 +1939,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a configured firewall rule that actually dropped a packet: children are per rule, so both the rule and a matching packet are required.",
     "writer_sources": [
-     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1738, "writes": "totalDropsByFwPerRule", "note": "two sites, the per-rule delta at :1775 and the reap pass at :1789" },
+     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1757, "writes": "totalDropsByFwPerRule", "note": "two sites, the per-rule delta at :1775 and the reap pass at :1789" },
      { "tail": "prom-init-fwrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1775 and :1789. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -1980,7 +1980,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an eBPF datapath that reports a positive LLB_CT_MAP_ENTRIES: the gauge is registered lazily on the first positive value, so on a build with no datapath capacity the family is absent -- deliberately, because a fake 0 would make every utilization ratio divide by zero.",
     "writer_sources": [
-     { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2269, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
+     { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2279, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
      { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 628, "call_line": 708, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
      { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 561, "calls": "DpEbpfInit" },
      { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }

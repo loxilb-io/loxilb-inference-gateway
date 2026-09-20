@@ -1735,6 +1735,25 @@ func parseFwCounterPackets(counter string) (uint64, bool) {
 	return v, true
 }
 
+// counterDelta returns the increment to charge for a cumulative data-plane
+// counter, given the value recorded on the previous sweep.
+//
+// Data-plane counters are cumulative, but they can RESET to a lower value
+// while the rule stays configured - a datapath reload re-programs the maps
+// without the control plane ever seeing a rule delete. After such a reset the
+// packets counted since it are exactly the current value, so that is what has
+// to be charged. Reading the decrease as "no progress" silently discards every
+// packet seen since the reset.
+//
+// seen==false is first sight, which needs the same arithmetic: nothing has
+// been charged for this key yet, so the whole current value is owed.
+func counterDelta(cur, prev uint64, seen bool) uint64 {
+	if seen && cur >= prev {
+		return cur - prev
+	}
+	return cur
+}
+
 func RunGetFwRule(ctx context.Context) {
 	safeGoroutineOperation(func(ctx context.Context) error {
 		if hooks == nil {
@@ -1765,12 +1784,8 @@ func RunGetFwRule(ctx context.Context) {
 			currentRules[ruleID] = true
 			totalDropsCumulative += drops
 
-			delta := drops
-			if prev, seen := prevFwRuleDrops[ruleID]; seen && drops >= prev {
-				delta = drops - prev
-			}
-			// On first sight or counter reset (rule re-created), the full
-			// current value is the delta
+			prev, seen := prevFwRuleDrops[ruleID]
+			delta := counterDelta(drops, prev, seen)
 			if delta > 0 {
 				totalDropsByFwPerRule.WithLabelValues(ruleID).Add(float64(delta))
 				totalDropsByFw.Add(float64(delta))
@@ -1908,20 +1923,15 @@ func RunIPFilterStats(ctx context.Context) {
 			filterKey := fmt.Sprintf("%s|%s|%d|%d|", entry.FilterType, cidr, entry.Priority, entry.Zone)
 			currentFilters[filterKey] = true
 
-			// Calculate deltas (eBPF counters are cumulative)
-			var deltaPackets, deltaBytes uint64
-			if prevStats, exists := prevIPFilterStats[filterKey]; exists {
-				if entry.Packets >= prevStats.Packets {
-					deltaPackets = entry.Packets - prevStats.Packets
-				}
-				if entry.Bytes >= prevStats.Bytes {
-					deltaBytes = entry.Bytes - prevStats.Bytes
-				}
-			} else {
-				// First time seeing this rule, use current values as delta
-				deltaPackets = entry.Packets
-				deltaBytes = entry.Bytes
-			}
+			// Calculate deltas (eBPF counters are cumulative). This used to
+			// charge 0 when the counter came back LOWER than the last sweep,
+			// which threw away every packet counted since the reset, while the
+			// firewall collector six hundred lines up charged the full current
+			// value for the identical situation. One helper now, so the two
+			// cannot drift apart again.
+			prevStats, exists := prevIPFilterStats[filterKey]
+			deltaPackets := counterDelta(entry.Packets, prevStats.Packets, exists)
+			deltaBytes := counterDelta(entry.Bytes, prevStats.Bytes, exists)
 
 			// Store current stats for next cycle
 			prevIPFilterStats[filterKey] = struct {
