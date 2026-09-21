@@ -2600,14 +2600,49 @@ h2l_tokens() {
 
 # gw_rss_kb -- the gateway's resident set, from the kernel rather than from
 # anything the binary reports about itself.
+gw_pid() {
+  docker exec llb1 sh -c \
+    'for p in /proc/[0-9]*; do
+       case "$(cat $p/comm 2>/dev/null)" in loxilb) echo ${p#/proc/}; break;; esac
+     done' 2>/dev/null | head -1
+}
+
 gw_rss_kb() {
-  local pid
-  pid=$(docker exec llb1 sh -c \
-        'for p in /proc/[0-9]*; do
-           case "$(cat $p/comm 2>/dev/null)" in loxilb) echo ${p#/proc/}; break;; esac
-         done' 2>/dev/null | head -1)
+  local pid; pid=$(gw_pid)
   [ -n "$pid" ] || { echo unreadable; return; }
   docker exec llb1 sh -c "awk '/VmRSS/{print \$2}' /proc/$pid/status" 2>/dev/null |
+    tr -dc '0-9'
+}
+
+# gw_vmdata_kb -- the process's DATA segment, which is where a malloc leak has
+# to end up and the only one of these numbers that behaves like a measurement.
+#
+# VmRSS counts resident PAGES, so it answers a different question than "how
+# much has this process allocated and not given back":
+#
+#   * it includes ~52 MB of file-backed text and rodata, nothing to do with
+#     the heap;
+#   * the Go runtime scavenger returns pages on its own schedule, so RSS falls
+#     by megabytes between two samples with no allocation involved;
+#   * and a leak served from glibc chunks that are ALREADY resident does not
+#     move it at all -- pages the kernel has counted once get reused.
+#
+# VmData only moves when the allocator has to extend, and is never scavenged
+# back. Measured on the bed against a deliberate 1 kB-per-stream leak compiled
+# into this very deny path, driven in blocks of 1500 streams:
+#
+#   leaked build   VmData +1544 +1548 +1552 +1544 kB per 1500 streams
+#                  = 1.03 kB/stream recovered against 1.00 kB/stream injected
+#   stock build    VmData +28 kB TOTAL over 15000 streams
+#
+# A 550x separation, and the instrument recovers the leak RATE to within 3%.
+# Over the same traffic VmRSS on the leaked build read +3840, then +3076, then
+# +5544 kB -- it moves, but neither monotonically nor proportionally, which is
+# why no threshold over it was going to be both sensitive and stable.
+gw_vmdata_kb() {
+  local pid; pid=$(gw_pid)
+  [ -n "$pid" ] || { echo unreadable; return; }
+  docker exec llb1 sh -c "awk '/VmData/{print \$2}' /proc/$pid/status" 2>/dev/null |
     tr -dc '0-9'
 }
 
@@ -2742,27 +2777,77 @@ echo "             climbing with the stream count."
 # is to stop assuming the precondition and start PROVING it -- drive until two
 # consecutive rounds are quiet, then measure.
 #
-# The slope ceiling below is the worst settled measurement (+80 kB) with ~5x
-# for allocator noise. At 900 streams it resolves ~0.43 kB/stream, which is
-# SHARPER than the 3-round version's ~1 kB/stream, not looser -- the case
-# gained sensitivity by refusing to measure warm-up.
+# 🚨 AND THEN IT SCORED THE WRONG NUMBER. Proving the process had SETTLED
+# was the right fix to the version above, but the reading taken afterwards was
+# still VmRSS, and VmRSS cannot answer this question at all -- see
+# gw_vmdata_kb for the measurement that shows it. Nine hosted-runner samples
+# of this case, every one on a settled process and none on a branch that
+# touched the datapath:
 #
-# 🚨 Still stated plainly: this rules out a leaked per-stream STRUCTURE
-# (kilobytes each -- 2 kB/stream would read as +1800 kB, ~4.7x the ceiling).
-# The deny BODY alone is a couple of hundred bytes and would not trip it, so
-# the body release stays covered by the drive-shape assertion -- every stream
-# really was refused and reset with its body still queued -- and by the
-# gateway still serving afterwards.
+#   passed  +52  +68  +152  +220  +264  +292 kB / 900 streams
+#   failed  +540  +636  +744 kB / 900 streams        ceiling 384
+#
+# The ceiling sat INSIDE its own noise band, so the verdict was decided by
+# whether a lump landed in the window. Three pull requests were turned red by
+# it. Raising the number would only have moved the coin-flip.
+#
+# The instrument is now the DATA segment, because it does not move for reasons
+# that have nothing to do with allocation. In the same run where VmRSS moved
+# -916 kB, VmData moved +4. That is what fixes the flake, and it fixes it on
+# principle rather than by widening a band.
+#
+# 🚨 WHAT THIS CASE STILL CANNOT DO, MEASURED RATHER THAN ASSUMED.
+#
+# A 1 kB-per-stream leak was compiled into this deny path -- malloc + memset,
+# the pointer published to a volatile sink so the optimiser could not drop it,
+# the symbol verified present in the shipped binary -- and the suite run:
+#
+#   1200 denied streams = 1.2 MB leaked   VmData moved +4 kB.  The case PASSED.
+#
+# It is not the instrument. Driven against a FRESHLY configured gateway the
+# very same build separates cleanly:
+#
+#   leaked build   VmData +1544 +1548 +1552 +1544 kB per 1500 streams
+#                  = 1.03 kB/stream recovered against 1.00 kB/stream injected
+#   stock build    VmData +28 kB TOTAL over 15000 streams
+#
+# The difference is WHERE in the suite this case runs. By the time it executes,
+# ~500 assertions have built a multi-megabyte free pool inside the allocator,
+# and a leak of about a megabyte is served from chunks that are already mapped.
+# Nothing extends, so nothing moves -- and that absorption applies to VmRSS and
+# VmData alike. The old "+1024 kB catches a 2 kB/stream structure" arithmetic
+# never held at this position either; it was arithmetic, not a measurement.
+#
+# So what this case actually holds down is: every stream really was refused and
+# reset with its body still queued, the gateway still serves HTTP/2 afterwards,
+# and the data segment is not growing at the MEGABYTE scale. That is worth
+# having and it is stated here rather than dressed up as leak detection.
+#
+# Catching the kilobyte-per-stream class needs one of two things, both of which
+# are decisions rather than a threshold:
+#   * allocator IN-USE bytes (mallinfo2 / malloc_info on a debug endpoint),
+#     which is immune to the free pool and is a product change; or
+#   * a drive long enough to exhaust that pool -- tens of thousands of streams,
+#     which is minutes of runtime and belongs behind an opt-in flag.
+#
+# The per-round series is printed on pass and on fail -- without it neither
+# verdict was interpretable, which is why nobody could say whether any of
+# those CI failures was a leak. VmRSS is printed beside it as a diagnostic and
+# is deliberately NOT scored.
+#
+# The deny BODY alone is a couple of hundred bytes; the body release stays
+# covered by the drive-shape assertion -- every stream really was refused and
+# reset with its body still queued -- and by the gateway still serving after.
 #
 # An UNSETTLED run is a failed MEASUREMENT, not a detected leak, and says so.
-# It is not quietly passed: an oracle that cannot obtain its reading has not
-# shown the resident set is flat.
+# So is a round that could not be read, and a series shorter than the rounds
+# actually driven: an oracle that cannot obtain its reading has shown nothing.
 h2l_tokens "H2-LIFE-003"
 H2L_SETTLE_KB=64        # a round this quiet counts as settled
 H2L_SETTLE_NEED=2       # consecutive quiet rounds required
 H2L_WARM_CAP=30         # give up after this many (cold bed needed 13)
 H2L_MEAS_ROUNDS=6       # scored rounds = 900 streams
-H2L_SLOPE_KB=384        # ceiling over those 900 streams
+H2L_DATA_KB=128         # ceiling on VmData growth over those 900 streams
 H2L_DENY_OK=1
 H2L_DENY_WHY=""
 H2L_ROUNDS=0
@@ -2783,11 +2868,11 @@ h2l_round_drive() {
 # Warm-up -- drive until the resident set goes quiet. Growth here is NOT
 # scored; the point is only to reach a state where growth means something.
 H2L_STREAK=0
-H2L_PREV=$(gw_rss_kb)
+H2L_PREV=$(gw_vmdata_kb)
 while [ "$H2L_ROUNDS" -lt "$H2L_WARM_CAP" ]; do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
   h2l_round_drive
-  H2L_NOW=$(gw_rss_kb)
+  H2L_NOW=$(gw_vmdata_kb)
   if [ "$H2L_PREV" = unreadable ] || [ -z "$H2L_NOW" ]; then break; fi
   H2L_D=$(( H2L_NOW - H2L_PREV ))
   H2L_PREV=$H2L_NOW
@@ -2800,12 +2885,32 @@ while [ "$H2L_ROUNDS" -lt "$H2L_WARM_CAP" ]; do
 done
 
 # Measurement -- the scored rounds, on a process that has proven it is quiet.
+H2L_DATA0=$(gw_vmdata_kb)
 H2L_RSS0=$(gw_rss_kb)
+H2L_DELTAS=""
+H2L_READ_OK=1
+h2l_prev=$H2L_DATA0
+if [ "$H2L_DATA0" = unreadable ] || [ -z "$H2L_DATA0" ]; then H2L_READ_OK=0; fi
 for h2l_m in $(seq 1 "$H2L_MEAS_ROUNDS"); do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
   h2l_round_drive
+  h2l_now=$(gw_vmdata_kb)
+  if [ "$h2l_now" = unreadable ] || [ -z "$h2l_now" ]; then
+    H2L_READ_OK=0
+    continue
+  fi
+  if [ "$H2L_READ_OK" = 1 ]; then
+    H2L_DELTAS="$H2L_DELTAS $(( h2l_now - h2l_prev ))"
+  fi
+  h2l_prev=$h2l_now
 done
+H2L_DATA3=$h2l_prev
 H2L_RSS3=$(gw_rss_kb)
+
+# A series shorter than the rounds actually driven is a different claim --
+# silently a weaker one -- and an empty one sums to zero and reads as flat.
+H2L_NDELTA=$(printf '%s\n' $H2L_DELTAS | awk '$0 != "" { n++ } END { printf "%d", n + 0 }')
+if [ "$H2L_NDELTA" -ne "$H2L_MEAS_ROUNDS" ]; then H2L_READ_OK=0; fi
 H2L_STREAMS=$(( H2L_ROUNDS * 150 ))
 note_case "H2-LIFE-003"
 if [ "$H2L_DENY_OK" = 1 ]; then
@@ -2817,33 +2922,38 @@ else
   echo "         ($H2L_DENY_WHY)"
   FAIL=$((FAIL + 1))
 fi
-if [ "$H2L_RSS0" = unreadable ] || [ -z "$H2L_RSS3" ]; then
+if [ "$H2L_READ_OK" != 1 ]; then
   note_case "H2-LIFE-003"
-  echo "  [FAIL] H2-LIFE-003 - the gateway's resident set is unreadable; that is not"
-  echo "         evidence of a flat one"
+  echo "  [FAIL] H2-LIFE-003 - the data segment was readable for only $H2L_NDELTA of the $H2L_MEAS_ROUNDS"
+  echo "         scored rounds, so growth was never measured over the traffic this case"
+  echo "         claims to have driven. That is not evidence of a flat one"
   FAIL=$((FAIL + 1))
 else
-  H2L_GROW=$(( H2L_RSS3 - H2L_RSS0 ))
+  H2L_GROW=$(( H2L_DATA3 - H2L_DATA0 ))
+  H2L_RSSGROW=$(( ${H2L_RSS3:-0} - ${H2L_RSS0:-0} ))
   H2L_MEAS_STREAMS=$(( H2L_MEAS_ROUNDS * 150 ))
   note_case "H2-LIFE-003"
+  echo "         per-round VmData growth (kB, 150 streams each):$H2L_DELTAS"
+  echo "         VmData +${H2L_GROW} kB over $H2L_MEAS_STREAMS streams; VmRSS moved ${H2L_RSSGROW} kB (diagnostic, not scored)"
   if [ "$H2L_STREAK" -lt "$H2L_SETTLE_NEED" ]; then
     # Not a leak verdict. The oracle never reached the state in which its
-    # reading means anything, so it has nothing to report about flatness --
-    # and an unobtainable measurement is not evidence of a flat resident set
-    # any more than an unreadable one is.
-    echo "  [FAIL] H2-LIFE-003 - the resident set never settled: $H2L_WARM_CAP warm-up"
+    # reading means anything, so it has nothing to report about flatness.
+    echo "  [FAIL] H2-LIFE-003 - the data segment never settled: $H2L_WARM_CAP warm-up"
     echo "         rounds ($(( H2L_WARM_CAP * 150 )) streams) without $H2L_SETTLE_NEED consecutive rounds"
     echo "         under ${H2L_SETTLE_KB} kB. That is a failed MEASUREMENT, not a detected leak --"
-    echo "         the slope below was never measured on a quiet process"
+    echo "         the growth below was never measured on a quiet process"
     FAIL=$((FAIL + 1))
-  elif [ "$H2L_GROW" -le "$H2L_SLOPE_KB" ]; then
-    echo "  [PASS] H2-LIFE-003 resident set flat across $H2L_MEAS_STREAMS reset streams on a settled"
-    echo "         process (+${H2L_GROW} kB, budget ${H2L_SLOPE_KB} kB; settled after $(( H2L_ROUNDS - H2L_MEAS_ROUNDS )) warm-up rounds)"
+  elif [ "$H2L_GROW" -le "$H2L_DATA_KB" ]; then
+    echo "  [PASS] H2-LIFE-003 data segment flat across $H2L_MEAS_STREAMS reset streams on a settled"
+    echo "         process (+${H2L_GROW} kB, ceiling ${H2L_DATA_KB} kB; settled after $(( H2L_ROUNDS - H2L_MEAS_ROUNDS )) warm-up rounds)."
+    echo "         NOTE: bounds MEGABYTE-scale growth only -- the allocator free pool this"
+    echo "         late in the suite absorbs a kilobyte-per-stream leak; see the header"
     PASS=$((PASS + 1))
   else
-    echo "  [FAIL] H2-LIFE-003 - resident set grew +${H2L_GROW} kB over $H2L_MEAS_STREAMS reset streams"
-    echo "         on a process that had already settled (budget ${H2L_SLOPE_KB} kB). Warm-up is"
-    echo "         excluded by construction, so this is slope, not start-up cost"
+    echo "  [FAIL] H2-LIFE-003 - the data segment grew +${H2L_GROW} kB over $H2L_MEAS_STREAMS reset"
+    echo "         streams on a process that had already settled (ceiling ${H2L_DATA_KB} kB; about"
+    echo "         $(( H2L_GROW * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never scavenged back, so this is"
+    echo "         memory allocated and not returned, not resident-page noise"
     FAIL=$((FAIL + 1))
   fi
 fi
