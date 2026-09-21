@@ -1697,6 +1697,171 @@ J0C_T1=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
 pd_delta "TJ0c: JSON user reuse charges N-K = 4 hits" 4 "$J0C_H0" "$J0C_H1"
 pd_delta "TJ0c: tier0 selections move in lockstep with the hits" 4 "$J0C_T0" "$J0C_T1"
 
+# ── TN0: the converged normal-mode session-hit counter, scored per WRITER ────
+#
+# loxilb_ai_normal_session_hits_total is the non-P/D twin of the Tier-0 family
+# above. Port 2024 is a plain fullproxy rule (mode=4, NO pd_disagg) whose only
+# stickiness is the learned X-Conversation-Id binding, so the same N-K oracle
+# applies: a hit is charged only when a key is REUSED, and N serial requests
+# over K distinct keys charge exactly N-K. It is a DIFFERENT counter written
+# from a DIFFERENT branch than TJ0's, and this block scores those as two facts
+# rather than assuming either.
+#
+# 🚨 The family has TWO increment sites, both inside proxy_setup_ep__:
+#     sockproxy_ep.c  PROXY_MODE_DFL branch, the ns_overlay LEARNED resolution
+#     sockproxy_ep.c  PROXY_MODE_ALL branch, the PRIORITY 0 learned binding
+# Only the DFL one is reachable, and that is a property of the CONFIG mapping
+# rather than of this rule: proxy_mode=PROXY_MODE_ALL is written by exactly one
+# case of the sel-type switch (NAT_LB_SEL_N2), session_header_enabled=1 by
+# exactly two others (NAT_LB_SEL_RR, NAT_LB_SEL_RR_PERSIST), and both of those
+# force proxy_mode=PROXY_MODE_DFL in the same branch. The proxy_arg is
+# zero-initialised by both callers, so an N2 rule leaves the flag 0 rather than
+# stale. The ALL-branch site is gated on that flag, so it cannot fire.
+#
+# So the ALL-line assert below is NOT distinguishing two live writers — it is a
+# regression guard on that invariant, and it is written here as the former
+# rather than dressed up as the latter. What the DFL-line assert does carry is
+# real: a family delta alone cannot say which site moved, and the Go recorder's
+# doc comment describes only one of the two conditions, so the delta is tied to
+# a site by the [NS_STICKY_HIT] suffix the two sites do not share.
+#
+# 🚨 Every key carries a per-run nonce, for the reason TJ0's do: a learned
+# binding outlives the phase, so on a re-run inside the idle TTL a fixed key is
+# already bound, the first request stops being a miss, and N-K quietly becomes
+# N. An oracle true only of the first run is not true of the product.
+N_RUN="$(date +%s)$$"
+echo "TN0: normal-mode (non-P/D) session-hit accounting on port 2024 (run nonce ${N_RUN})"
+
+NS_FAM=loxilb_ai_normal_session_hits_total
+
+# Exposition LINE count for the family. A summing read cannot tell a child
+# carrying the wrong label from the right child: both move the total. This
+# counts series instead, so a delta that lands on a second, differently
+# labelled child is visible as a cardinality change without this assert having
+# to name a label value it would then be guessing at.
+ns_series() {
+  local body
+  body=$($hexec llb1 curl -s --max-time 8 http://localhost:11111/netlox/v1/metrics 2>/dev/null)
+  case "$body" in
+    *loxilb_*) ;;
+    *) echo "unreadable"; return ;;
+  esac
+  printf '%s\n' "$body" | grep -c "^${NS_FAM}[{ ]" || true
+}
+
+# Data-plane log line counts, one regex per increment site. grep -c prints 0
+# and exits 1 on no match, so only rc > 1 is a failed read; -1 is returned then
+# so a failed read can never be mistaken for "the site did not fire".
+ns_dplog() {
+  local out rc
+  out=$($dexec llb1 grep -cE "$1" /var/log/loxilbdp.log 2>/dev/null); rc=$?
+  if [ "$rc" -gt 1 ]; then echo "-1"; else echo "${out:-0}"; fi
+}
+NS_RE_DFL='\[NS_STICKY_HIT\].*\(DFL\)'
+NS_RE_ALL='\[NS_STICKY_HIT\].*session binding used'
+
+# ns_drive <n> <conv> — n serial requests, one connection each, to the non-P/D
+# rule. The HTTP status of every one is collected in a FILE and counted.
+#
+# An empty %{http_code} is a curl that never spawned, not a request that was
+# refused: it shortens the drive silently and would leave every delta below
+# describing traffic that was never sent. So the drive proves its own shape —
+# a short or non-200 drive fails the arm instead of being folded into the
+# metric result.
+# Totals ACCUMULATE across calls and are zeroed explicitly by ns_reset, because
+# an arm that drives one request five times would otherwise assert on the last
+# call alone and call a one-request drive a five-request one.
+NS_OK=0; NS_LINES=0
+ns_reset() { NS_OK=0; NS_LINES=0; }
+ns_drive() {
+  local n="$1" conv="$2" i body f
+  f=$(mktemp)
+  body="{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"max_tokens\":8}"
+  for i in $(seq 1 "$n"); do
+    $dexec l3h1 curl -sk --cacert "$CACERT" -o /dev/null -w "%{http_code}\n" \
+      -H "X-Conversation-Id: ${conv}" \
+      -H "Content-Type: application/json" -d "$body" \
+      "https://${VIP}:2024/v1/chat/completions" >> "$f" 2>/dev/null
+    sleep 1
+  done
+  local lines ok
+  lines=$(wc -l < "$f" | tr -d ' ')
+  ok=$(grep -c '^200$' "$f" 2>/dev/null || true)
+  NS_LINES=$(( NS_LINES + ${lines:-0} ))
+  NS_OK=$(( NS_OK + ${ok:-0} ))
+  rm -f "$f"
+  sleep 2
+}
+
+# TN0a — control: 5 requests, every key distinct, so no key is ever reused and
+# nothing may be charged. The zero says something only because the drive shape
+# is asserted beside it: a rule that refused all five, or a curl that never
+# ran, would satisfy a bare zero perfectly.
+N0A_H0=$(pd_metric $NS_FAM)
+N0A_DFL0=$(ns_dplog "$NS_RE_DFL")
+ns_reset
+for i in 1 2 3 4 5; do ns_drive 1 "ns-solo-${N_RUN}-${i}"; done
+N0A_H1=$(pd_metric $NS_FAM)
+N0A_DFL1=$(ns_dplog "$NS_RE_DFL")
+check "TN0a: drive shape — 5 requests were sent and all answered 200 (got ${NS_OK}/${NS_LINES})" \
+  $([ "$NS_LINES" = "5" ] && [ "$NS_OK" = "5" ] && echo 0 || echo 1)
+pd_delta "TN0a: 5 requests over 5 distinct keys charge no normal-session hit" 0 "$N0A_H0" "$N0A_H1"
+pd_delta "TN0a: and the DFL site logged no hit either" 0 "$N0A_DFL0" "$N0A_DFL1"
+
+# TN0b — one key, 5 requests: 1 miss that LEARNS the binding + 4 reuses.
+N0B_H0=$(pd_metric $NS_FAM)
+N0B_DFL0=$(ns_dplog "$NS_RE_DFL")
+N0B_ALL0=$(ns_dplog "$NS_RE_ALL")
+ns_reset
+ns_drive 5 "ns-reuse-${N_RUN}"
+N0B_H1=$(pd_metric $NS_FAM)
+N0B_DFL1=$(ns_dplog "$NS_RE_DFL")
+N0B_ALL1=$(ns_dplog "$NS_RE_ALL")
+check "TN0b: drive shape — 5 requests were sent and all answered 200 (got ${NS_OK}/${NS_LINES})" \
+  $([ "$NS_LINES" = "5" ] && [ "$NS_OK" = "5" ] && echo 0 || echo 1)
+pd_delta "TN0b: X-Conversation-Id reuse charges N-K = 4 normal-session hits" 4 "$N0B_H0" "$N0B_H1"
+# Per-SITE attribution. The DFL line must carry the whole delta and the ALL
+# line must not move. If the data plane were ever to stop emitting the info
+# line, the first of these goes red rather than the second passing for the
+# wrong reason — an unattributable delta is reported, never assumed.
+pd_delta "TN0b: the DFL site logged every one of those hits" 4 "$N0B_DFL0" "$N0B_DFL1"
+# Unreachable by construction today (see the header): this holds the invariant
+# down, so a future sel-type mapping that enabled a session header on an N2
+# rule would surface here instead of silently giving the family a second writer.
+pd_delta "TN0b: and the unreachable PROXY_MODE_ALL site stayed unreachable" 0 "$N0B_ALL0" "$N0B_ALL1"
+# A summing read returns 0 both for "never charged" and for "the family is
+# gone". The deltas above cannot separate those; this absolute read can.
+check "TN0b: the family is alive, not merely unchanged (total=${N0B_H1})" \
+  $([ "$N0B_H1" != "unreadable" ] && [ "${N0B_H1:-0}" -gt 0 ] && echo 0 || echo 1)
+N0B_SER=$(ns_series)
+check "TN0b: the whole delta landed on a single labelled child (series=${N0B_SER})" \
+  $([ "$N0B_SER" = "1" ] && echo 0 || echo 1)
+
+# TN0c — K is varied, not just N. 6 requests over 2 keys charge 4, the same
+# number TN0b charged with a different N. An implementation that counted
+# "every request after the first" rather than "every reuse of a key" produces
+# 5 here and 4 there, so this arm is what makes the oracle N-K and not N-1.
+N0C_H0=$(pd_metric $NS_FAM)
+ns_reset
+for i in 1 2 3; do ns_drive 1 "ns-pair-${N_RUN}-a"; ns_drive 1 "ns-pair-${N_RUN}-b"; done
+N0C_H1=$(pd_metric $NS_FAM)
+check "TN0c: drive shape — 6 requests were sent and all answered 200 (got ${NS_OK}/${NS_LINES})" \
+  $([ "$NS_LINES" = "6" ] && [ "$NS_OK" = "6" ] && echo 0 || echo 1)
+pd_delta "TN0c: 6 requests over 2 distinct keys charge N-K = 4, not N-1 = 5" 4 "$N0C_H0" "$N0C_H1"
+
+# TN0d — the two families are not one counter. A P/D rule takes the G-1 gate
+# that skips the converged overlay entirely, so driving port 2022 must move the
+# Tier-0 family and leave the normal-mode family untouched. Asserting the
+# normal counter flat on its own would pass on a dead data plane; it is paired
+# with the Tier-0 delta that proves the traffic was routed and counted.
+N0D_H0=$(pd_metric $NS_FAM)
+N0D_T0=$(pd_metric loxilb_ai_pd_session_hits_total)
+pd_drive 5 "conv-cross-${N_RUN}" ""
+N0D_H1=$(pd_metric $NS_FAM)
+N0D_T1=$(pd_metric loxilb_ai_pd_session_hits_total)
+pd_delta "TN0d: P/D reuse charges the Tier-0 family" 4 "$N0D_T0" "$N0D_T1"
+pd_delta "TN0d: and charges the normal-mode family nothing" 0 "$N0D_H0" "$N0D_H1"
+
 sleep 2
 
 # TJ1: 5 requests with user_id=alice — all must hit the same prefill EP
