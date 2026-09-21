@@ -89,6 +89,22 @@ func containsAny(haystack string, needles ...string) bool {
 // holds an error value. Flattening the error to a string first discards the
 // only reliable signal and leaves the status to a substring search.
 func ResultErrorResponseError(err error) *models.Error {
+	// FIRST, and it must stay first among the refusal types: a server
+	// precondition reaches this function WRAPPED in the refusal type of
+	// whatever surface raised it (a KV-exact seed precondition arrives
+	// inside a cmn.KvAdmissionError), and errors.As unwraps. Checking any
+	// enclosing refusal type earlier would answer 400 -- telling the client
+	// its input was malformed when the input was valid and the SERVER is
+	// not provisioned. TestPreconditionOutranksEnclosingRefusal pins this.
+	var precond *cmn.ServerPreconditionError
+	if errors.As(err, &precond) {
+		return &models.Error{
+			Code:    412,
+			Message: "Server precondition not met for API call",
+			Result:  err.Error(),
+			Fields:  []string{},
+		}
+	}
 	var ruleArg *cmn.RuleArgumentError
 	if errors.As(err, &ruleArg) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: err.Error()}
