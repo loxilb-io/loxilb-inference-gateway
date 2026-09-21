@@ -3127,12 +3127,27 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 		return res, fmt.Errorf("model_name is required for %s kvExactMode (must equal the served model and staged tokenizer identity)", eng)
 	}
 	if eng == "vllm" {
+		// Both refusals below are decided by the gateway's own launch
+		// environment, not by anything in the request: the body is
+		// well-formed and no field a client can change will make it
+		// succeed. Typed so the API layer answers 412 rather than a 400
+		// that tells the client its input was malformed -- on a gateway
+		// launched without the seed EVERY KV-exact rule is refused, and a
+		// bare 400 makes an unprovisioned gateway indistinguishable from
+		// an operator's typo. The messages are the operator-facing answer
+		// and are deliberately unchanged.
 		seed, present := deps.getenv("LLB_KV_NONE_HASH_SEED")
 		if !present || seed == "" {
-			return res, errors.New("vllm kvExactMode requires non-empty Gateway LLB_KV_NONE_HASH_SEED matching engine PYTHONHASHSEED")
+			return res, &cmn.ServerPreconditionError{
+				Reason: cmn.ReasonKvExactSeedUnset,
+				Err:    errors.New("vllm kvExactMode requires non-empty Gateway LLB_KV_NONE_HASH_SEED matching engine PYTHONHASHSEED"),
+			}
 		}
 		if len(seed) > 23 {
-			return res, errors.New("LLB_KV_NONE_HASH_SEED must be at most 23 bytes for vllm kvExactMode")
+			return res, &cmn.ServerPreconditionError{
+				Reason: cmn.ReasonKvExactSeedTooLong,
+				Err:    errors.New("LLB_KV_NONE_HASH_SEED must be at most 23 bytes for vllm kvExactMode"),
+			}
 		}
 	}
 
