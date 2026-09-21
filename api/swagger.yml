@@ -10087,7 +10087,15 @@ definitions:
               binding enforcement still apply. A Tier-1.5 miss falls back to
               the rule's own sel selector. vllm/sglang consume ZMQ events;
               trtllm consumes HTTP-polled events. All enabled exact modes require
-              model_name and a loadable tokenizer. Profile/API-surface constraints
+              model_name and a loadable tokenizer. vLLM Exact additionally
+              requires the Gateway process to have been launched with a
+              non-empty LLB_KV_NONE_HASH_SEED of at most 23 bytes, matching the
+              engine's PYTHONHASHSEED: it is a property of the Gateway's
+              deployment, not of this request, so on a Gateway launched without
+              it EVERY vLLM Exact rule is refused and no request body can
+              succeed. Query the Gateway's readiness rather than discovering
+              this by submitting. See kvHashAlgo for what the seed governs.
+              Profile/API-surface constraints
               apply independently; see kvModelProfile and kvExactApiMode.
           kvBlockSize:
             type: integer
