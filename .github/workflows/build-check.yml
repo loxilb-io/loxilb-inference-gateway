@@ -21,7 +21,12 @@ jobs:
     # fail red; the bump is re-validated by the push/schedule run after merge.
     if: ${{ github.actor != 'dependabot[bot]' }}
 
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: on 2026-09-21 the hosted
+    # ubuntu-latest pool stopped dispatching while explicit labels kept
+    # starting within minutes, which stalled this required check on every
+    # branch including main. ubuntu-latest resolves to 24.04 today, so this
+    # is behaviour-neutral and only removes the dependency on that label.
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v4
