@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-21T07:29:44+00:00",
-  "source_revision": "4c8d6422043a8151fb621b693b5169b58eac77df"
+  "generated_at": "2026-09-21T08:43:27+00:00",
+  "source_revision": "dfe0ca699c2fb1c4b1afb5776ea46e261d58e1f4"
  },
  "contract": {
   "total": 250,
@@ -9100,16 +9100,16 @@
      "symbol": "Persist",
      "kind": "func",
      "file": "pkg/snapshot/persist.go",
-     "def_line": 160,
-     "call_line": 170,
+     "def_line": 175,
+     "call_line": 185,
      "calls": "recordPersistSuccess"
     },
     {
      "symbol": "WriteThrough",
      "kind": "func",
      "file": "pkg/snapshot/persist.go",
-     "def_line": 185,
-     "call_line": 193,
+     "def_line": 200,
+     "call_line": 208,
      "calls": "Persist"
     },
     {
@@ -12591,7 +12591,7 @@
      "symbol": "QuarantinePersisted",
      "kind": "func",
      "file": "pkg/snapshot/persist.go",
-     "def_line": 212,
+     "def_line": 227,
      "writes": "snapshotQuarantineTotal"
     },
     {
