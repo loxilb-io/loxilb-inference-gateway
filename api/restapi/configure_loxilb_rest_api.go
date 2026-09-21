@@ -192,6 +192,7 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 
 	// Status
 	api.GetStatusReadyHandler = operations.GetStatusReadyHandlerFunc(handler.ConfigGetStatusReady)
+	api.GetStatusCapabilitiesHandler = operations.GetStatusCapabilitiesHandlerFunc(handler.ConfigGetStatusCapabilities)
 	api.GetStatusProcessHandler = operations.GetStatusProcessHandlerFunc(handler.ConfigGetProcess)
 	api.GetStatusDeviceHandler = operations.GetStatusDeviceHandlerFunc(handler.ConfigGetDevice)
 	api.GetStatusFilesystemHandler = operations.GetStatusFilesystemHandlerFunc(handler.ConfigGetFileSystem)

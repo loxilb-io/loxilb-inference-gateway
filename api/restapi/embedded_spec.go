@@ -842,6 +842,50 @@ func init() {
       ],
       "type": "object"
     },
+    "CapabilityStatus": {
+      "description": "Whether one optional capability can be served, and when it cannot, a stable code and the operator-facing reason.",
+      "properties": {
+        "name": {
+          "description": "Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known value - \"kv_exact_vllm\": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm.",
+          "example": "kv_exact_vllm",
+          "type": "string"
+        },
+        "ready": {
+          "description": "True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "The operator-facing sentence, identical to the one the 412 refusal carries. It names the setting and the required relationship, and is what an operator needs to fix the deployment. Absent when ready.",
+          "type": "string"
+        },
+        "reason_code": {
+          "description": "Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - \"KV_EXACT_SEED_UNSET\": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; \"KV_EXACT_SEED_TOO_LONG\": the seed exceeds the 23-byte representable bound.",
+          "example": "KV_EXACT_SEED_UNSET",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "CapabilityStatusList": {
+      "description": "Per-capability readiness for features gated by the Gateway's launch environment.",
+      "properties": {
+        "capabilities": {
+          "description": "One entry per optional capability this build knows about. An empty array means this build gates no capability on its environment.",
+          "items": {
+            "$ref": "#/definitions/CapabilityStatus"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "capabilities"
+      ],
+      "type": "object"
+    },
     "CatalogParserMapping": {
       "properties": {
         "catalog_id": {
@@ -18980,6 +19024,35 @@ func init() {
         "summary": "Register SNI certificate globally (shared by all proxies)"
       }
     },
+    "/status/capabilities": {
+      "get": {
+        "description": "Reports per-capability readiness for features whose availability is decided by the Gateway's launch environment rather than by anything in a request. A capability reported not ready refuses every attempt to use it with 412 and the reason carried here, whatever the client sends, so a client can disable a control truthfully instead of learning by submitting and being refused. Each verdict is produced by the same check that admission performs, not a second copy of it. This is NOT overall gateway health and does not gate /status/ready: a Gateway with an unready OPTIONAL capability is healthy for everything else, and reporting it 503 would be wrong. Absence of a capability from this list means this build does not know it, which is not the same as not ready.",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/CapabilityStatusList"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Optional capabilities this gateway can serve, and why not"
+      }
+    },
     "/status/device": {
       "get": {
         "description": "Returns identity read from Linux system files and uname. Raw values can include trailing newlines; uptime contains both /proc/uptime values rather than a formatted duration. Availability depends on distribution-specific files.",
@@ -32064,6 +32137,35 @@ func init() {
         }
       }
     },
+    "/status/capabilities": {
+      "get": {
+        "description": "Reports per-capability readiness for features whose availability is decided by the Gateway's launch environment rather than by anything in a request. A capability reported not ready refuses every attempt to use it with 412 and the reason carried here, whatever the client sends, so a client can disable a control truthfully instead of learning by submitting and being refused. Each verdict is produced by the same check that admission performs, not a second copy of it. This is NOT overall gateway health and does not gate /status/ready: a Gateway with an unready OPTIONAL capability is healthy for everything else, and reporting it 503 would be wrong. Absence of a capability from this list means this build does not know it, which is not the same as not ready.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Optional capabilities this gateway can serve, and why not",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/CapabilityStatusList"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/status/device": {
       "get": {
         "description": "Returns identity read from Linux system files and uname. Raw values can include trailing newlines; uptime contains both /proc/uptime values rather than a formatted duration. Availability depends on distribution-specific files.",
@@ -33534,6 +33636,50 @@ func init() {
         "vip": {
           "description": "Instance Virtual IP address",
           "type": "string"
+        }
+      }
+    },
+    "CapabilityStatus": {
+      "description": "Whether one optional capability can be served, and when it cannot, a stable code and the operator-facing reason.",
+      "type": "object",
+      "required": [
+        "name",
+        "ready"
+      ],
+      "properties": {
+        "name": {
+          "description": "Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known value - \"kv_exact_vllm\": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm.",
+          "type": "string",
+          "example": "kv_exact_vllm"
+        },
+        "ready": {
+          "description": "True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "The operator-facing sentence, identical to the one the 412 refusal carries. It names the setting and the required relationship, and is what an operator needs to fix the deployment. Absent when ready.",
+          "type": "string"
+        },
+        "reason_code": {
+          "description": "Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - \"KV_EXACT_SEED_UNSET\": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; \"KV_EXACT_SEED_TOO_LONG\": the seed exceeds the 23-byte representable bound.",
+          "type": "string",
+          "example": "KV_EXACT_SEED_UNSET"
+        }
+      }
+    },
+    "CapabilityStatusList": {
+      "description": "Per-capability readiness for features gated by the Gateway's launch environment.",
+      "type": "object",
+      "required": [
+        "capabilities"
+      ],
+      "properties": {
+        "capabilities": {
+          "description": "One entry per optional capability this build knows about. An empty array means this build gates no capability on its environment.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CapabilityStatus"
+          }
         }
       }
     },
