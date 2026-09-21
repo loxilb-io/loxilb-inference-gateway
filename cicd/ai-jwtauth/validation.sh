@@ -859,6 +859,118 @@ metric_labeled() {
     END { printf "%d", s }'
 }
 
+# metric_labeled_f <family> <label-substr> [label-substr2] -> the summed value
+# of the matching series with the FRACTION KEPT, or "unreadable" when the
+# scrape itself failed.
+#
+# metric_labeled prints %d, which is right for a counter and wrong for every
+# utilization ratio: a bucket sitting at 1.2 of its quota reads back as 1 and
+# one at 0.6 reads back as 0 - the same number an ABSENT family gives. A ratio
+# oracle that truncates cannot tell "spent" from "never existed".
+metric_labeled_f() {
+  local body
+  body=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null)
+  case "$body" in
+    *loxilb_*) ;;
+    *) echo "unreadable"; return ;;
+  esac
+  echo "$body" | awk -v fam="$1" -v a="$2" -v b="${3:-}" '
+    $0 ~ "^" fam "{" {
+      if (index($0, a) == 0) next
+      if (b != "" && index($0, b) == 0) next
+      v = $NF; if (v + 0 == v) s += v
+    }
+    END { printf "%.4f", s }'
+}
+
+# chk_fgt <name> <floor> <got> -- a readable value strictly above floor.
+# "unreadable" is a LOST MEASUREMENT and fails; it is never read as zero.
+chk_fgt() {
+  note_case "$1"
+  if [ -z "$3" ] || [ "$3" = "unreadable" ]; then
+    echo "  [FAIL] $1 — LOST MEASUREMENT: the /metrics scrape did not complete"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if awk -v g="$3" -v f="$2" 'BEGIN { exit !(g + 0 > f + 0) }'; then
+    echo "  [PASS] $1 ($3 > $2)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — got $3, want strictly above $2"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# chk_flt <name> <ceiling> <got> -- a readable value strictly below ceiling.
+chk_flt() {
+  note_case "$1"
+  if [ -z "$3" ] || [ "$3" = "unreadable" ]; then
+    echo "  [FAIL] $1 — LOST MEASUREMENT: the /metrics scrape did not complete"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if awk -v g="$3" -v c="$2" 'BEGIN { exit !(g + 0 < c + 0) }'; then
+    echo "  [PASS] $1 ($3 < $2)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — got $3, want strictly below $2"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# chk_fzero <name> <got> -- the series is absent or exactly zero, read off a
+# scrape that DID complete. Separate from chk_flt so an absence claim cannot
+# be satisfied by a tiny number nobody meant to allow.
+chk_fzero() {
+  note_case "$1"
+  if [ -z "$2" ] || [ "$2" = "unreadable" ]; then
+    echo "  [FAIL] $1 — LOST MEASUREMENT: the /metrics scrape did not complete"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if awk -v g="$2" 'BEGIN { exit !(g + 0 == 0) }'; then
+    echo "  [PASS] $1 ($2)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — got $2, want 0"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# chk_metric_delta <name> <want> <before> <after> -- an exact counter delta
+# that refuses to score across a scrape that did not complete. An unreadable
+# baseline is not a delta of zero, it is no measurement at all.
+chk_metric_delta() {
+  note_case "$1"
+  case "$3$4" in
+    *unreadable*)
+      echo "  [FAIL] $1 — LOST MEASUREMENT: a /metrics scrape did not complete (before='$3' after='$4')"
+      FAIL=$((FAIL + 1)); return ;;
+    ''|*[!0-9]*)
+      echo "  [FAIL] $1 — values '$3'/'$4' unreadable"; FAIL=$((FAIL + 1)); return ;;
+  esac
+  local got=$(( $4 - $3 ))
+  if [ "$got" -eq "$2" ]; then
+    echo "  [PASS] $1 (delta=$got)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — expected delta $2, got $got (before=$3 after=$4)"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# wait_lower <family> <label> <label2> <baseline> <secs> -> the first reading
+# strictly below baseline, or the last reading taken.
+#
+# A utilization ratio is computed at SCRAPE time from the bucket's live drain
+# time, so a bucket that is spent and not charged again must read lower on
+# every later scrape. That decay is the whole difference between a scrape-time
+# ratio and a gauge frozen at its last write, and it is a mechanism to wait on
+# rather than an interval to guess: a charge of 12 against a quota of 10 drops
+# the ratio by 0.1 every 6 seconds, so the poll normally returns on its first
+# or second sample and the assert reports the real number on a timeout.
+wait_lower() {
+  local fam="$1" lab="$2" lab2="$3" base="$4" secs="${5:-20}" got="" i
+  for i in $(seq 1 "$secs"); do
+    got=$(metric_labeled_f "$fam" "$lab" "$lab2")
+    [ "$got" = "unreadable" ] && { echo "$got"; return; }
+    if awk -v g="$got" -v b="$base" 'BEGIN { exit !(g + 0 < b + 0) }'; then
+      echo "$got"; return
+    fi
+    sleep 1
+  done
+  echo "$got"
+}
+
 echo ""
 echo "M1: control — each model reaches its own pool on SEPARATE connections"
 echo "    (rules out 'pool-B was never routable' as the reading of an M2/M3 red)"
@@ -1937,30 +2049,92 @@ echo ""
 echo "QOS-TPM-003: a tenant's token budget caps the SUM of its users"
 echo "             m1 and m2 have no rows of their own, so a refusal of m2"
 echo "             after m1 spent the budget can only be the tenant bucket."
+echo "             tenant-qm is touched nowhere else in this suite, so these"
+echo "             two requests are the ONLY drive its aggregate quota"
+echo "             gauges ever get - which is what lets them be scored here"
+echo "             from an absent bucket rather than from a running total."
+echo "             The limit gauge is published by the bucket's own SPEND,"
+echo "             not by the row that configured it: a config-time reading"
+echo "             would make an unused quota indistinguishable from a"
+echo "             spent one, and a 0 that never moves is the reading a"
+echo "             dead writer gives."
 qos_cfg POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"tenant-qm","tokens_per_min":10}'
 qos_cfg_ok   "QOS-TPM-003 tenant tokens_per_min=10 for tenant-qm accepted"
+TQM_LIM0=$(metric_labeled loxilb_ai_token_quota_limit_tokens 'tenant="tenant-qm"')
+TQM_DEN0=$(metric_labeled loxilb_ai_token_quota_denied_total 'tenant="tenant-qm"')
+TQM_LEX0=$(metric_labeled loxilb_ai_rate_limit_hits_total 'tenant="tenant-qm"' 'reason="token_quota_exceeded"')
+TQM_WEX0=$(metric_labeled loxilb_ai_rate_limit_hits_total 'tenant="tenant-qm"' 'reason="token_quota_would_exceed"')
+chk_num      "QOS-TPM-003 the accepted row alone published no limit gauge" 0 "$TQM_LIM0"
 qreq 2040 "Authorization: Bearer $TOK_m1"
 chk_code     "QOS-TPM-003 m1's request admitted" 200 "$QR"
 chk_receipt  "QOS-TPM-003 m1's request reached the backend" 1 "$QR_NONCE"
 sleep $QOS_SETTLE_WAIT
+echo "  the same reading, after the spend: absent -> 10 is the charge"
+echo "  arriving. The pair is what makes the line above an assertion - on"
+echo "  its own, a 0 taken before the action is also what a broken scrape,"
+echo "  a renamed family and a dead collector all produce."
+TQM_LIM1=$(metric_labeled loxilb_ai_token_quota_limit_tokens 'tenant="tenant-qm"')
+TQM_UTL1=$(metric_labeled_f loxilb_ai_token_quota_utilization 'tenant="tenant-qm"')
+chk_num      "QOS-TPM-003 m1's spend published the tenant's limit gauge" 10 "$TQM_LIM1"
+chk_fgt      "QOS-TPM-003 and the tenant's bucket reads spent, not idle" 0.5 "$TQM_UTL1"
 qreq 2040 "Authorization: Bearer $TOK_m2"
 chk_code     "QOS-TPM-003 m2 is refused by what m1 spent" 429 "$QR"
 chk_has      "QOS-TPM-003 the refusal names the token quota" "token_quota_exceeded" "$QR"
 chk_receipt  "QOS-TPM-003 m2 never reached the backend" 0 "$QR_NONCE"
+echo "  and the refusal is counted once, against the tenant that was"
+echo "  refused. This counter has TWO increment sites - the gate's post-hoc"
+echo "  latch here, and the pre-admission reservation refusal QOS-RES-001"
+echo "  drives - so a delta of one names a FAMILY and not a writer. The"
+echo "  reason label on the rate-limit hits counter is the byproduct that"
+echo "  separates them, and it is asserted on both arms: the latch code"
+echo "  moves here and the would-exceed code must not."
+TQM_DEN1=$(metric_labeled loxilb_ai_token_quota_denied_total 'tenant="tenant-qm"')
+TQM_LEX1=$(metric_labeled loxilb_ai_rate_limit_hits_total 'tenant="tenant-qm"' 'reason="token_quota_exceeded"')
+TQM_WEX1=$(metric_labeled loxilb_ai_rate_limit_hits_total 'tenant="tenant-qm"' 'reason="token_quota_would_exceed"')
+chk_metric_delta "QOS-TPM-003 the latched refusal was counted once against the tenant" 1 "$TQM_DEN0" "$TQM_DEN1"
+chk_metric_delta "QOS-TPM-003 and the reason label names the gate's latch" 1 "$TQM_LEX0" "$TQM_LEX1"
+chk_metric_delta "QOS-TPM-003 while the reservation site's code never appeared" 0 "$TQM_WEX0" "$TQM_WEX1"
 
 echo ""
 echo "QOS-TPM-004: a tenant|model budget leaves the tenant's other models"
 echo "             with headroom"
 echo "             tenant-qn carries no aggregate budget, so the only rung"
 echo "             that can refuse the llama request is the model's own."
+echo "             That also makes this the one place in the suite where a"
+echo "             bucket is charged on the tenant|model series and NOWHERE"
+echo "             else, so the model gauges can be scored against a"
+echo "             tenant-aggregate series that has to stay absent. That"
+echo "             control is the point: the defect these two series exist"
+echo "             to undo published a bucket that was not a tenant under a"
+echo "             tenant label, where it moved a saturation alert by"
+echo "             exactly as much as a real tenant would have."
 qos_cfg POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"tenant-qn","model_limits":[{"model":"llama-70b","tokens_per_min":10}]}'
 qos_cfg_ok   "QOS-TPM-004 a llama-only tenant budget for tenant-qn accepted"
+TQN_MLIM0=$(metric_labeled loxilb_ai_token_quota_model_limit_tokens 'tenant="tenant-qn"' 'model="llama-70b"')
+chk_num      "QOS-TPM-004 the accepted row alone published no model limit gauge" 0 "$TQN_MLIM0"
 qreq 2040 "Authorization: Bearer $TOK_n1"
 chk_code     "QOS-TPM-004 n1's first llama request admitted" 200 "$QR"
 chk_receipt  "QOS-TPM-004 n1's first llama request reached the backend" 1 "$QR_NONCE"
 sleep $QOS_SETTLE_WAIT
+TQN_MLIM1=$(metric_labeled loxilb_ai_token_quota_model_limit_tokens 'tenant="tenant-qn"' 'model="llama-70b"')
+TQN_MUTL1=$(metric_labeled_f loxilb_ai_token_quota_model_utilization 'tenant="tenant-qn"' 'model="llama-70b"')
+chk_num      "QOS-TPM-004 n1's spend published the model's limit gauge" 10 "$TQN_MLIM1"
+chk_fgt      "QOS-TPM-004 and the model's bucket reads spent, not idle" 0.5 "$TQN_MUTL1"
+echo "  label control: the SAME spend must not also appear on the"
+echo "  tenant-aggregate series. tenant-qn has no aggregate budget and the"
+echo "  settle's fallback charge against it carries a limit of zero, so any"
+echo "  number there is a per-model bucket wearing a tenant label."
+echo "  The aggregate family is read for tenant-qm in the same breath: its"
+echo "  child is still standing from the case above, so tenant-qn reading"
+echo "  nothing is an absent CHILD and not a family that stopped existing."
+TQN_ALIM1=$(metric_labeled loxilb_ai_token_quota_limit_tokens 'tenant="tenant-qn"')
+TQN_AUTL1=$(metric_labeled_f loxilb_ai_token_quota_utilization 'tenant="tenant-qn"')
+TQM_LIM2=$(metric_labeled loxilb_ai_token_quota_limit_tokens 'tenant="tenant-qm"')
+chk_num      "QOS-TPM-004 the aggregate family is alive here, carrying the previous case's tenant" 10 "$TQM_LIM2"
+chk_num      "QOS-TPM-004 the model bucket published no tenant-aggregate limit" 0 "$TQN_ALIM1"
+chk_fzero    "QOS-TPM-004 and no tenant-aggregate utilization" "$TQN_AUTL1"
 qreq 2040 "Authorization: Bearer $TOK_n1"
 chk_code     "QOS-TPM-004 n1's next llama request refused" 429 "$QR"
 chk_has      "QOS-TPM-004 the refusal names the token quota" "token_quota_exceeded" "$QR"
@@ -1968,6 +2142,25 @@ chk_receipt  "QOS-TPM-004 the refused llama request never reached the backend" 0
 qreq 2040 "Authorization: Bearer $TOK_n1" "$body_mistral"
 chk_code     "QOS-TPM-004 the tenant's other model retains headroom" 200 "$QR"
 chk_receipt  "QOS-TPM-004 the mistral request reached the backend" 1 "$QR_NONCE"
+echo "  per-child control: the mistral answer settled too and carries no"
+echo "  model budget, so it must leave NO child of its own on the model"
+echo "  series. A family-level total cannot see a child appearing under the"
+echo "  wrong label - only naming the child that has to stay absent can,"
+echo "  and only while the sibling that has to be present is re-read."
+sleep $QOS_SETTLE_WAIT
+TQN_XLIM=$(metric_labeled loxilb_ai_token_quota_model_limit_tokens 'tenant="tenant-qn"' 'model="mistral-7b"')
+TQN_MLIM2=$(metric_labeled loxilb_ai_token_quota_model_limit_tokens 'tenant="tenant-qn"' 'model="llama-70b"')
+chk_num      "QOS-TPM-004 the unbudgeted model left no child on the model series" 0 "$TQN_XLIM"
+chk_num      "QOS-TPM-004 while the budgeted model's child still stands at its limit" 10 "$TQN_MLIM2"
+echo "  decay: the ratio is computed at SCRAPE time from the bucket's own"
+echo "  drain time, so a bucket nothing has charged since must read strictly"
+echo "  lower on a later scrape. A gauge written on the charge path would be"
+echo "  frozen at its last written value and this would never move - which"
+echo "  is the failure the scrape-time collector exists to avoid, and the"
+echo "  only assertion here that can tell the two implementations apart."
+TQN_MUTL2=$(wait_lower loxilb_ai_token_quota_model_utilization 'tenant="tenant-qn"' 'model="llama-70b"' "$TQN_MUTL1" 20)
+chk_flt      "QOS-TPM-004 the model bucket's ratio decayed after its last charge" "$TQN_MUTL1" "$TQN_MUTL2"
+chk_fgt      "QOS-TPM-004 and it decayed rather than vanished" 0 "$TQN_MUTL2"
 
 echo ""
 echo "QOS-TPM-005: a key's stored tokens_per_min is actually enforced"
@@ -2176,11 +2369,31 @@ echo "             part -- what matters is the tenant bucket afterwards, and"
 echo "             the only way to read that is to send it a request the"
 echo "             model bucket has no say in."
 qos_epoch_fresh
+RES_DEN0=$(metric_labeled loxilb_ai_token_quota_denied_total 'tenant="')
+RES_WEX0=$(metric_labeled loxilb_ai_rate_limit_hits_total "tenant=\"$QOS_FI_T\"" 'reason="token_quota_would_exceed"')
+RES_LEX0=$(metric_labeled loxilb_ai_rate_limit_hits_total "tenant=\"$QOS_FI_T\"" 'reason="token_quota_exceeded"')
 rreq 2065 "$TOK_r1" mistral-7b 600
 chk_code     "QOS-RES-001 the over-model request is refused" 429 "$RR"
 chk_has      "QOS-RES-001 refused at ADMISSION, not by the post-hoc latch" "token_quota_would_exceed" "$RR"
 chk_not_has  "QOS-RES-001 and not by the latched code" "\"token_quota_exceeded\"" "$RR"
 chk_receipt  "QOS-RES-001 the refused request never reached the backend" 0 "$RR_NONCE"
+echo "  the deny counter has TWO writers, and this is the second one. The"
+echo "  post-hoc latch charges it at the gate; this pre-admission refusal"
+echo "  charges it from the reservation path, under a DIFFERENT error code."
+echo "  One counter over two conditions that are not the same condition:"
+echo "  the latch means the tenant is out of budget, while this arm means"
+echo "  only that THIS request did not fit the headroom left - a smaller"
+echo "  one from the same tenant is still admitted, and the bucket is not"
+echo "  put in debt. Both are asserted, each against the reason label that"
+echo "  says which site wrote it, because a shared counter moving by one"
+echo "  cannot on its own name the writer that moved it."
+RES_DEN1=$(metric_labeled loxilb_ai_token_quota_denied_total 'tenant="')
+RES_WEX1=$(metric_labeled loxilb_ai_rate_limit_hits_total "tenant=\"$QOS_FI_T\"" 'reason="token_quota_would_exceed"')
+RES_LEX1=$(metric_labeled loxilb_ai_rate_limit_hits_total "tenant=\"$QOS_FI_T\"" 'reason="token_quota_exceeded"')
+chk_fgt          "QOS-RES-001 the deny counter is live at this point in the run" 0 "$RES_DEN0"
+chk_metric_delta "QOS-RES-001 the pre-admission refusal charged the deny counter as well" 1 "$RES_DEN0" "$RES_DEN1"
+chk_metric_delta "QOS-RES-001 and the reason label names the reservation site" 1 "$RES_WEX0" "$RES_WEX1"
+chk_metric_delta "QOS-RES-001 while the latch reason stayed flat for this tenant" 0 "$RES_LEX0" "$RES_LEX1"
 rreq 2065 "$TOK_r1" llama-70b 600
 chk_code     "QOS-RES-001 a same-size request on a model the tenant bucket alone gates is admitted" 200 "$RR"
 chk_receipt  "QOS-RES-001 and it reached the backend" 1 "$RR_NONCE"
