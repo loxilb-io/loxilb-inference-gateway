@@ -651,12 +651,12 @@
     { "symbol": "scrapeAll", "kind": "method", "receiver": "Poller", "file": "pkg/aimetrics/poll.go", "def_line": 259, "call_line": 269, "calls": "scrapeOne", "note": "one goroutine per EP per tick, with per-EP in-flight dedup: an EP whose scrape is still running is SKIPPED rather than queued, so a hung endpoint produces no report for that tick at all" },
     { "symbol": "Run", "kind": "method", "receiver": "Poller", "file": "pkg/aimetrics/poll.go", "def_line": 213, "call_line": 231, "calls": "scrapeAll" },
     { "symbol": "Run", "kind": "method", "receiver": "VllmScraper", "file": "pkg/loxinet/ai_vllm_scraper.go", "def_line": 129, "call_line": 130, "calls": "Run", "note": "the thin loxinet shim over the shared pkg/aimetrics collector" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3711, "call_line": 5040, "calls": "Run", "note": "the scraper goroutine is started ONLY for a rule with pdDisaggMode, at a hard-coded 10s interval, against each endpoint's own xIP:xPort -- the same port the P/D data connect uses" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3705, "call_line": 5034, "calls": "Run", "note": "the scraper goroutine is started ONLY for a rule with pdDisaggMode, at a hard-coded 10s interval, against each endpoint's own xIP:xPort -- the same port the P/D data connect uses" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1230, "call_line": 1379, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3711, "call_line": 4975, "calls": "KvSubscriberStartRank" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3705, "call_line": 4969, "calls": "KvSubscriberStartRank" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-attest-controller-loop": [
@@ -665,7 +665,7 @@
     { "symbol": "KvAttestStart", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 326, "call_line": 351, "calls": "loop" },
     { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 927, "call_line": 934, "calls": "KvAttestStart" },
     { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 381, "call_line": 385, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3711, "call_line": 4605, "calls": "kvDataplaneContractInstallAsync" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3705, "call_line": 4599, "calls": "kvDataplaneContractInstallAsync" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-best-worker-cgo": [
@@ -1020,7 +1020,7 @@
      { "symbol": "RecordAutoPersistFailure", "kind": "func", "file": "pkg/snapshot/opstate.go", "def_line": 74, "writes": "autoPersistFailStreak", "note": "set to the running streak; any successful persist resets it to 0 at recordPersistSuccess:67, whichever path wrote the document" },
      { "symbol": "autoPersistFire", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 529, "call_line": 547, "calls": "RecordAutoPersistFailure" },
      { "symbol": "InitAutoPersist", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 510, "call_line": 515, "calls": "autoPersistFire", "note": "registration, not a call: autoPersistFire is handed to NewAutoPersister as the debouncer callback. Returns early when --config-auto-persist=off, which is the one configuration that stops this writer entirely" },
-     { "symbol": "configureAPI", "kind": "func", "file": "api/restapi/configure_loxilb_rest_api.go", "def_line": 71, "call_line": 467, "calls": "InitAutoPersist" },
+     { "symbol": "configureAPI", "kind": "func", "file": "api/restapi/configure_loxilb_rest_api.go", "def_line": 71, "call_line": 468, "calls": "InitAutoPersist" },
      { "tail": "restapi-configure-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/snapshot/opstate.go:74-83 with the reset at :67. pkg/snapshot/opstate_test.go TestAutoPersistFailureRecord asserts the state record, not the gauge, so this is mapped rather than verified."
@@ -1313,12 +1313,12 @@
    },
    "loxilb_ai_normal_session_hits_total": {
     "status": "verified-runtime",
-    "activation_precondition": "a fullproxy (L7) rule carrying session_header_name, and at least one session key REUSED within its binding lifetime: the first request per key is a miss that installs the pin, so N requests over K distinct keys record exactly N-K hits. Reachable on main since the submodule pointer bump (gw #191) picked up loxilb-ebpf-inference-gateway #24, which records the hit on the PROXY_MODE_DFL learned-binding path; before that bump the only call site was the PROXY_MODE_ALL branch, which serves non-L7 protocols and never sees a parsed session header.",
+    "activation_precondition": "a fullproxy (L7) rule carrying session_header_name, and at least one session key REUSED within its binding lifetime: the first request per key is a miss that installs the pin, so N requests over K distinct keys record exactly N-K hits. Recorded ONLY from the PROXY_MODE_DFL learned-binding path. The PROXY_MODE_ALL branch holds a second, UNREACHABLE call site: proxy_mode=PROXY_MODE_ALL is written by exactly one sel-type case (NAT_LB_SEL_N2) and session_header_enabled=1 by exactly two others (NAT_LB_SEL_RR, NAT_LB_SEL_RR_PERSIST), both of which force proxy_mode=PROXY_MODE_DFL; the proxy_arg is zero-initialised by both callers of llb_conv_nat2proxy, so an N2 rule leaves the flag 0 rather than stale. session_header_enabled==1 therefore implies proxy_mode==DFL, and the ALL-branch guard can never be true. The in-tree comment argues this from header PARSING; the invariant that actually holds is the config mapping. Filed as D-3.",
     "writer_sources": [
      { "symbol": "RecordNormalSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1024, "writes": "aiNormalSessionHitsTotal" },
      {"symbol": "llb_ai_normal_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1619, "call_line": 1622, "calls": "RecordNormalSessionHit", "entry_point": "cgo-export"}
     ],
-    "evidence": "runtime evidence 2026-09-14 (E.5 row 'wp4-ns-20260914'): re-verified on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa, image w2live-u24 sha256:78b6c7cb5c40) -- the pointer bump gw #191 is what made ebpf #24's DFL call site reachable. Fullproxy rule 10.10.10.254:8085, sel=rr, session_header_name=X-Session-Id, 2 EPs. Family ABSENT before the drive; 15 requests over 3 reused keys -> counter == 12 == N-K EXACTLY, one-for-one with 12 [NS_STICKY_HIT] (DFL) data-plane log lines. Red twin: 8 all-unique keys -> delta == 0 (a key that is never reused must record nothing). Supersedes the 2026-09-11 hand-built-binary evidence."
+    "evidence": "COMMITTED GATE since 2026-09-21: cicd/vllm-pd-disagg validation.sh phase J, case TN0, on port 2024 -- a fullproxy rule with session_header_name=X-Conversation-Id and NO pd_disagg, already created on the default CI path. The scenario runs in ai-gateway-sanity.yml against mock vLLM, so this is scored every PR. Supersedes the 2026-09-14 hand-run (E.5 row 'wp4-ns-20260914'), a one-off runtime observation with no standing gate. GREEN: 100P/0F on ns-u24 (32adf700ee59) -- twice back to back WITH reconfiguration (green2/green3) and twice more against the SAME gateway with NO reconfiguration (rerunA/rerunB); across those the family's running total climbed 4 -> 12 -> 20, proving the binding table persisted while every delta still held at N-K, which is the per-run nonce doing its job. Readings identical on all four: reuse delta 4, distinct-key delta 0, DFL log-line delta 4, ALL log-line delta 0, series 1. RED TWINS 96P/4F each, every red predicted in advance: twin H (twinh-u24, DFL-site increment removed, mutation diff 11 lines) reddens the reuse delta (4->0), family-alive (total=0) and series (0) while the DFL LOG arm stays GREEN at delta=4, showing the log evidence and the metric are independent measurements; twin I (twini-u24, increment made unconditional, diff 10 lines) reddens the distinct-key control (0->5), the reuse delta (4->9), the K-varied arm (4->10) and the cross-family flat arm (0->5) while family-alive and series stay GREEN, so those two fire on a MISSING family and not on a miscounted one."
    },
    "loxilb_ai_active_streams": {
     "status": "conditional-with-proven-writer",
@@ -2404,7 +2404,7 @@
     "writer_sources": [
      { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1218, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1230, "call_line": 1273, "calls": "SetKvEpInfo" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3711, "call_line": 4975, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3705, "call_line": 4969, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1273. Scenario M08 owns the runtime proof."
@@ -2528,7 +2528,7 @@
     "writer_sources": [
      { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1224, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3711, "call_line": 5018, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3705, "call_line": 5012, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
@@ -2539,7 +2539,7 @@
     "writer_sources": [
      { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1230, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3711, "call_line": 5018, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3705, "call_line": 5012, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:198. WP-5 owns the known-mismatch arm."

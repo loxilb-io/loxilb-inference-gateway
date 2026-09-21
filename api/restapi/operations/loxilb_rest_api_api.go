@@ -377,6 +377,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetSniCertificatesHandler: GetSniCertificatesHandlerFunc(func(params GetSniCertificatesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetSniCertificates has not yet been implemented")
 		}),
+		GetStatusCapabilitiesHandler: GetStatusCapabilitiesHandlerFunc(func(params GetStatusCapabilitiesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetStatusCapabilities has not yet been implemented")
+		}),
 		GetStatusDeviceHandler: GetStatusDeviceHandlerFunc(func(params GetStatusDeviceParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetStatusDevice has not yet been implemented")
 		}),
@@ -1001,6 +1004,8 @@ type LoxilbRestAPIAPI struct {
 	AuthGetOauthProviderTokenHandler auth.GetOauthProviderTokenHandler
 	// GetSniCertificatesHandler sets the operation handler for the get sni certificates operation
 	GetSniCertificatesHandler GetSniCertificatesHandler
+	// GetStatusCapabilitiesHandler sets the operation handler for the get status capabilities operation
+	GetStatusCapabilitiesHandler GetStatusCapabilitiesHandler
 	// GetStatusDeviceHandler sets the operation handler for the get status device operation
 	GetStatusDeviceHandler GetStatusDeviceHandler
 	// GetStatusFilesystemHandler sets the operation handler for the get status filesystem operation
@@ -1645,6 +1650,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.GetSniCertificatesHandler == nil {
 		unregistered = append(unregistered, "GetSniCertificatesHandler")
+	}
+	if o.GetStatusCapabilitiesHandler == nil {
+		unregistered = append(unregistered, "GetStatusCapabilitiesHandler")
 	}
 	if o.GetStatusDeviceHandler == nil {
 		unregistered = append(unregistered, "GetStatusDeviceHandler")
@@ -2532,6 +2540,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/sni/certificates"] = NewGetSniCertificates(o.context, o.GetSniCertificatesHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/status/capabilities"] = NewGetStatusCapabilities(o.context, o.GetStatusCapabilitiesHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
