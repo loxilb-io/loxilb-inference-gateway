@@ -62,6 +62,21 @@ func syncDir(dir string) error {
 // rename is already visible in the namespace: durability is unconfirmed,
 // so callers must treat the persist as failed rather than report success.
 func writeAtomic(dir, name string, data []byte) (string, error) {
+	// The directory may not exist yet: a fresh install, an image that
+	// ships no config directory, or a volume that is not mounted. Creating
+	// it here rather than in each caller is deliberate -- failing instead
+	// would leave a first restore, and every capture, fail-closed for want
+	// of a mkdir, which is the one moment an operator has no other way in.
+	//
+	// 0755 is the mode, and it is the directory's only sensible one: every
+	// file published through this function is chmod 0600 below, so the
+	// content's confidentiality is carried by the file mode and not by the
+	// directory. All three callers resolve to the same --config-path
+	// directory, so a narrower mode here would silently depend on which of
+	// them happened to create it first.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create directory: %w", err)
+	}
 	finalPath := filepath.Join(dir, name)
 	tmp, err := os.CreateTemp(dir, "."+name+"-*.tmp")
 	if err != nil {
