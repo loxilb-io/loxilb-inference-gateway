@@ -62,6 +62,8 @@ Success sentinel: `SCENARIO-vllm-pd-disagg [PASS]`.
 | Phase J | Tier-0 conversation stickiness |
 | Phase K | Tier-1 cache-aware trie routing on :2023 |
 | Phase L | HA session restoration across a 2-loxilb MASTER failover (gated; `validation-convsync.sh` / `validation-xsync.sh`) |
+| Phase M | `kv_transfer_params` accounting: found/missing as the two arms of one branch, plus the extractor's overflow counter |
+| Phase N | worker-scrape outcome accounting: `loxilb_ai_worker_scrape_total{result}` driven through http_error / ok / unparseable / unreachable |
 
 The **origin-5xx breaker demotion** for this dialect (a prefill 5xx is
 swallowed as decode-recompute, so only the origin-error streak can demote an
