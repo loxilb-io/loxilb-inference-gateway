@@ -116,6 +116,12 @@ typedef struct proxy_metrics_snapshot {
     // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c;
     // keep ALL THREE in lockstep, same commit.
     uint64_t pd_admission_overflow_shed;
+
+    // Client connections dropped for not completing their request headers
+    // within the listener's deadline. TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c;
+    // keep ALL THREE in lockstep, same commit.
+    uint64_t hdr_deadline_drops;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -633,6 +639,14 @@ var (
 		},
 	)
 
+	// Client connections dropped at the header-completion deadline (Counter)
+	proxyHeaderDeadlineDropsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_proxy_header_deadline_drops_total",
+			Help: "Client connections closed because the request headers did not complete within the listener's header-completion deadline (timeout_tcp_inspect_ms, default 10 s). A steady trickle is slow or half-open clients being shed; a burst alongside a p99 rise is a slowloris hold being cut.",
+		},
+	)
+
 	// Metric #28: P/D circuit-breaker proactive heals (Counter)
 	pdCbProactiveHealTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
@@ -1108,6 +1122,10 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_admission_overflow_shed >= prevSockproxyMetrics.pd_admission_overflow_shed {
 			delta := current.pd_admission_overflow_shed - prevSockproxyMetrics.pd_admission_overflow_shed
 			pdAdmissionOverflowShedTotal.Add(float64(delta))
+		}
+		if current.hdr_deadline_drops >= prevSockproxyMetrics.hdr_deadline_drops {
+			delta := current.hdr_deadline_drops - prevSockproxyMetrics.hdr_deadline_drops
+			proxyHeaderDeadlineDropsTotal.Add(float64(delta))
 		}
 		if current.pd_cb_proactive_heal >= prevSockproxyMetrics.pd_cb_proactive_heal {
 			delta := current.pd_cb_proactive_heal - prevSockproxyMetrics.pd_cb_proactive_heal
