@@ -2982,6 +2982,474 @@ m_kv_mode on >/dev/null 2>&1 || true
 bail_check
 fi  # Phase M
 
+if should_run_phase "N"; then
+echo "#########################################"
+echo "PHASE N — WORKER-SCRAPE OUTCOME ACCOUNTING"
+echo "#########################################"
+#
+# Family: loxilb_ai_worker_scrape_total{result} — the outcome of every poll the
+# gateway's own vLLM worker scraper makes against a P/D endpoint's /metrics.
+# It had a Go unit test and a one-off runtime observation, and no committed gate.
+#
+# WHY IT MATTERS, and why "flat" is the wrong reading of it. The scraper feeds
+# P/D prefill selection (queue depth + advertised KV capacity). When it stops
+# producing samples the datapath does NOT stop routing: sockproxy_pd.c drops a
+# stale queued_requests and substitutes the fleet average, so selection keeps
+# working on a fill-in. "Routing on live load" and "routing on a fill-in because
+# every scrape has failed for ten minutes" need opposite operator responses, and
+# this family is the only thing that separates them.
+#
+# 🚨 THE FAMILY IS PRE-CREATED AT init (activation P), so PRESENCE PROVES NOTHING
+# about liveness. All seven children read 0 on a gateway whose scraper never ran
+# a single poll — that is the whole point of the pre-create (an absent vector and
+# a healthy gateway must not look alike to an alert). So every arm below is a
+# DELTA across a timed window, and N1 states the presence property separately and
+# labels it as what it is.
+#
+# ONE WRITER, ONE CALL SITE. aiWorkerScrapeTotal is incremented only by
+# RecordWorkerScrape (api/prometheus/ai_metrics.go), whose only non-test caller is
+# vllmScraperSink.OnScrapeResult (pkg/loxinet/ai_vllm_scraper.go). The scraper
+# itself is started only under `if r.pdDisaggMode` (pkg/loxinet/rules.go), one
+# instance per P/D rule over ALL that rule's endpoints. So a delta here is
+# attributable to a writer, not merely to a family.
+#
+# THE ORACLE IS A MATRIX, NOT A RATE. Each arm puts the fixture in a state that
+# can produce exactly ONE outcome, and asserts that the matching child moves while
+# every other child is FLAT — including the children that moved in the arm before,
+# which must FREEZE. A miscount lands somewhere; a mislabel lands on the wrong
+# child; a dead writer lands nowhere. A bare "the counter went up" would survive
+# all three.
+#
+#   fixture state                     -> outcome        arm
+#   GET /metrics 404 (shipped mock)   -> http_error     N2
+#   GET /metrics 200 + vLLM series    -> ok             N3
+#   GET /metrics 200 + nothing known  -> unparseable    N4
+#   listener gone                     -> unreachable    N5
+#
+# body_error, bad_request and unknown are NOT reachable from a live scrape of a
+# well-behaved listener — they need a truncated read, an unbuildable URL and a
+# typo in the caller respectively — so they are asserted FLAT throughout and are
+# covered by the package unit tests instead. Claiming a runtime gate for them
+# would be claiming coverage this scenario cannot produce.
+#
+# 🚨 TWO CLOCKS. The scraper ticks every 10s per rule, independently per rule
+# (each ticker starts when its rule is added), and a mode flip cannot retire a
+# poll already in flight. So every arm SETTLES past a full interval after the
+# flip before it takes its baseline — otherwise the previous arm's outcome lands
+# inside this arm's window and is scored as a leak.
+
+N_INTERVAL=10               # aimetrics.NewPoller default when the caller passes 0
+N_SETTLE=13                 # > one full interval: any poll in flight at the flip has landed
+N_WINDOW=25                 # nominal; every band is computed from the MEASURED elapsed time
+N_EPS_ALL="l3ep1 l3ep2 l3ep3 l3ep4"
+N_RESULTS="ok unreachable http_error body_error unparseable bad_request unknown"
+N_ADMIN="http://127.0.0.1:9000/admin"
+
+# n_scrape — ONE /metrics read, cached into N_BLOB. Every child of a reading is
+# taken from the same blob so a reading describes one consistent instant; reading
+# the children one call at a time would let the scraper tick between two of them
+# and turn a genuine freeze into a spurious move.
+N_BLOB=""
+n_scrape() {
+  N_T_PRE=$(date +%s)
+  N_BLOB=$($hexec llb1 curl -s --max-time 8 http://localhost:11111/netlox/v1/metrics 2>/dev/null)
+  N_T_POST=$(date +%s)
+  case "$N_BLOB" in
+    *loxilb_*) return 0 ;;
+    *) N_BLOB=""; return 1 ;;
+  esac
+}
+
+# n_child <result> — that child's value out of the cached blob. "unreadable" is
+# NOT zero: a child pre-created at 0 and a scrape that never completed are the
+# same number, and only one of them is a measurement.
+n_child() {
+  [ -z "$N_BLOB" ] && { echo "unreadable"; return; }
+  printf '%s\n' "$N_BLOB" | awk -v r="$1" '
+    $0 ~ "^loxilb_ai_worker_scrape_total\\{" && index($0, "result=\"" r "\"") > 0 {
+      v = $NF; if (v + 0 == v) s += v; n++
+    }
+    END { if (n == 0) print "absent"; else printf "%.0f", s }'
+}
+
+# n_read — snapshot all seven children into N_NOW_<result>. Publishes N_NOW_total.
+n_read() {
+  local r v
+  if ! n_scrape; then
+    for r in $N_RESULTS; do eval "N_NOW_$r=unreadable"; done
+    N_NOW_total=unreadable
+    return 1
+  fi
+  N_NOW_total=0
+  for r in $N_RESULTS; do
+    v=$(n_child "$r")
+    eval "N_NOW_$r=\$v"
+    case "$v" in
+      ''|*[!0-9]*) N_NOW_total=unreadable ;;
+      *) [ "$N_NOW_total" != unreadable ] && N_NOW_total=$(( N_NOW_total + v )) ;;
+    esac
+  done
+  return 0
+}
+
+# n_snap <prefix> — freeze the current reading under a named prefix.
+n_snap() {
+  local p="$1" r v
+  n_read || true
+  for r in $N_RESULTS; do eval "v=\$N_NOW_$r"; eval "${p}_$r=\$v"; done
+  eval "${p}_total=\$N_NOW_total"
+  # Two stamps, not one: the /metrics read itself takes time, and a read that
+  # happens to be slow would otherwise inflate the apparent window and push the
+  # tick floor up past what actually elapsed BETWEEN the two readings. Bracket
+  # the reading instead, and let n_ticks take the narrowest window for the floor
+  # and the widest for the ceiling.
+  eval "${p}_pre=\$N_T_PRE"
+  eval "${p}_post=\$N_T_POST"
+}
+
+# n_ticks <before-prefix> <after-prefix> — how many times a 10s ticker can have
+# fired between the two readings. Taken from the clock the readings were actually
+# taken on, not from the sleep that was requested: a slow /metrics read stretches
+# the real window, and a band built on the nominal window would then redden a
+# product that counted correctly. Publishes N_TICK_LO / N_TICK_HI.
+#
+# Each rule owns an independent ticker of the same period, so over an elapsed
+# window W every rule fires either floor(W/interval) or one more than that.
+n_ticks() {
+  local bpre bpost apre apost wmin wmax
+  eval "bpre=\$$1_pre";  eval "bpost=\$$1_post"
+  eval "apre=\$$2_pre";  eval "apost=\$$2_post"
+  # wmin: the after-read had certainly not started before this much elapsed.
+  # wmax: the two reads cannot be further apart than this.
+  wmin=$(( apre - bpost ))
+  wmax=$(( apost - bpre ))
+  [ "$wmin" -lt 0 ] && wmin=0
+  N_TICK_LO=$(( wmin / N_INTERVAL ))
+  N_TICK_HI=$(( wmax / N_INTERVAL + 1 ))
+  N_ELAPSED="${wmin}..${wmax}"
+}
+
+# n_delta_zero <label> <result> <before-prefix> <after-prefix> — this child did
+# NOT move. The freeze arms are the discriminating half of the matrix: they are
+# what separates "the right child moved" from "a child moved".
+n_delta_zero() {
+  local label="$1" r="$2" b c a
+  eval "b=\$$3_$r"; eval "a=\$$4_$r"
+  case "$b$a" in
+    *unreadable*|*absent*)
+      echo "  FAIL: $label — LOST MEASUREMENT (before='$b' after='$a')"; code=1; return ;;
+  esac
+  c=$(( a - b ))
+  if [ "$c" -eq 0 ]; then
+    echo "  PASS: $label (result=\"$r\" flat at $a)"
+  else
+    echo "  FAIL: $label — result=\"$r\" moved by $c ($b -> $a), expected 0"
+    code=1
+  fi
+}
+
+# n_delta_band <label> <result> <before-prefix> <after-prefix> <lo> <hi>
+# This child carried the window's polls. Callers build lo/hi with n_band from the
+# endpoint count that state can produce and the ticks the clock actually allowed,
+# so anything outside is either a writer that stopped or one that counts a poll
+# more than once. lo and hi are never equal — an inner bound reachable only by an
+# impossible value proves nothing.
+n_delta_band() {
+  local label="$1" r="$2" lo="$5" hi="$6" b a c
+  eval "b=\$$3_$r"; eval "a=\$$4_$r"
+  case "$b$a" in
+    *unreadable*|*absent*)
+      echo "  FAIL: $label — LOST MEASUREMENT (before='$b' after='$a')"; code=1; return ;;
+  esac
+  c=$(( a - b ))
+  if [ "$c" -ge "$lo" ] && [ "$c" -le "$hi" ]; then
+    echo "  PASS: $label (result=\"$r\" delta=$c, band $lo..$hi)"
+  else
+    echo "  FAIL: $label — result=\"$r\" delta=$c outside band $lo..$hi ($b -> $a)"
+    code=1
+  fi
+}
+
+# n_flat_except <arm> <before-prefix> <after-prefix> <moving...> — every child not
+# named must be flat. Enumerating the complement rather than listing the flats by
+# hand is what makes a NEW child added to the label set fail loudly here instead
+# of being silently unscored.
+n_flat_except() {
+  local arm="$1" bp="$2" ap="$3"; shift 3
+  local r m skip
+  for r in $N_RESULTS; do
+    skip=0
+    for m in "$@"; do [ "$r" = "$m" ] && skip=1; done
+    [ "$skip" = "1" ] && continue
+    n_delta_zero "$arm: result=\"$r\" stayed flat" "$r" "$bp" "$ap"
+  done
+}
+
+# n_mode <mode> — put EVERY live endpoint's /metrics into one state and prove it
+# landed by reading it back. The gateway polls all of them, so a mode that moved
+# on three mocks out of four leaves the fourth still producing the previous arm's
+# outcome and the freeze assert would score a real product reading as a leak.
+n_mode() {
+  local want="$1" ep got bad=0
+  for ep in $N_LIVE_EPS; do
+    $dexec "$ep" curl -s -m 5 -X POST "${N_ADMIN}/metrics-mode-${want}" >/dev/null 2>&1
+    got=$($dexec "$ep" curl -s -m 5 "${N_ADMIN}/status" 2>/dev/null \
+          | grep -o '"metrics_mode": *"[^"]*"' | cut -d'"' -f4)
+    [ "$got" = "$want" ] || { echo "    $ep metrics_mode='$got', wanted '$want'"; bad=1; }
+  done
+  return $bad
+}
+
+# n_band <per-tick-count> — the delta band for a child that carries <per-tick-count>
+# of the population's polls, over the window n_ticks just measured. Publishes
+# N_BAND_LO / N_BAND_HI.
+n_band() {
+  N_BAND_LO=$(( $1 * N_TICK_LO ))
+  N_BAND_HI=$(( $1 * N_TICK_HI ))
+}
+
+# ── N0: the drive shape, derived from the gateway rather than assumed ─────────
+#
+# How many polls a tick produces is a property of the CONFIGURATION — one scraper
+# per pd_disagg rule, over that rule's endpoints — so it is read out of the
+# gateway's own rule list instead of hardcoded from what config.sh happens to
+# create today. A band computed from a stale guess would redden a correct product.
+#
+# The same walk records how many rules each endpoint belongs to, because N5 takes
+# ONE endpoint down and has to predict that endpoint's share of a tick separately
+# from the rest. An endpoint serving two P/D rules is polled twice per tick.
+N_LB_ALL=$($hexec llb1 curl -s --max-time 10 http://localhost:11111/netlox/v1/config/loadbalancer/all 2>/dev/null)
+N_POP=$(printf '%s' "$N_LB_ALL" | python3 -c "
+import json,sys
+try:
+  d=json.load(sys.stdin); n=0; per={}
+  for lb in d.get('lbAttr',[]):
+    if not lb.get('serviceArguments',{}).get('pd_disagg_mode'): continue
+    for ep in lb.get('endpoints',[]):
+      ip=ep.get('endpointIP','')
+      n+=1; per[ip]=per.get(ip,0)+1
+  print(n)
+  for ip,c in sorted(per.items()): print(ip,c)
+except Exception: print(0)
+" 2>/dev/null || echo 0)
+N_EPS=$(printf '%s\n' "$N_POP" | head -1)
+echo "  N0: pd_disagg endpoints polled per ${N_INTERVAL}s tick: $N_EPS"
+printf '%s\n' "$N_POP" | tail -n +2 | while read -r ip c; do
+  [ -n "$ip" ] && echo "      $ip is polled ${c}x per tick"
+done
+if [ "${N_EPS:-0}" -gt 0 ]; then
+  check "TN0a: the scrape population is non-empty — $N_EPS polls per tick" 0
+else
+  check "TN0a: the scrape population is non-empty (derived '$N_EPS' — with no P/D rule carrying endpoints no arm below could discriminate)" 1
+  N_EPS=0
+fi
+
+# n_ep_share <container> — how many polls per tick that container's endpoint takes.
+n_ep_share() {
+  local ip
+  case "$1" in
+    l3ep1) ip=31.31.31.1 ;; l3ep2) ip=32.32.32.1 ;;
+    l3ep3) ip=33.33.33.1 ;; l3ep4) ip=34.34.34.1 ;;
+    *) echo 0; return ;;
+  esac
+  printf '%s\n' "$N_POP" | awk -v ip="$ip" '$1 == ip { print $2; found=1 } END { if (!found) print 0 }'
+}
+
+# Which mocks are actually answering. Earlier phases kill and restart mocks; if one
+# did not come back, its endpoint is contributing "unreachable" to every tick and the
+# arms below would read a live product signal as contamination. Establish it, do not
+# assume it.
+N_LIVE_EPS=""
+N_DEAD_EPS=""
+for ep in $N_EPS_ALL; do
+  if $dexec "$ep" curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health 2>/dev/null | grep -q '^200$'; then
+    N_LIVE_EPS="$N_LIVE_EPS $ep"
+  else
+    N_DEAD_EPS="$N_DEAD_EPS $ep"
+  fi
+done
+echo "  N0: mocks answering /health:${N_LIVE_EPS:- none}; not answering:${N_DEAD_EPS:- none}"
+if [ -z "$N_DEAD_EPS" ]; then
+  check "TN0b: all four mocks answer /health — every poll this phase scores reaches a listener" 0
+else
+  check "TN0b: all four mocks answer /health (${N_DEAD_EPS# } did not; an earlier phase left it down, so every tick below carries an unreachable this phase did not cause)" 1
+fi
+
+# ── N1: the pre-create property, stated as itself ────────────────────────────
+#
+# Activation P: init walks the closed result set and creates every child, so the
+# vector is present at zero before anything has been recorded. This is the
+# property that makes "the scraper produced no sample at all" visible as seven
+# flat zeros instead of an absent family. It is NOT evidence that the scraper
+# runs — N2 onward is.
+n_snap N_P
+N1_MISSING=""
+for r in $N_RESULTS; do
+  eval "n1v=\$N_P_$r"
+  [ "$n1v" = "absent" ] && N1_MISSING="$N1_MISSING $r"
+done
+if [ "$N_P_total" = "unreadable" ]; then
+  check "TN1: all seven result children are present (the /metrics scrape did not complete, so nothing was read)" 1
+elif [ -z "$N1_MISSING" ]; then
+  check "TN1: all seven result children present — the pre-create holds, so a silent scraper reads as zeros rather than as an absent family" 0
+else
+  check "TN1: all seven result children present (missing:${N1_MISSING}) — a lazily-created child is ABSENT in exactly the state this family exists to report" 1
+fi
+
+# ── N2: the shipped fixture — 404 -> http_error, and nothing else ─────────────
+#
+# This is the state the scenario is in for every other phase, so this arm also
+# says the family has been counting all along rather than starting when this
+# phase first touched the fixture.
+n_mode absent && check "TN2a: every live mock reports metrics_mode=absent (the knob landed)" 0 \
+              || check "TN2a: every live mock reports metrics_mode=absent (the knob did NOT land, so the arm below would score the wrong fixture)" 1
+sleep "$N_SETTLE"
+n_snap N_A0
+sleep "$N_WINDOW"
+n_snap N_A1
+n_ticks N_A0 N_A1
+n_band "$N_EPS"
+echo "  N2: window ${N_ELAPSED}s => ${N_TICK_LO}..${N_TICK_HI} ticks x $N_EPS polls = ${N_BAND_LO}..${N_BAND_HI}"
+n_delta_band "TN2b: a 404 /metrics is charged as http_error" http_error N_A0 N_A1 "$N_BAND_LO" "$N_BAND_HI"
+n_flat_except "TN2c" N_A0 N_A1 http_error
+
+# ── N3: 200 + the recognized series -> ok, and http_error FREEZES ─────────────
+#
+# The freeze is the load-bearing half. "ok moved" alone is satisfied by a writer
+# that increments every child, or by one that ignores its argument; only
+# http_error dropping from a full window's worth to exactly zero, inside the same
+# measurement, shows the outcome is being read off the response.
+#
+# ⚠️ In this mode the scrape PARSES, so OnSample also runs and refreshes the
+# C-side queue-depth and capacity inputs to prefill selection. Phase N is the
+# last phase and restores the 404 fixture on the way out, so nothing downstream
+# reads those values; they age out under the datapath's own staleness guard.
+n_mode vllm && check "TN3a: every live mock reports metrics_mode=vllm (the knob landed)" 0 \
+            || check "TN3a: every live mock reports metrics_mode=vllm (the knob did NOT land)" 1
+sleep "$N_SETTLE"
+n_snap N_B0
+sleep "$N_WINDOW"
+n_snap N_B1
+n_ticks N_B0 N_B1
+n_band "$N_EPS"
+echo "  N3: window ${N_ELAPSED}s => ${N_TICK_LO}..${N_TICK_HI} ticks x $N_EPS polls = ${N_BAND_LO}..${N_BAND_HI}"
+n_delta_band "TN3b: a parseable 200 /metrics is charged as ok" ok N_B0 N_B1 "$N_BAND_LO" "$N_BAND_HI"
+n_delta_zero "TN3c: and http_error FREEZES — the outcome follows the response, not the poll" http_error N_B0 N_B1
+n_flat_except "TN3d" N_B0 N_B1 ok
+
+# ── N4: 200 + nothing recognized -> unparseable, with ok and http_error frozen ─
+#
+# The discrimination this arm buys is between "answered" and "answered something
+# this gateway understands": same status code as N3, same transport, one field of
+# the body changed. A scraper that decided on the status line alone would keep
+# charging ok here, and exactly one assert catches it.
+n_mode garbage && check "TN4a: every live mock reports metrics_mode=garbage (the knob landed)" 0 \
+               || check "TN4a: every live mock reports metrics_mode=garbage (the knob did NOT land)" 1
+sleep "$N_SETTLE"
+n_snap N_C0
+sleep "$N_WINDOW"
+n_snap N_C1
+n_ticks N_C0 N_C1
+n_band "$N_EPS"
+echo "  N4: window ${N_ELAPSED}s => ${N_TICK_LO}..${N_TICK_HI} ticks x $N_EPS polls = ${N_BAND_LO}..${N_BAND_HI}"
+n_delta_band "TN4b: a 200 carrying no recognized family is charged as unparseable" unparseable N_C0 N_C1 "$N_BAND_LO" "$N_BAND_HI"
+n_delta_zero "TN4c: and ok FREEZES — a 200 alone is not a successful scrape" ok N_C0 N_C1
+n_delta_zero "TN4d: and http_error stays frozen" http_error N_C0 N_C1
+n_flat_except "TN4e" N_C0 N_C1 unparseable
+
+# ── N5: the listener gone -> unreachable, ALONGSIDE http_error in one window ──
+#
+# The operationally important failure, and the one the pre-fix gateway reported
+# nowhere: transport failure. Only ONE endpoint is taken down, so this single
+# window carries two different outcomes attributed to different endpoints — which
+# is what a per-family delta could never show — and each is predicted from that
+# endpoint's own share of a tick. The surviving endpoints go back to the shipped
+# 404 so the two children are told apart by their labels and not by being
+# measured at different times.
+N_KILL_EP=$(printf '%s' "$N_LIVE_EPS" | awk '{print $NF}')
+n_mode absent >/dev/null 2>&1 || true
+sleep "$N_SETTLE"
+if [ -n "$N_KILL_EP" ] && [ "${N_EPS:-0}" -gt 0 ]; then
+  N_KILL_SHARE=$(n_ep_share "$N_KILL_EP")
+  N_REST_SHARE=$(( N_EPS - N_KILL_SHARE ))
+  echo "  N5: stopping the mock on $N_KILL_EP — it takes $N_KILL_SHARE of the $N_EPS polls a tick makes; $N_REST_SHARE keep answering 404"
+  if [ "$N_KILL_SHARE" -gt 0 ] && [ "$N_REST_SHARE" -gt 0 ]; then
+    $dexec "$N_KILL_EP" pkill -f mock_vllm.py 2>/dev/null || true
+    sleep 2
+    n_snap N_D0
+    sleep "$N_WINDOW"
+    n_snap N_D1
+    n_ticks N_D0 N_D1
+    n_band "$N_KILL_SHARE"
+    N5_ULO=$N_BAND_LO; N5_UHI=$N_BAND_HI
+    n_band "$N_REST_SHARE"
+    N5_HLO=$N_BAND_LO; N5_HHI=$N_BAND_HI
+    echo "  N5: window ${N_ELAPSED}s => ${N_TICK_LO}..${N_TICK_HI} ticks; unreachable ${N5_ULO}..${N5_UHI}, http_error ${N5_HLO}..${N5_HHI}"
+    n_delta_band "TN5a: the stopped endpoint's polls are charged as unreachable, in its own share of the tick" unreachable N_D0 N_D1 "$N5_ULO" "$N5_UHI"
+    n_delta_band "TN5b: and the endpoints still answering keep charging http_error in the SAME window" http_error N_D0 N_D1 "$N5_HLO" "$N5_HHI"
+    n_flat_except "TN5c" N_D0 N_D1 unreachable http_error
+    # Conservation, stated only alongside the two arm-specific deltas above: on
+    # its own it is arm-agnostic — it holds just as well if every poll were
+    # charged to a single child — so all it adds is that no poll went UNCOUNTED.
+    case "${N_D0_unreachable}${N_D1_unreachable}${N_D0_http_error}${N_D1_http_error}" in
+      *unreadable*|*absent*)
+        check "TN5d: conservation — the two outcomes account for the whole window (a reading was lost, so the sum was never taken)" 1 ;;
+      *)
+        N5_SUM=$(( (N_D1_unreachable - N_D0_unreachable) + (N_D1_http_error - N_D0_http_error) ))
+        N5_TLO=$(( N_EPS * N_TICK_LO )); N5_THI=$(( N_EPS * N_TICK_HI ))
+        echo "  N5: unreachable + http_error = $N5_SUM against a window of ${N5_TLO}..${N5_THI} polls"
+        if [ "$N5_SUM" -ge "$N5_TLO" ] && [ "$N5_SUM" -le "$N5_THI" ]; then
+          check "TN5d: conservation — the two outcomes together account for the whole window's polls ($N5_SUM in ${N5_TLO}..${N5_THI}), so the fault dropped no poll" 0
+        else
+          check "TN5d: conservation — the two outcomes together account for the whole window's polls (got $N5_SUM, want ${N5_TLO}..${N5_THI})" 1
+        fi ;;
+    esac
+
+    # ── N6: the fault clears and the counter STOPS ───────────────────────────
+    #
+    # A counter that climbs during a fault but never stops once it clears reports
+    # a permanent outage, which is the same operator error in the other direction.
+    echo "  N6: restarting the mock on $N_KILL_EP"
+    case "$N_KILL_EP" in
+      l3ep1) $dexec l3ep1 bash -c "nohup python3 /tmp/mock_vllm.py --role prefill --port 8000 --nixl-port 9001 --ep-idx 1 >> /tmp/vllm-server1.log 2>&1 &" ;;
+      l3ep2) $dexec l3ep2 bash -c "nohup python3 /tmp/mock_vllm.py --role decode  --port 8000 --nixl-port 9002 --ep-idx 2 >> /tmp/vllm-server2.log 2>&1 &" ;;
+      l3ep3) $dexec l3ep3 bash -c "nohup python3 /tmp/mock_vllm.py --role prefill --port 8000 --nixl-port 9003 --ep-idx 3 >> /tmp/vllm-server3.log 2>&1 &" ;;
+      l3ep4) $dexec l3ep4 bash -c "nohup python3 /tmp/mock_vllm.py --role decode  --port 8000 --nixl-port 9004 --ep-idx 4 >> /tmp/vllm-server4.log 2>&1 &" ;;
+    esac
+    # Wait on the MECHANISM — the listener answering again — never on a clock.
+    N6_UP=1
+    for i in $(seq 1 25); do
+      if $dexec "$N_KILL_EP" curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health 2>/dev/null | grep -q '^200$'; then
+        N6_UP=0; break
+      fi
+      sleep 1
+    done
+    check "TN6a: the mock on $N_KILL_EP answers again (the recovery arm needs a recovered fixture)" "$N6_UP"
+    sleep "$N_SETTLE"
+    n_snap N_E0
+    sleep "$N_WINDOW"
+    n_snap N_E1
+    n_ticks N_E0 N_E1
+    n_band "$N_EPS"
+    echo "  N6: window ${N_ELAPSED}s => ${N_TICK_LO}..${N_TICK_HI} ticks x $N_EPS polls = ${N_BAND_LO}..${N_BAND_HI}"
+    n_delta_zero "TN6b: unreachable FREEZES once the listener is back — the counter reports the fault's DURATION, not that it once happened" unreachable N_E0 N_E1
+    n_delta_band "TN6c: and http_error resumes over the whole population" http_error N_E0 N_E1 "$N_BAND_LO" "$N_BAND_HI"
+    n_flat_except "TN6d" N_E0 N_E1 http_error
+  else
+    check "TN5: the chosen endpoint has a share of the tick to lose (share=$N_KILL_SHARE of $N_EPS) — with 0, or with all of it, the arm could not separate the two outcomes" 1
+  fi
+else
+  check "TN5: an endpoint was available to stop for the transport-failure arm" 1
+fi
+
+# Leave the fixture exactly as the scenario ships it, so a later phase and a
+# re-run both see an unmodified mock.
+N_LIVE_EPS="$N_EPS_ALL"
+n_mode absent >/dev/null 2>&1 || true
+
+bail_check
+fi  # Phase N
+
 echo "#########################################"
 echo "Results"
 echo "#########################################"
