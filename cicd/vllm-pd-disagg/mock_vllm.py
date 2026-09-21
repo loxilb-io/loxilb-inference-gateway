@@ -56,6 +56,49 @@ _kv_params_mode = "on"  # "on" | "off" | "oversize" — shape of kv_transfer_par
                         #               prefill response that simply has no params
                         #   oversize -> the value exceeds PD_KV_PARAMS_MAX_LEN (64KB), which
                         #               is the only way to reach the extractor's overflow arm
+_metrics_mode = "absent"  # "absent" | "vllm" | "garbage" — what GET /metrics answers.
+                          # Default "absent" is byte-identical to the historical
+                          # behaviour (the path falls through to 404), so every
+                          # scenario that docker-cp's this file is unaffected and
+                          # phases A-M see exactly the fixture they always saw.
+                          #
+                          # This exists because the gateway's own worker scraper polls
+                          # /metrics on every P/D endpoint every 10s and reports the
+                          # OUTCOME as loxilb_ai_worker_scrape_total{result}. The three
+                          # modes are the three outcomes a reachable endpoint can produce,
+                          # and they are switched at runtime rather than at spawn so one
+                          # arm's control is the same endpoint with one field changed:
+                          #   absent  -> 404            -> result="http_error"
+                          #   vllm    -> 200 + the recognized series -> result="ok"
+                          #   garbage -> 200 + nothing recognized    -> result="unparseable"
+                          # The fourth outcome, result="unreachable", needs the listener
+                          # gone and so cannot be a mode here.
+
+# The narrow 3-series set pkg/aimetrics/lineparser.go recognizes. Served verbatim in
+# mode "vllm": the parser reports "found" on the FIRST recognized family, so all three
+# are emitted to keep this an honest vLLM /metrics rather than a minimum that happens
+# to trip the parser. Values are static — nothing in this scenario asserts on them,
+# and a moving value would make the sample the arm under test instead of the outcome.
+_VLLM_METRICS_BODY = """# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+# TYPE vllm:num_requests_waiting gauge
+vllm:num_requests_waiting 3.0
+# HELP vllm:kv_cache_usage_perc KV-cache usage as a fraction.
+# TYPE vllm:kv_cache_usage_perc gauge
+vllm:kv_cache_usage_perc 0.25
+# HELP vllm:cache_config_info Cache configuration.
+# TYPE vllm:cache_config_info gauge
+vllm:cache_config_info{num_gpu_blocks="2048",block_size="16"} 1.0
+"""
+
+# Mode "garbage": a 200 with a well-formed exposition body that carries NO recognized
+# family. Deliberately not empty and not malformed — "unparseable" in the scraper's
+# vocabulary means "answered, readable, but nothing we know", and an empty body would
+# leave it ambiguous with a truncated read.
+_GARBAGE_METRICS_BODY = """# HELP some_other_exporter_up Nothing this gateway parses.
+# TYPE some_other_exporter_up gauge
+some_other_exporter_up 1.0
+"""
+
 # Identity of this server instance, echoed as the X-Served-By response header so
 # a test can attribute a proxied response to the endpoint that produced it. In
 # Kubernetes POD_NAME (downward API) names the pod; hostname covers docker/netns.
@@ -129,8 +172,34 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"status": "ok", "role": SERVER_ROLE})
             else:
                 self._send_json(503, {"status": "fail", "role": SERVER_ROLE})
+        elif self.path == "/metrics":
+            self._handle_metrics()
         else:
             self._send_json(404, {"error": "Not found"})
+
+    def _handle_metrics(self):
+        """The gateway's worker scraper polls this every 10s per P/D endpoint.
+
+        In mode "absent" the request falls through to the same 404 the path
+        produced before this route existed — the branch is here rather than in
+        do_GET so the default answer stays a single code path with the other
+        unknown paths, and so switching modes cannot change anything else.
+        """
+        if _metrics_mode == "vllm":
+            body = _VLLM_METRICS_BODY.encode()
+        elif _metrics_mode == "garbage":
+            body = _GARBAGE_METRICS_BODY.encode()
+        else:
+            self._send_json(404, {"error": "Not found"})
+            return
+        self.send_response(200)
+        # text/plain, as a Prometheus exporter answers. The gateway's parser is
+        # content-type agnostic, so this is fidelity to the real thing rather
+        # than something an assert depends on.
+        self.send_header("Content-Type", "text/plain; version=0.0.4")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         content_len = int(self.headers.get("Content-Length", 0))
@@ -402,7 +471,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        global _health_ok, _fail_next, _kv_params_mode
+        global _health_ok, _fail_next, _kv_params_mode, _metrics_mode
         if not self._auth_ok():
             self.send_response(401)
             self.end_headers()
@@ -419,10 +488,21 @@ class AdminHandler(BaseHTTPRequestHandler):
             _kv_params_mode = self.path.rsplit("-", 1)[1]
             self._reply_json({"kv_params_mode": _kv_params_mode})
             print(f"[{SERVER_ROLE}] [admin] kv-params mode = {_kv_params_mode}", flush=True)
+        elif self.path in ("/admin/metrics-mode-absent", "/admin/metrics-mode-vllm",
+                           "/admin/metrics-mode-garbage"):
+            # What GET /metrics answers, and so which scrape OUTCOME the gateway
+            # records for this endpoint. The print is the arm's receipt that the
+            # knob actually moved: a control that silently failed to switch would
+            # otherwise be scored as a product result.
+            _metrics_mode = self.path.rsplit("-", 1)[1]
+            self._reply_json({"metrics_mode": _metrics_mode})
+            print(f"[{SERVER_ROLE}] [admin] metrics mode = {_metrics_mode}", flush=True)
         elif self.path == "/admin/reset":
             _fail_next = False
             _kv_params_mode = "on"
-            self._reply_json({"fail_next": False, "kv_params_mode": _kv_params_mode})
+            _metrics_mode = "absent"
+            self._reply_json({"fail_next": False, "kv_params_mode": _kv_params_mode,
+                              "metrics_mode": _metrics_mode})
             print(f"[{SERVER_ROLE}] [admin] knobs RESET", flush=True)
         elif self.path == "/admin/health-fail":
             _health_ok = False
@@ -456,6 +536,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 "health_ok": _health_ok,
                 "fail_next": _fail_next,
                 "kv_params_mode": _kv_params_mode,
+                "metrics_mode": _metrics_mode,
                 "role": SERVER_ROLE,
                 "request_count": _request_count,
             }).encode()
