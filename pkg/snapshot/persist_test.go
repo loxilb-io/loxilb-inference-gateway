@@ -292,3 +292,90 @@ func TestQuarantinePersistedSyncsDirectory(t *testing.T) {
 		t.Fatalf("quarantine file missing: %v", err)
 	}
 }
+
+// TestWriteAtomicCreatesMissingDirectory covers the deployment this package
+// previously failed closed on: a node whose --config-path directory does not
+// exist yet. os.CreateTemp does not create its directory, so every publisher
+// here -- the write-through persist, the pre-restore PRESERVE stage and node
+// secret provisioning -- returned ENOENT on a fresh install, and a restore is
+// exactly the operation an operator reaches for when there is no other way in.
+//
+// All three production call sites resolve to the same --config-path directory,
+// so the assertions below also pin the directory mode: 0755, matching what the
+// node-secret path has always created it with. The published FILE stays 0600 --
+// that is where the content's confidentiality lives, and a narrower directory
+// would only make the mode depend on which caller happened to run first.
+func TestWriteAtomicCreatesMissingDirectory(t *testing.T) {
+	// Nested, so the fix cannot pass by creating only the final component.
+	dir := filepath.Join(t.TempDir(), "etc", "loxilb")
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("precondition: %s must not exist, stat err = %v", dir, err)
+	}
+
+	content := []byte(`{"pre-restore":true}`)
+	path, err := writeAtomic(dir, "pre-restore-20260921-000000.000000000.json", content)
+	if err != nil {
+		t.Fatalf("writeAtomic into a missing directory: %v", err)
+	}
+	if got, rerr := os.ReadFile(path); rerr != nil || !bytes.Equal(got, content) {
+		t.Fatalf("content = %q err = %v, want %q", got, rerr, content)
+	}
+
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat published file: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Fatalf("published file mode = %04o, want 0600", got)
+	}
+	di, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat created directory: %v", err)
+	}
+	if got := di.Mode().Perm(); got != 0o755 {
+		t.Fatalf("created directory mode = %04o, want 0755 (the node-secret path's mode)", got)
+	}
+
+	// No temp orphan survives the successful publish.
+	for _, name := range dirEntries(t, dir) {
+		if strings.HasSuffix(name, ".tmp") {
+			t.Fatalf("temp orphan left behind: %s", name)
+		}
+	}
+}
+
+// TestPersistAndNodeSecretOnFreshNode drives the two exported entry points on
+// a node with no config directory at all. InitNodeSecret is here specifically
+// because its own os.MkdirAll guard was removed in favour of writeAtomic's:
+// this is what keeps that deletion honest rather than silently regressing
+// first-boot provisioning.
+func TestPersistAndNodeSecretOnFreshNode(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "etc", "loxilb")
+
+	if err := InitNodeSecret(dir); err != nil {
+		t.Fatalf("InitNodeSecret on a fresh node: %v", err)
+	}
+	secretPath := filepath.Join(dir, NodeSecretFileName)
+	si, err := os.Stat(secretPath)
+	if err != nil {
+		t.Fatalf("node secret not provisioned: %v", err)
+	}
+	if got := si.Mode().Perm(); got != 0o600 {
+		t.Fatalf("node secret mode = %04o, want 0600", got)
+	}
+
+	// A second fresh directory, so Persist is exercised against a missing
+	// one too rather than the one InitNodeSecret just created.
+	persistDir := filepath.Join(t.TempDir(), "etc", "loxilb")
+	doc := &Document{}
+	path, _, gen, err := Persist(doc, persistDir)
+	if err != nil {
+		t.Fatalf("Persist on a fresh node: %v", err)
+	}
+	if want := filepath.Join(persistDir, PersistFileName); path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	if gen != 1 {
+		t.Fatalf("generation = %d, want 1 on a fresh lineage", gen)
+	}
+}

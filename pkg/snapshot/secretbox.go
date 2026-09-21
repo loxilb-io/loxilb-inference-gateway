@@ -85,12 +85,9 @@ func InitNodeSecret(dir string) error {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		// First boot on a node that may not even have the config dir yet
-		// (fresh install, unmounted volume): provisioning owns creating
-		// it -- failing here would leave every capture fail-closed for
-		// want of a mkdir.
-		if merr := os.MkdirAll(dir, 0o755); merr != nil {
-			return fmt.Errorf("snapshot: provision node secret: %w", merr)
-		}
+		// (fresh install, unmounted volume). writeAtomic creates it, so
+		// provisioning no longer needs its own guard -- and the other two
+		// call sites get the same treatment instead of only this one.
 		raw := make([]byte, nodeSecretLen)
 		if _, rerr := rand.Read(raw); rerr != nil {
 			return fmt.Errorf("snapshot: provision node secret: %w", rerr)
