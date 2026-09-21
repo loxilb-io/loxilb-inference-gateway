@@ -23,7 +23,7 @@ var Opts struct {
 	TLSCertificateKey flags.Filename `long:"tls-key" description:"the private key to use for secure connections" default:"/opt/loxilb/cert/server.key" env:"TLS_PRIVATE_KEY"`
 	ClusterNodes      string         `long:"cluster" description:"Comma-separated list of cluter-node IP Addresses" default:"none"`
 	ClusterSelf       int            `long:"self" description:"annonation of self in cluster" default:"0"`
-	LogLevel          string         `long:"loglevel" description:"One of trace,debug,info,error,warning,notice,critical,emergency,alert" default:"debug"`
+	LogLevel          string         `long:"loglevel" description:"One of trace,debug,info,error,warning,notice,critical,emergency,alert" default:"info"`
 	LogDir            string         `long:"log-dir" description:"Directory for loxilb structured log files" default:"/var/log/loxilb/" env:"LOXILB_LOG_DIR"`
 	LogFormat         string         `long:"log-format" description:"Log output format: json, text, or both" default:"both" env:"LOXILB_LOG_FORMAT"`
 	LogMaxSize        int            `long:"log-max-size" description:"Rotate a log file when it exceeds this many MB (0 disables rotation)" default:"50" env:"LOXILB_LOG_MAX_SIZE"`

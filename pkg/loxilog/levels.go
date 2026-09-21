@@ -34,7 +34,9 @@ var categoryNames = map[Category]string{
 var categoryFromStringMap map[string]Category
 
 func init() {
-	// Initialize all category levels to DebugLevel (matching existing --loglevel default).
+	// Initialize all category levels to DebugLevel: the per-category level is a
+	// floor under the global level (the --loglevel default, info), so a category
+	// left at debug simply follows the global level until it is raised on its own.
 	for i := Category(0); i < catCount; i++ {
 		categoryLevels[i].Store(int32(zerolog.DebugLevel))
 	}
