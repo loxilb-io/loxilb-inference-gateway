@@ -256,16 +256,31 @@ var (
 		[]string{"model", "tenant", "reason"},
 	)
 
-	// aiTokenQuotaDeniedTotal counts requests denied 429 at the rate-limit
-	// gate because the tenant's token-quota latch was set. Numerically a
-	// subset of loxilb_ai_rate_limit_hits_total{reason="token_quota_exceeded"},
-	// kept as its own series so quota alerting does not depend on a reason
-	// string, and as the anchor for per-model quota labels when quota keying
-	// grows a model dimension.
+	// aiTokenQuotaDeniedTotal counts requests a token quota refused, by
+	// tenant. It is kept as its own series so quota alerting does not depend
+	// on a reason string, and as the anchor for per-model quota labels when
+	// quota keying grows a model dimension.
+	//
+	// It has TWO increment sites, and they are not the same condition:
+	//
+	//   - the gate's post-hoc latch (error code "token_quota_exceeded"):
+	//     the tenant is over budget and every request is refused until the
+	//     bucket refills;
+	//   - the pre-admission reservation (error code
+	//     "token_quota_would_exceed"): THIS request's worst case does not
+	//     fit the headroom left. The bucket is not put in debt and a smaller
+	//     request from the same tenant is still admitted.
+	//
+	// So this series is the UNION of both refusal modes, not a subset of
+	// loxilb_ai_rate_limit_hits_total{reason="token_quota_exceeded"} — it
+	// equals that reason plus reason="token_quota_would_exceed". An alert
+	// that needs "the tenant is exhausted" rather than "a large request was
+	// turned away" must read the reason label on the hits counter; this
+	// series alone cannot tell the two apart.
 	aiTokenQuotaDeniedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_token_quota_denied_total",
-			Help: "Total AI Gateway requests denied at the gate because the tenant token quota was exhausted, by tenant.",
+			Help: "Total AI Gateway requests refused by a token quota, by tenant. Union of both refusal modes: the post-hoc latch (tenant over budget) and the pre-admission reservation (this request did not fit the remaining headroom). Split them with the reason label on loxilb_ai_rate_limit_hits_total.",
 		},
 		[]string{"tenant"},
 	)
@@ -442,8 +457,9 @@ func AdjustActiveStreams(model string, delta float64) {
 }
 
 // RecordRateLimitHit increments the loxilb_ai_rate_limit_hits_total counter
-// directly from the Go rate-limit decision path. Call this from
-// llb_ai_ratelimit_check when a request is denied (decision != 0).
+// directly from the Go rate-limit decision path: llb_ai_ratelimit_check when
+// a request is denied (decision != 0), and llb_ai_token_quota_reserve when
+// the pre-admission reservation refuses one.
 // If reason is empty it falls back to "rate_limit_exceeded".
 func RecordRateLimitHit(tenantID, reason string) {
 	if reason == "" {
@@ -634,8 +650,12 @@ func RecordTokenQuotaColdOpen() {
 }
 
 // RecordTokenQuotaDenied increments the loxilb_ai_token_quota_denied_total
-// counter. Call this from llb_ai_ratelimit_check when the denial reason is
-// the tenant token-quota latch (error code "token_quota_exceeded").
+// counter. Both token-quota refusal paths call it: llb_ai_ratelimit_check
+// when the post-hoc latch is set (error code "token_quota_exceeded"), and
+// llb_ai_token_quota_reserve when the request's worst case does not fit the
+// remaining headroom (error code "token_quota_would_exceed"). The series
+// therefore counts both, and only the reason label on
+// loxilb_ai_rate_limit_hits_total says which site wrote a given increment.
 func RecordTokenQuotaDenied(tenantID string) {
 	aiTokenQuotaDeniedTotal.WithLabelValues(sanitizeLabel(tenantID)).Inc()
 }
