@@ -162,13 +162,17 @@ A service is rejected at configuration time unless all of these hold:
 | plaintext service (no TLS) | see below |
 | IPv4 external IP | current implementation limit |
 | daemon started with `--sockmapsupport` | the BPF assets must be loaded |
-| the data plane changes no byte per request: no `sse_mode`, no `pd_disagg_mode`, no declared `api_key_auth`, and no attached L7 policy | see below |
+| the data plane changes no byte in the direction being accelerated: no `sse_mode`, no `pd_disagg_mode`, no attached L7 policy, and — for the request direction — no declared `api_key_auth` | see below |
 
 Setting `sockMapMode` on a service that does not qualify returns
 `sockmap-accel requires plaintext tcp fullproxy ipv4 service`, or
 `sockmap-accel requires loxilb started with --sockmapsupport` when only the
 daemon flag is missing, or
-`sockmap-accel is not allowed on a service whose data plane touches every request (sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy)`.
+`sockmap-accel is not allowed on a service whose data plane touches every request (sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy): refused for the <direction> direction`.
+
+The last check is **per direction**. A service whose only disqualification is a
+declared `api_key_auth` is refused for `both` and `request`, and accepted for
+`response` — see [Which direction each declaration owns](#which-direction-each-declaration-owns).
 
 ### Why only a service that rewrites nothing
 
@@ -190,6 +194,44 @@ Four declarations put work on that path:
 An **omitted** `api_key_auth` is the one credential value that stays accelerable:
 it declares nothing, a backend-owned `X-Api-Key` passes through untouched, and no
 header is rewritten.
+
+### Which direction each declaration owns
+
+The four declarations are not symmetric, and the refusal follows the direction
+actually asked for rather than banning the service outright:
+
+| declaration | `request` | `response` |
+|---|---|---|
+| `sse_mode`, `pd_disagg_mode` | refused | refused |
+| an attached L7 policy | refused | refused |
+| any declared `api_key_auth` | refused | **allowed** |
+
+`sse_mode` and `pd_disagg_mode` own both directions because they re-run admission
+on the way in **and** record each request from its response. An L7 policy owns both
+because `insertHeaders` rewrites requests and `sessionPersistence: HTTP_COOKIE`
+injects `Set-Cookie` into responses.
+
+A declared `api_key_auth` owns the **request** direction only. Validating the
+credential and stripping `X-Api-Key` both happen before dispatch; nothing in that
+declaration rewrites a response byte. So `sockMapMode: response` on such a service
+keeps every guarantee the credential is there for — admission, the API-key store
+verdict and the header strip all stay on the relayed request path — while the
+response, which in an inference workload dwarfs the request that asked for it, is
+redirected in the kernel.
+
+What it costs is accounting. `api_key_auth` arms `ai_gw_mode`, and an accelerated
+response is not recorded, so response-derived usage for that connection is lost.
+The daemon logs a warning naming the trade when it accepts such a rule:
+
+```
+lb-rule 10.10.10.254:2030: sockMapMode response on an api_key_auth service:
+the request direction stays relayed (credential check and X-Api-Key strip intact),
+accelerated responses are NOT recorded
+```
+
+Combining `api_key_auth` with any declaration that does own response bytes brings
+the refusal back: `api_key_auth` + `sse_mode`, `+ pd_disagg_mode` or `+ an L7
+policy` is refused in both directions.
 
 The pairing is refused from both sides, because either can come second:
 
