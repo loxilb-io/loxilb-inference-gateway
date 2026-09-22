@@ -110,6 +110,7 @@ typedef struct proxy_metrics_snapshot {
      * loxilb-ebpf/common/sockproxy_metrics.h and the cgo preamble of
      * sockproxy_metrics.go; keep ALL THREE in lockstep, same commit. */
     uint64_t pd_admission_overflow_shed;
+    uint64_t hdr_deadline_drops;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-16T11:09:37+00:00",
-  "source_revision": "53c4993833f82c5315423c78639f5ffcb7e25e09",
+  "generated_at": "2026-09-22T00:01:31+00:00",
+  "source_revision": "08c7c195b3397f6fe4c9302c812a17c542d61575",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
  "contract": {
-  "gateway_families": 250,
+  "gateway_families": 253,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 215,
+  "absent": 218,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -2680,6 +2680,17 @@
    }
   },
   {
+   "name": "loxilb_proxy_header_deadline_drops_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
    "name": "loxilb_proxy_http2_sessions_total",
    "owner": "loxilb",
    "class": "default",
@@ -2722,6 +2733,28 @@
    "present_upstream": false,
    "gateway": {
     "type": "histogram",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_listen_drops_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_listen_overflows_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
     "labels": []
    }
   },

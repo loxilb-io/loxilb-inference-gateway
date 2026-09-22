@@ -157,6 +157,14 @@ spawn_docker_host() {
         bgp_conf="-v $bpath:/etc/gobgp/"
       fi
     fi
+    # The datapath's per-request receipts (prefix extraction, fallback and
+    # stream markers in /var/log/loxilbdp.log) are emitted at debug and
+    # several suites assert on them. The shipped default level is info, so
+    # the harness asks for debug unless the suite sets its own level.
+    case " $extra_opts " in
+      *" --loglevel "*|*" --loglevel="*) ;;
+      *) extra_opts="$extra_opts --loglevel debug" ;;
+    esac
     if [[ ! -z ${ka+x} ]]; then
       sudo mkdir -p /etc/shared/$dname/
       docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dt $docker_extra_opts --entrypoint /bin/bash $bgp_conf -v /dev/log:/dev/log -v /etc/shared/$dname:/etc/shared $loxilb_config --name $dname $lxdocker

@@ -1071,18 +1071,18 @@ func DpWorker(dp *DpH, f chan int, ch chan interface{}) {
 		}
 		os.Exit(1)
 	}()
+	// Block on the queue. The earlier shape drained up to DpWorkQLen items and
+	// then slept a full second whether or not work was pending, so anything
+	// that waits for the broker — DpBrokerSyncBarrier after every rule change,
+	// hence every POST /config/loadbalancer — paid up to a second (0.9 s p50
+	// under load) for an operation that takes milliseconds.
 	for {
-		for n := 0; n < DpWorkQLen; n++ {
-			select {
-			case m := <-ch:
-				DpWorkSingle(dp, m)
-			case <-f:
-				return
-			default:
-				continue
-			}
+		select {
+		case m := <-ch:
+			DpWorkSingle(dp, m)
+		case <-f:
+			return
 		}
-		time.Sleep(1000 * time.Millisecond)
 	}
 }
 

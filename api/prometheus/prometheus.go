@@ -805,6 +805,11 @@ func Init() {
 	// TIER 3: 2m interval - Operational debugging (drain events, graceful closes, TTL expirations)
 	go RunSockproxyMetrics(prometheusCtx)
 
+	// Listen-backlog pressure from the kernel's own counters, so a connect
+	// burst that overflowed a backlog is an operator's number, not only a
+	// load generator's.
+	go RunListenBacklogMetrics(prometheusCtx)
+
 	// Start security metrics collection
 	go RunSecurityRateStats(prometheusCtx)
 	go RunIPFilterStats(prometheusCtx)

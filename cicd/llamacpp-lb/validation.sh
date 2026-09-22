@@ -119,12 +119,16 @@ except Exception:
     print(-1)" 2>/dev/null
 }
 
+# Receipt counters. `grep -c` prints 0 AND exits 1 on zero matches, so a
+# trailing `|| echo 0` yields "0\n0" and the integer compare that reads it
+# fails as a syntax error instead of a failed assert. Only a missing log
+# file (grep prints nothing) needs the fallback.
 prefix_count() {  # [PREFIX_EXTRACTED] receipts in the dp log so far
-  $dexec llb1 sh -c "grep -c 'PREFIX_EXTRACTED' /var/log/loxilbdp.log 2>/dev/null || echo 0"
+  $dexec llb1 sh -c "n=\$(grep -c 'PREFIX_EXTRACTED' /var/log/loxilbdp.log 2>/dev/null); echo \${n:-0}"
 }
 
 fallback_count() {  # [PREFIX_USER_FALLBACK] receipts in the dp log so far
-  $dexec llb1 sh -c "grep -c 'PREFIX_USER_FALLBACK' /var/log/loxilbdp.log 2>/dev/null || echo 0"
+  $dexec llb1 sh -c "n=\$(grep -c 'PREFIX_USER_FALLBACK' /var/log/loxilbdp.log 2>/dev/null); echo \${n:-0}"
 }
 
 post_neg() {  # post_neg <json> — expect the rule POST to be REJECTED

@@ -18,7 +18,7 @@ import (
 type Config struct {
 	LogDir    string // Directory for log files. Default: "/var/log/loxilb/"
 	LogFormat string // Output format: "json", "text", or "both". Default: "both"
-	LogLevel  string // Initial global log level. Default: "debug"
+	LogLevel  string // Initial global log level. Default: "info" (the --loglevel default)
 	// Rotate controls size-based rotation of the log files. The zero
 	// value falls back to logrotate.Defaults(); set MaxSizeMB negative
 	// to explicitly disable rotation.
@@ -63,7 +63,7 @@ func Init(cfg Config) error {
 		cfg.LogFormat = "both"
 	}
 	if cfg.LogLevel == "" {
-		cfg.LogLevel = "debug"
+		cfg.LogLevel = "info"
 	}
 
 	// Ensure trailing slash.

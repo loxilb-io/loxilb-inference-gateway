@@ -1,7 +1,7 @@
 # Log rotation & disk-usage protection
 
 > Motivation: every log file the gateway wrote previously grew **unbounded**
-> (with `--loglevel debug` as the default), which starves the disk on any long-lived
+> (and `--loglevel debug` was the default until it became `info`), which starves the disk on any long-lived
 > production deployment.
 
 ## What writes logs, and how each is rotated now
