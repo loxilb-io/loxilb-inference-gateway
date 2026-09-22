@@ -9,7 +9,9 @@ import (
 	"net/http"
 
 	"github.com/go-openapi/errors"
+	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/strfmt"
 )
 
 // NewGetStatusCapabilitiesParams creates a new GetStatusCapabilitiesParams object
@@ -28,6 +30,11 @@ type GetStatusCapabilitiesParams struct {
 
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
+
+	/*Model name a KV-exact rule would carry (the served model, as in LoadbalanceEntry.serviceArguments.model_name). When given, the kv_exact_vllm verdict also checks that a tokenizer for it can be loaded now, using the same probe rule admission uses. Omitted, the verdict covers only the model-independent preconditions.
+	  In: query
+	*/
+	ModelName *string
 }
 
 // BindRequest both binds and validates a request, it assumes that complex things implement a Validatable(strfmt.Registry) error interface
@@ -39,8 +46,32 @@ func (o *GetStatusCapabilitiesParams) BindRequest(r *http.Request, route *middle
 
 	o.HTTPRequest = r
 
+	qs := runtime.Values(r.URL.Query())
+
+	qModelName, qhkModelName, _ := qs.GetOK("model_name")
+	if err := o.bindModelName(qModelName, qhkModelName, route.Formats); err != nil {
+		res = append(res, err)
+	}
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+// bindModelName binds and validates parameter ModelName from query.
+func (o *GetStatusCapabilitiesParams) bindModelName(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	var raw string
+	if len(rawData) > 0 {
+		raw = rawData[len(rawData)-1]
+	}
+
+	// Required: false
+	// AllowEmptyValue: false
+
+	if raw == "" { // empty values pass all other validations
+		return nil
+	}
+	o.ModelName = &raw
+
 	return nil
 }

@@ -845,13 +845,27 @@ func init() {
     "CapabilityStatus": {
       "description": "Whether one optional capability can be served, and when it cannot, a stable code and the operator-facing reason.",
       "properties": {
+        "in_use": {
+          "description": "For a capability with a budget, how much of it existing configuration holds. Present with limit - for lb_allowed_sources, the source-check-capable slots held by existing load-balancer rules, whether or not those rules carry allowedSources, because the slot is the rule's index.",
+          "example": 3,
+          "format": "int64",
+          "type": "integer",
+          "x-nullable": true
+        },
+        "limit": {
+          "description": "For a capability with a budget, how many uses the deployment can hold at once. Present only for such capabilities - lb_allowed_sources reports the number of load-balancer rule slots able to carry source checks.",
+          "example": 29,
+          "format": "int64",
+          "type": "integer",
+          "x-nullable": true
+        },
         "name": {
-          "description": "Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known value - \"kv_exact_vllm\": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm.",
+          "description": "Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known values - \"kv_exact_vllm\": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm; \"lb_allowed_sources\": admission of allowedSources on the next load-balancer rule created.",
           "example": "kv_exact_vllm",
           "type": "string"
         },
         "ready": {
-          "description": "True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it.",
+          "description": "True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it. For kv_exact_vllm the verdict is complete for a model only when the request carried model_name; without it the tokenizer precondition is not evaluated.",
           "type": "boolean"
         },
         "reason": {
@@ -859,7 +873,7 @@ func init() {
           "type": "string"
         },
         "reason_code": {
-          "description": "Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - \"KV_EXACT_SEED_UNSET\": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; \"KV_EXACT_SEED_TOO_LONG\": the seed exceeds the 23-byte representable bound.",
+          "description": "Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - \"KV_EXACT_SEED_UNSET\": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; \"KV_EXACT_SEED_TOO_LONG\": the seed exceeds the 23-byte representable bound; \"KV_EXACT_TOKENIZER_UNLOADABLE\": no tokenizer can be loaded for the model_name asked about (nothing staged under /etc/loxilb/tokenizers/\u003cmodel-slug\u003e/ and no published model profile carries one); \"LB_SOURCE_CHECK_SLOTS_EXHAUSTED\": every load-balancer rule slot able to carry source checks is held by an existing rule; \"LB_RULES_UNAVAILABLE\": this Gateway is not serving load-balancer rules (bgp-only mode).",
           "example": "KV_EXACT_SEED_UNSET",
           "type": "string"
         }
@@ -3946,7 +3960,7 @@ func init() {
       "description": "Shared request/readback representation. POST can create or replace an existing rule; PATCH supports only the restricted L4 overlay described on its operation. Create callers must supply serviceArguments and usable endpoints. Implementation warning: the POST handler dereferences serviceArguments without a nil guard, although the shared schema permits its omission for PATCH. Configuration acceptance and GET readback do not establish runtime enforcement. See serviceArguments and endpoints for intake, update and readback gaps.",
       "properties": {
         "allowedSources": {
-          "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization.",
+          "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.",
           "items": {
             "properties": {
               "prefix": {
@@ -4615,7 +4629,7 @@ func init() {
             },
             "sockMapMode": {
               "default": "off",
-              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
+              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes in the direction being accelerated is rejected with 400, and the check is per direction. sse_mode, pd_disagg_mode and an attached L7 policy own BOTH directions and accept only off. ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - owns the REQUEST direction only - both and request are rejected with 400, response is accepted because validating the credential and stripping X-Api-Key both happen before dispatch and neither rewrites a response byte. Accepting it logs a warning, since api_key_auth arms ai_gw_mode and an accelerated response is not recorded. On a connection whose REQUEST direction is accelerated the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip; on one whose RESPONSE direction is accelerated the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
               "enum": [
                 "off",
                 "both",
@@ -13499,7 +13513,7 @@ func init() {
     },
     "/config/loadbalancer": {
       "post": {
-        "description": "Create a new load balancer service with .",
+        "description": "Create a new load balancer service. A well-formed request can still be refused by this Gateway's own deployment state with 412 - a vLLM KV-exact rule without the launch seed or without a loadable tokenizer for its model_name, or allowedSources on a rule allocated a slot past the source-check range - and no request body can satisfy such a refusal; GET /status/capabilities reports the same verdicts before submission.",
         "parameters": [
           {
             "description": "Attributes for load balance service",
@@ -13544,6 +13558,12 @@ func init() {
           },
           "409": {
             "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "412": {
+            "description": "Server precondition not met - the request is valid but this Gateway's deployment cannot admit it (result names the setting or artifact and what to change)",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -13994,6 +14014,12 @@ func init() {
           },
           "404": {
             "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "412": {
+            "description": "Server precondition not met - the merged rule is valid but this Gateway's deployment cannot admit it (for example allowedSources on a rule whose slot is past the source-check range)",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -19026,7 +19052,16 @@ func init() {
     },
     "/status/capabilities": {
       "get": {
-        "description": "Reports per-capability readiness for features whose availability is decided by the Gateway's launch environment rather than by anything in a request. A capability reported not ready refuses every attempt to use it with 412 and the reason carried here, whatever the client sends, so a client can disable a control truthfully instead of learning by submitting and being refused. Each verdict is produced by the same check that admission performs, not a second copy of it. This is NOT overall gateway health and does not gate /status/ready: a Gateway with an unready OPTIONAL capability is healthy for everything else, and reporting it 503 would be wrong. Absence of a capability from this list means this build does not know it, which is not the same as not ready.",
+        "description": "Reports per-capability readiness for features whose availability is decided by the Gateway's launch environment rather than by anything in a request. A capability reported not ready refuses every attempt to use it with 412 and the reason carried here, whatever the client sends, so a client can disable a control truthfully instead of learning by submitting and being refused. Each verdict is produced by the same check that admission performs, not a second copy of it. This is NOT overall gateway health and does not gate /status/ready: a Gateway with an unready OPTIONAL capability is healthy for everything else, and reporting it 503 would be wrong. Absence of a capability from this list means this build does not know it, which is not the same as not ready. Known capabilities - \"kv_exact_vllm\": admission of vLLM KV-exact rules; without model_name the verdict covers the launch seed, with model_name it also covers whether a tokenizer for that model can be loaded, which is the other deployment precondition admission checks. \"lb_allowed_sources\": whether the next load-balancer rule created can carry allowedSources; limit and in_use carry the slot budget.",
+        "parameters": [
+          {
+            "description": "Model name a KV-exact rule would carry (the served model, as in LoadbalanceEntry.serviceArguments.model_name). When given, the kv_exact_vllm verdict also checks that a tokenizer for it can be loaded now, using the same probe rule admission uses. Omitted, the verdict covers only the model-independent preconditions.",
+            "in": "query",
+            "name": "model_name",
+            "required": false,
+            "type": "string"
+          }
+        ],
         "produces": [
           "application/json"
         ],
@@ -26249,7 +26284,7 @@ func init() {
     },
     "/config/loadbalancer": {
       "post": {
-        "description": "Create a new load balancer service with .",
+        "description": "Create a new load balancer service. A well-formed request can still be refused by this Gateway's own deployment state with 412 - a vLLM KV-exact rule without the launch seed or without a loadable tokenizer for its model_name, or allowedSources on a rule allocated a slot past the source-check range - and no request body can satisfy such a refusal; GET /status/capabilities reports the same verdicts before submission.",
         "summary": "Create a new Load balancer service",
         "parameters": [
           {
@@ -26295,6 +26330,12 @@ func init() {
           },
           "409": {
             "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "412": {
+            "description": "Server precondition not met - the request is valid but this Gateway's deployment cannot admit it (result names the setting or artifact and what to change)",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26752,6 +26793,12 @@ func init() {
           },
           "404": {
             "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "412": {
+            "description": "Server precondition not met - the merged rule is valid but this Gateway's deployment cannot admit it (for example allowedSources on a rule whose slot is past the source-check range)",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -32139,11 +32186,19 @@ func init() {
     },
     "/status/capabilities": {
       "get": {
-        "description": "Reports per-capability readiness for features whose availability is decided by the Gateway's launch environment rather than by anything in a request. A capability reported not ready refuses every attempt to use it with 412 and the reason carried here, whatever the client sends, so a client can disable a control truthfully instead of learning by submitting and being refused. Each verdict is produced by the same check that admission performs, not a second copy of it. This is NOT overall gateway health and does not gate /status/ready: a Gateway with an unready OPTIONAL capability is healthy for everything else, and reporting it 503 would be wrong. Absence of a capability from this list means this build does not know it, which is not the same as not ready.",
+        "description": "Reports per-capability readiness for features whose availability is decided by the Gateway's launch environment rather than by anything in a request. A capability reported not ready refuses every attempt to use it with 412 and the reason carried here, whatever the client sends, so a client can disable a control truthfully instead of learning by submitting and being refused. Each verdict is produced by the same check that admission performs, not a second copy of it. This is NOT overall gateway health and does not gate /status/ready: a Gateway with an unready OPTIONAL capability is healthy for everything else, and reporting it 503 would be wrong. Absence of a capability from this list means this build does not know it, which is not the same as not ready. Known capabilities - \"kv_exact_vllm\": admission of vLLM KV-exact rules; without model_name the verdict covers the launch seed, with model_name it also covers whether a tokenizer for that model can be loaded, which is the other deployment precondition admission checks. \"lb_allowed_sources\": whether the next load-balancer rule created can carry allowedSources; limit and in_use carry the slot budget.",
         "produces": [
           "application/json"
         ],
         "summary": "Optional capabilities this gateway can serve, and why not",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Model name a KV-exact rule would carry (the served model, as in LoadbalanceEntry.serviceArguments.model_name). When given, the kv_exact_vllm verdict also checks that a tokenizer for it can be loaded now, using the same probe rule admission uses. Omitted, the verdict covers only the model-independent preconditions.",
+            "name": "model_name",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -33647,13 +33702,27 @@ func init() {
         "ready"
       ],
       "properties": {
+        "in_use": {
+          "description": "For a capability with a budget, how much of it existing configuration holds. Present with limit - for lb_allowed_sources, the source-check-capable slots held by existing load-balancer rules, whether or not those rules carry allowedSources, because the slot is the rule's index.",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true,
+          "example": 3
+        },
+        "limit": {
+          "description": "For a capability with a budget, how many uses the deployment can hold at once. Present only for such capabilities - lb_allowed_sources reports the number of load-balancer rule slots able to carry source checks.",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true,
+          "example": 29
+        },
         "name": {
-          "description": "Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known value - \"kv_exact_vllm\": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm.",
+          "description": "Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known values - \"kv_exact_vllm\": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm; \"lb_allowed_sources\": admission of allowedSources on the next load-balancer rule created.",
           "type": "string",
           "example": "kv_exact_vllm"
         },
         "ready": {
-          "description": "True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it.",
+          "description": "True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it. For kv_exact_vllm the verdict is complete for a model only when the request carried model_name; without it the tokenizer precondition is not evaluated.",
           "type": "boolean"
         },
         "reason": {
@@ -33661,7 +33730,7 @@ func init() {
           "type": "string"
         },
         "reason_code": {
-          "description": "Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - \"KV_EXACT_SEED_UNSET\": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; \"KV_EXACT_SEED_TOO_LONG\": the seed exceeds the 23-byte representable bound.",
+          "description": "Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - \"KV_EXACT_SEED_UNSET\": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; \"KV_EXACT_SEED_TOO_LONG\": the seed exceeds the 23-byte representable bound; \"KV_EXACT_TOKENIZER_UNLOADABLE\": no tokenizer can be loaded for the model_name asked about (nothing staged under /etc/loxilb/tokenizers/\u003cmodel-slug\u003e/ and no published model profile carries one); \"LB_SOURCE_CHECK_SLOTS_EXHAUSTED\": every load-balancer rule slot able to carry source checks is held by an existing rule; \"LB_RULES_UNAVAILABLE\": this Gateway is not serving load-balancer rules (bgp-only mode).",
           "type": "string",
           "example": "KV_EXACT_SEED_UNSET"
         }
@@ -36862,7 +36931,7 @@ func init() {
       "type": "object",
       "properties": {
         "allowedSources": {
-          "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization.",
+          "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/LoadbalanceEntryAllowedSourcesItems0"
@@ -37425,7 +37494,7 @@ func init() {
               "type": "boolean"
             },
             "sockMapMode": {
-              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
+              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes in the direction being accelerated is rejected with 400, and the check is per direction. sse_mode, pd_disagg_mode and an attached L7 policy own BOTH directions and accept only off. ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - owns the REQUEST direction only - both and request are rejected with 400, response is accepted because validating the credential and stripping X-Api-Key both happen before dispatch and neither rewrites a response byte. Accepting it logs a warning, since api_key_auth arms ai_gw_mode and an accelerated response is not recorded. On a connection whose REQUEST direction is accelerated the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip; on one whose RESPONSE direction is accelerated the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
               "type": "string",
               "default": "off",
               "enum": [
@@ -38116,7 +38185,7 @@ func init() {
           "type": "boolean"
         },
         "sockMapMode": {
-          "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
+          "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes in the direction being accelerated is rejected with 400, and the check is per direction. sse_mode, pd_disagg_mode and an attached L7 policy own BOTH directions and accept only off. ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - owns the REQUEST direction only - both and request are rejected with 400, response is accepted because validating the credential and stripping X-Api-Key both happen before dispatch and neither rewrites a response byte. Accepting it logs a warning, since api_key_auth arms ai_gw_mode and an accelerated response is not recorded. On a connection whose REQUEST direction is accelerated the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip; on one whose RESPONSE direction is accelerated the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
           "type": "string",
           "default": "off",
           "enum": [

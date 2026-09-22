@@ -17,6 +17,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -40,6 +41,15 @@ func renderCapabilities(t *testing.T, seed string, present bool) (int, models.Ca
 		return seed, present
 	}
 	t.Cleanup(func() { capabilityEnv = prev })
+	// The other verdicts read the rule engine through hooks that are not
+	// wired in a unit test; give them a ready budget and a loadable
+	// tokenizer so these cases score the seed alone.
+	prevTok, prevSlots := capabilityTokenizerReady, capabilitySourceCheckSlots
+	capabilityTokenizerReady = func(string) bool { return true }
+	capabilitySourceCheckSlots = func() (cmn.LbSourceCheckSlots, error) {
+		return cmn.LbSourceCheckSlots{Limit: cmn.LbSourceCheckSlotCount, InUse: 0, NextSlot: 0}, nil
+	}
+	t.Cleanup(func() { capabilityTokenizerReady, capabilitySourceCheckSlots = prevTok, prevSlots })
 
 	rec := httptest.NewRecorder()
 	ConfigGetStatusCapabilities(operations.GetStatusCapabilitiesParams{}, nil).
@@ -146,5 +156,127 @@ func TestCapabilitiesRequiredFieldsAlwaysPresent(t *testing.T) {
 				t.Error("ready missing -- a required field must survive JSON encoding even when false")
 			}
 		}
+	}
+}
+
+func renderCapabilitiesFor(t *testing.T, modelName string, tokenizerLoadable bool, slots cmn.LbSourceCheckSlots, slotsErr error) models.CapabilityStatusList {
+	t.Helper()
+	prevEnv, prevTok, prevSlots := capabilityEnv, capabilityTokenizerReady, capabilitySourceCheckSlots
+	capabilityEnv = func(string) (string, bool) { return "0", true }
+	asked := ""
+	capabilityTokenizerReady = func(m string) bool { asked = m; return tokenizerLoadable }
+	capabilitySourceCheckSlots = func() (cmn.LbSourceCheckSlots, error) { return slots, slotsErr }
+	t.Cleanup(func() {
+		capabilityEnv, capabilityTokenizerReady, capabilitySourceCheckSlots = prevEnv, prevTok, prevSlots
+	})
+
+	params := operations.GetStatusCapabilitiesParams{}
+	if modelName != "" {
+		params.ModelName = &modelName
+	}
+	rec := httptest.NewRecorder()
+	ConfigGetStatusCapabilities(params, nil).WriteResponse(rec, runtime.JSONProducer())
+	var body models.CapabilityStatusList
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body %q: %v", rec.Body.String(), err)
+	}
+	if modelName != "" && asked != modelName {
+		t.Fatalf("tokenizer probe asked about %q, want %q", asked, modelName)
+	}
+	if modelName == "" && asked != "" {
+		t.Fatalf("tokenizer probe ran with no model named (%q)", asked)
+	}
+	return body
+}
+
+func entryNamed(t *testing.T, list models.CapabilityStatusList, name string) *models.CapabilityStatus {
+	t.Helper()
+	for _, c := range list.Capabilities {
+		if c != nil && c.Name != nil && *c.Name == name {
+			return c
+		}
+	}
+	t.Fatalf("no %q entry in %+v", name, list.Capabilities)
+	return nil
+}
+
+var readySlots = cmn.LbSourceCheckSlots{Limit: cmn.LbSourceCheckSlotCount, InUse: 3, NextSlot: 3}
+
+// With a model named, the kv_exact_vllm verdict covers the tokenizer with
+// the same code and sentence the 412 refusal carries; without one, the
+// tokenizer half is not evaluated and a seed-ready gateway reports ready.
+func TestCapabilitiesKvExactCoversTokenizerForNamedModel(t *testing.T) {
+	kv := kvExactEntry(t, renderCapabilitiesFor(t, "Qwen/Qwen3-0.6B", false, readySlots, nil))
+	if kv.Ready == nil || *kv.Ready {
+		t.Fatalf("ready = %s with no loadable tokenizer, want false", boolPtrText(kv.Ready))
+	}
+	if kv.ReasonCode != cmn.ReasonKvExactTokenizerUnloadable {
+		t.Errorf("reason_code = %q", kv.ReasonCode)
+	}
+	if want := cmn.KvExactTokenizerPrecondition("vllm", "Qwen/Qwen3-0.6B", nil).Error(); kv.Reason != want {
+		t.Errorf("reason drifted from the refusal:\n got: %q\nwant: %q", kv.Reason, want)
+	}
+
+	kv = kvExactEntry(t, renderCapabilitiesFor(t, "Qwen/Qwen3-0.6B", true, readySlots, nil))
+	if kv.Ready == nil || !*kv.Ready || kv.ReasonCode != "" {
+		t.Fatalf("loadable tokenizer: ready = %s reason_code = %q", boolPtrText(kv.Ready), kv.ReasonCode)
+	}
+
+	kv = kvExactEntry(t, renderCapabilitiesFor(t, "", false, readySlots, nil))
+	if kv.Ready == nil || !*kv.Ready {
+		t.Fatalf("no model named: ready = %s, want true (tokenizer not evaluated)", boolPtrText(kv.Ready))
+	}
+}
+
+// The seed outranks the tokenizer: an unseeded gateway reports the seed
+// code, and the tokenizer probe is not consulted for it.
+func TestCapabilitiesSeedOutranksTokenizer(t *testing.T) {
+	prev := capabilityTokenizerReady
+	capabilityTokenizerReady = func(string) bool { t.Fatal("tokenizer probed on an unseeded gateway"); return false }
+	t.Cleanup(func() { capabilityTokenizerReady = prev })
+	prevSlots := capabilitySourceCheckSlots
+	capabilitySourceCheckSlots = func() (cmn.LbSourceCheckSlots, error) { return readySlots, nil }
+	t.Cleanup(func() { capabilitySourceCheckSlots = prevSlots })
+
+	code, body := renderCapabilities(t, "", false)
+	if code != 200 {
+		t.Fatalf("status %d", code)
+	}
+	kv := kvExactEntry(t, body)
+	if kv.ReasonCode != cmn.ReasonKvExactSeedUnset {
+		t.Fatalf("reason_code = %q, want the seed", kv.ReasonCode)
+	}
+}
+
+// lb_allowed_sources publishes the slot budget and derives its verdict from
+// the slot the allocator would hand out next, with the refusal's own code
+// and sentence when that slot is past the source-check range.
+func TestCapabilitiesLbAllowedSources(t *testing.T) {
+	lb := entryNamed(t, renderCapabilitiesFor(t, "", true, readySlots, nil), cmn.CapabilityLbAllowedSources)
+	if lb.Ready == nil || !*lb.Ready || lb.ReasonCode != "" {
+		t.Fatalf("ready = %s reason_code = %q, want ready", boolPtrText(lb.Ready), lb.ReasonCode)
+	}
+	if lb.Limit == nil || *lb.Limit != int64(cmn.LbSourceCheckSlotCount) || lb.InUse == nil || *lb.InUse != 3 {
+		t.Fatalf("budget not published: limit=%v in_use=%v", lb.Limit, lb.InUse)
+	}
+
+	full := cmn.LbSourceCheckSlots{Limit: cmn.LbSourceCheckSlotCount, InUse: cmn.LbSourceCheckSlotCount, NextSlot: cmn.LbSourceCheckMaxSlot + 1}
+	lb = entryNamed(t, renderCapabilitiesFor(t, "", true, full, nil), cmn.CapabilityLbAllowedSources)
+	if lb.Ready == nil || *lb.Ready {
+		t.Fatalf("ready = %s with every slot held, want false", boolPtrText(lb.Ready))
+	}
+	if lb.ReasonCode != cmn.ReasonLbSourceCheckSlotsExhausted {
+		t.Errorf("reason_code = %q", lb.ReasonCode)
+	}
+	if want := cmn.LbSourceCheckPrecondition(full.NextSlot, full.InUse).Error(); lb.Reason != want {
+		t.Errorf("reason drifted from the refusal:\n got: %q\nwant: %q", lb.Reason, want)
+	}
+	if lb.InUse == nil || *lb.InUse != int64(cmn.LbSourceCheckSlotCount) {
+		t.Errorf("in_use = %v", lb.InUse)
+	}
+
+	lb = entryNamed(t, renderCapabilitiesFor(t, "", true, cmn.LbSourceCheckSlots{}, errors.New("running in bgp only mode")), cmn.CapabilityLbAllowedSources)
+	if lb.Ready == nil || *lb.Ready || lb.ReasonCode != cmn.ReasonLbRulesUnavailable || lb.Limit != nil {
+		t.Fatalf("rule engine unavailable: ready = %s reason_code = %q limit = %v", boolPtrText(lb.Ready), lb.ReasonCode, lb.Limit)
 	}
 }

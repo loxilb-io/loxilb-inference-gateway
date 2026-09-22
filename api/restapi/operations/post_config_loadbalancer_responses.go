@@ -283,6 +283,51 @@ func (o *PostConfigLoadbalancerConflict) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// PostConfigLoadbalancerPreconditionFailedCode is the HTTP code returned for type PostConfigLoadbalancerPreconditionFailed
+const PostConfigLoadbalancerPreconditionFailedCode int = 412
+
+/*
+PostConfigLoadbalancerPreconditionFailed Server precondition not met - the request is valid but this Gateway's deployment cannot admit it (result names the setting or artifact and what to change)
+
+swagger:response postConfigLoadbalancerPreconditionFailed
+*/
+type PostConfigLoadbalancerPreconditionFailed struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigLoadbalancerPreconditionFailed creates PostConfigLoadbalancerPreconditionFailed with default headers values
+func NewPostConfigLoadbalancerPreconditionFailed() *PostConfigLoadbalancerPreconditionFailed {
+
+	return &PostConfigLoadbalancerPreconditionFailed{}
+}
+
+// WithPayload adds the payload to the post config loadbalancer precondition failed response
+func (o *PostConfigLoadbalancerPreconditionFailed) WithPayload(payload *models.Error) *PostConfigLoadbalancerPreconditionFailed {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config loadbalancer precondition failed response
+func (o *PostConfigLoadbalancerPreconditionFailed) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigLoadbalancerPreconditionFailed) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(412)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigLoadbalancerInternalServerErrorCode is the HTTP code returned for type PostConfigLoadbalancerInternalServerError
 const PostConfigLoadbalancerInternalServerErrorCode int = 500
 

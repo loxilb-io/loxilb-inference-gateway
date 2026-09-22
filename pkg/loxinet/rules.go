@@ -311,7 +311,10 @@ const (
 	NatFwMark                  = 0x80000000 // NAT Marker
 	SrcChkFwMark               = 0x40000000 // Src check Marker
 	OnDfltSnatFwMark           = 0x20000000 // Ondefault Snat Marker
-	MaxSrcLBMarkerNum          = 28         // Max LB indexes which support source checks
+	// Max LB index which supports source checks. The number lives in
+	// common so rule admission and the capability surface read one
+	// definition of it.
+	MaxSrcLBMarkerNum = cmn.LbSourceCheckMaxSlot
 )
 
 type ruleTType uint
@@ -1931,17 +1934,53 @@ func (R *RuleH) GetLBRuleSecIPs(serv cmn.LbServiceArg) []string {
 	return ips
 }
 
-func (R *RuleH) addAllowedLbSrc(CIDR string, lbMark uint32) *allowedSrcElem {
+// lbSourceCheckSlotsInUse counts the load-balancer rules holding a slot that
+// can carry source checks. Every rule in such a slot consumes it whether or
+// not it carries allowedSources: the slot is the rule's index, and the
+// index is what the data path keys source checks by.
+func (R *RuleH) lbSourceCheckSlotsInUse() int {
+	inUse := 0
+	for _, r := range R.tables[RtLB].eMap {
+		if uint32(r.ruleNum) <= MaxSrcLBMarkerNum {
+			inUse++
+		}
+	}
+	return inUse
+}
+
+// LbSourceCheckSlots reports the source-check slot budget as admission sees
+// it: the slot count, the slots existing rules hold, and the slot the next
+// rule would be allocated. The caller holds the rule lock.
+func (R *RuleH) LbSourceCheckSlots() cmn.LbSourceCheckSlots {
+	next, err := R.tables[RtLB].Mark.PeekMarker()
+	if err != nil {
+		// No slot at all: the next rule fails allocation before source
+		// checks are considered. Report a slot past the source-check
+		// range so the verdict reads "not ready" for the right reason.
+		next = uint64(MaxSrcLBMarkerNum) + 1
+	}
+	return cmn.LbSourceCheckSlots{
+		Limit:    cmn.LbSourceCheckSlotCount,
+		InUse:    R.lbSourceCheckSlotsInUse(),
+		NextSlot: next,
+	}
+}
+
+func (R *RuleH) addAllowedLbSrc(CIDR string, lbMark uint32) (*allowedSrcElem, error) {
 
 	_, srcPref, err := net.ParseCIDR(CIDR)
 	if err != nil {
 		tk.LogIt(tk.LogError, "allowed-cidr parse failed\n")
-		return nil
+		return nil, errors.New("allowed-cidr parse failed")
 	}
 
-	if lbMark > MaxSrcLBMarkerNum {
+	// A rule above the source-check range is a property of the
+	// deployment's slot occupancy, not of the request: the client did not
+	// choose the slot and no body it sends can lower it. Refuse it as the
+	// server precondition it is, carrying the budget in the sentence.
+	if perr := cmn.LbSourceCheckPrecondition(uint64(lbMark), R.lbSourceCheckSlotsInUse()); perr != nil {
 		tk.LogIt(tk.LogError, "allowed-src lbmark out-of-range\n")
-		return nil
+		return nil, perr
 	}
 
 	added := false
@@ -1960,7 +1999,7 @@ func (R *RuleH) addAllowedLbSrc(CIDR string, lbMark uint32) *allowedSrcElem {
 	srcElem.mark, err = R.srcMark.GetCounter()
 	if err != nil {
 		tk.LogIt(tk.LogError, "allowed-cidr failed to alloc id\n")
-		return nil
+		return nil, errors.New("allowed-cidr failed to alloc id")
 	}
 
 addFw:
@@ -1974,7 +2013,7 @@ addFw:
 		if !strings.Contains(err.Error(), "fwrule-exists") {
 			R.srcMark.PutCounter(srcElem.mark)
 			tk.LogIt(tk.LogError, "allowed-src failed to add fw %s\n", err)
-			return nil
+			return nil, fmt.Errorf("allowed-src failed to add fw: %w", err)
 		}
 	}
 
@@ -1984,7 +2023,7 @@ addFw:
 
 	tk.LogIt(tk.LogInfo, "added allowed-cidr %s: 0x%x(%v)\n", srcPref.String(), srcElem.lbmark, srcElem.ref)
 
-	return srcElem
+	return srcElem, nil
 }
 
 func (R *RuleH) deleteAllowedLbSrc(CIDR string, lbMark uint32) error {
@@ -3211,8 +3250,8 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 		}
 	}
 
-	if deps.tokenizerReady == nil || !deps.tokenizerReady(modelName) {
-		return res, fmt.Errorf("%s kvExactMode tokenizer is required and must be loadable for model_name (stage /etc/loxilb/tokenizers/<model-slug>/tokenizer.json or bind a model profile before retry)", eng)
+	if perr := cmn.KvExactTokenizerPrecondition(eng, modelName, deps.tokenizerReady); perr != nil {
+		return res, perr
 	}
 	return res, nil
 }
@@ -4318,14 +4357,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.srcList = nil
 
 		for _, allowedSource := range allowedSources {
-			srcElem := R.addAllowedLbSrc(allowedSource.Prefix, uint32(eRule.ruleNum))
-			if srcElem == nil {
+			srcElem, serr := R.addAllowedLbSrc(allowedSource.Prefix, uint32(eRule.ruleNum))
+			if serr != nil {
 				for _, src := range eRule.srcList {
 					R.deleteAllowedLbSrc(src.srcPref.String(), uint32(eRule.ruleNum))
 				}
 				eRule.srcList = eSrcList
 				tk.LogIt(tk.LogError, "nat lb-rule - %s:%s allowedSRC error\n", eRule.tuples.String(), eRule.act.String())
-				return RuleAllocErr, errors.New("rule-allowed-src error")
+				return RuleAllocErr, fmt.Errorf("rule-allowed-src error: %w", serr)
 			}
 			eRule.srcList = append(eRule.srcList, srcElem)
 		}
@@ -4762,14 +4801,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleAllocErr, errors.New("rule-hwm error")
 	}
 	for _, allowedSource := range allowedSources {
-		srcElem := R.addAllowedLbSrc(allowedSource.Prefix, uint32(r.ruleNum))
-		if srcElem == nil {
+		srcElem, serr := R.addAllowedLbSrc(allowedSource.Prefix, uint32(r.ruleNum))
+		if serr != nil {
 			R.tables[RtLB].Mark.ReleaseMarker(r.ruleNum)
 			for _, src := range r.srcList {
 				R.deleteAllowedLbSrc(src.srcPref.String(), uint32(r.ruleNum))
 			}
 			tk.LogIt(tk.LogError, "nat lb-rule - %s:%s allowedSRC error\n", r.tuples.String(), r.act.String())
-			return RuleAllocErr, errors.New("rule-allowed-src error")
+			return RuleAllocErr, fmt.Errorf("rule-allowed-src error: %w", serr)
 		}
 		r.srcList = append(r.srcList, srcElem)
 	}

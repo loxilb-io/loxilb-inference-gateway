@@ -34,7 +34,7 @@ func NewPostConfigLoadbalancer(ctx *middleware.Context, handler PostConfigLoadba
 
 # Create a new Load balancer service
 
-Create a new load balancer service with .
+Create a new load balancer service. A well-formed request can still be refused by this Gateway's own deployment state with 412 - a vLLM KV-exact rule without the launch seed or without a loadable tokenizer for its model_name, or allowedSources on a rule allocated a slot past the source-check range - and no request body can satisfy such a refusal; GET /status/capabilities reports the same verdicts before submission.
 */
 type PostConfigLoadbalancer struct {
 	Context *middleware.Context

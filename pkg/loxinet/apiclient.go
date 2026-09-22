@@ -2080,3 +2080,20 @@ func (*NetAPIStruct) NetLookupBridgeVid(name string) (int, bool) {
 func (*NetAPIStruct) NetReleaseBridgeVid(name string) error {
 	return ReleaseBridgeVid(name)
 }
+
+// NetKvExactTokenizerReady - report whether a KV-exact tokenizer for the
+// model can be loaded now, with the same fresh probe rule admission uses
+func (na *NetAPIStruct) NetKvExactTokenizerReady(modelName string) bool {
+	return kvLoadTokenizerFresh(modelName) != nil
+}
+
+// NetLbSourceCheckSlotsGet - report the source-check slot budget the next
+// load-balancer rule would be admitted against
+func (na *NetAPIStruct) NetLbSourceCheckSlotsGet() (cmn.LbSourceCheckSlots, error) {
+	if na.BgpPeerMode {
+		return cmn.LbSourceCheckSlots{}, errors.New("running in bgp only mode")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	return mh.zr.Rules.LbSourceCheckSlots(), nil
+}
