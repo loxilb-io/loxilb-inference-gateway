@@ -23,7 +23,7 @@
 #   3. four rules: off / request / response / both on one endpoint
 #   4. E-1,E-2  the echo sequence's records are identical to the off arm, client
 #               response headers and the request headers the backend saw included
-#   5. E-3..E-8, E-10..E-16  self-checking request and response shapes
+#   5. E-3..E-8, E-10..E-15  self-checking request and response shapes
 #   6. PEER_MISS stays zero and no sockmap failure is logged
 #
 # A case that fails on the OFF arm as well is a sockproxy defect, not an
@@ -96,25 +96,27 @@ for arm in $MODES; do
   sockmap_xfail_register "E-15 $arm" \
     "the same loss with the FIN arriving after the opening bytes, which is also where layer 1 truncates rather than losing the answer whole"
 done
-# E-16 is registered on TWO arms only, and the asymmetry is the point.
+# There is no case here for a half-close that lands while the answer is still
+# moving — the order in which the kernel may hold response bytes taken for
+# redirect that no userspace queue can see. E-15 cannot produce it: it waits for
+# the opening bytes and the backend then stays silent, so the queue is empty by
+# the time the FIN goes out.
 #
-# It half-closes while the rest of a 256KB answer is still in the pipeline, which
-# is the order that matters to any fix that answers the FIN by dropping the
-# connection's acceleration: the unpair then happens on top of bytes the kernel
-# has taken for redirect. E-15 cannot produce that state — it waits for the
-# opening bytes and the backend then stays silent, so the queue is empty by the
-# time the FIN goes out.
+# One was written (halfinflight, still in request_path_client.py, 256KB with the
+# remainder following the opening at once) and then withdrawn, because its
+# verdict depends on what ran before it. Driven back to back it fails on three
+# arms including one that passes inside the suite; run after the suite's earlier
+# cases it passes on two. Both images, with and without the response framer,
+# behave the same way, so this is the case and not the daemon. A check whose
+# answer moves with the load in front of it is worse than no check, and an
+# earlier 5-repetition measurement that did not reproduce is what put it here.
 #
-# Measured before registering, 5/5 on each arm: off and request lose the
-# remainder to the immediate teardown, response and both deliver all 262144.
-# So the two passing arms are NOT registered — they pass today and must keep
-# passing, which is what makes this a regression guard for that fix rather than
-# a defect case. Registering them would turn a pass into an XPASS failure, the
-# mistake the control suite already made once by registering cases that were
-# blocked rather than broken.
+# The client mode is kept for probing by hand. Wiring it back in needs a shape
+# whose loss is decisive rather than raced: what it has to separate is bytes lost
+# to the teardown from bytes merely slower than the deferred-close bound, and
+# 256KB in one write does not separate them. Until then the in-flight order has
+# no automated cover, which matters most to the plan's fifth check.
 for arm in off request; do
-  sockmap_xfail_register "E-16 $arm" \
-    "the immediate teardown on the arms whose response is not accelerated drops whatever of the answer is still in flight"
   sockmap_xfail_register "E-11 $arm" \
     "a half-closed client is answered only where the response is accelerated; the userspace relay has no response-complete signal to wait for"
 done
@@ -207,7 +209,7 @@ done
 # Each of these asserts an absolute expectation rather than equality with off,
 # which is the stronger statement. off is run first so a pre-existing sockproxy
 # defect is distinguishable from an acceleration defect.
-sockmap_section 5 "E-3..E-8, E-10..E-16 — request and response shapes"
+sockmap_section 5 "E-3..E-8, E-10..E-15 — request and response shapes"
 for m in $MODES; do
   port=${PORT[$m]}
 
@@ -271,10 +273,6 @@ for m in $MODES; do
   # comment for why this is not a duplicate of E-14.
   out=$($hexec l3h1 python3 "$CLIENT" halfmid "$VIP" "$port" 500 2>&1)
   sockmap_result "E-15 $m: half-close after the answer started" \
-    "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
-
-  out=$($hexec l3h1 python3 "$CLIENT" halfinflight "$VIP" "$port" 2>&1)
-  sockmap_result "E-16 $m: half-close with the answer in flight" \
     "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
   out=$($hexec l3h1 python3 "$CLIENT" halfpartial "$VIP" "$port" 2>&1)
