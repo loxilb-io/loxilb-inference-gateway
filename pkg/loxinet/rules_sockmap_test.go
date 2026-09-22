@@ -102,30 +102,34 @@ func TestLbSockMapCodeEligibility(t *testing.T) {
 	}
 }
 
-// Every declaration that puts per-request work on the relay path refuses every
-// non-off mode. sse_mode and pd_disagg_mode re-run admission at each keep-alive
-// request and record requests from their responses; any non-empty api_key_auth
-// makes the gateway own the X-Api-Key header and strip it on every request; an
-// attached L7 policy rewrites request headers on every request.
+// Every declaration that puts per-request work on the relay path refuses the
+// direction it owns — and ONLY that direction. sse_mode and pd_disagg_mode re-run
+// admission at each keep-alive request AND record requests from their responses,
+// so they own both; an attached L7 policy rewrites request headers AND can inject
+// Set-Cookie into responses, so it owns both. Any non-empty api_key_auth makes the
+// gateway validate the credential and strip X-Api-Key before dispatch — all of it
+// on the way IN — so it owns the request direction alone.
 func TestLbSockMapL7CodeRefused(t *testing.T) {
-	// name -> (mutate serv, api_key_auth, l7Attached)
+	// name -> (mutate serv, api_key_auth, l7Attached, whether response survives)
 	perRequest := map[string]struct {
-		mutate     func(*cmn.LbServiceArg)
-		apiKeyAuth string
-		l7Attached bool
+		mutate       func(*cmn.LbServiceArg)
+		apiKeyAuth   string
+		l7Attached   bool
+		allowsRespCd bool
 	}{
 		"sse_mode":                   {mutate: func(s *cmn.LbServiceArg) { s.SSEMode = true }},
 		"pd_disagg_mode":             {mutate: func(s *cmn.LbServiceArg) { s.PDDisaggMode = true }},
-		"api_key_auth=required":      {apiKeyAuth: cmn.ApiKeyAuthRequired},
-		"api_key_auth=jwt":           {apiKeyAuth: cmn.ApiKeyAuthJWT},
-		"api_key_auth=apikey-or-jwt": {apiKeyAuth: cmn.ApiKeyAuthApiKeyOrJWT},
+		"l7 policy attached":         {l7Attached: true},
+		"api_key_auth=required":      {apiKeyAuth: cmn.ApiKeyAuthRequired, allowsRespCd: true},
+		"api_key_auth=jwt":           {apiKeyAuth: cmn.ApiKeyAuthJWT, allowsRespCd: true},
+		"api_key_auth=apikey-or-jwt": {apiKeyAuth: cmn.ApiKeyAuthApiKeyOrJWT, allowsRespCd: true},
 		// The case the AI-gateway test could not express: an EXPLICIT "disabled"
 		// enforces no credential, so aiGwModeFor reads it as "not an AI gateway",
 		// but it still claims the X-Api-Key namespace and the data plane strips
 		// the header on every request. An accelerated request direction would
-		// carry the tenant's key upstream from the second keep-alive request on.
-		"api_key_auth=disabled (explicit)": {apiKeyAuth: cmn.ApiKeyAuthDisabled},
-		"l7 policy attached":               {l7Attached: true},
+		// carry the tenant's key upstream from the second keep-alive request on —
+		// which is why it refuses request and both, and why response is unaffected.
+		"api_key_auth=disabled (explicit)": {apiKeyAuth: cmn.ApiKeyAuthDisabled, allowsRespCd: true},
 	}
 	for name, tc := range perRequest {
 		for mode, code := range map[string]uint8{"both": 1, "request": 2, "response": 3} {
@@ -134,11 +138,81 @@ func TestLbSockMapL7CodeRefused(t *testing.T) {
 				tc.mutate(&serv)
 			}
 			got, err := lbSockMapL7Code(&serv, code, tc.apiKeyAuth, tc.l7Attached)
+			if mode == "response" && tc.allowsRespCd {
+				if err != nil || got != code {
+					t.Fatalf("%s, mode response: the declaration owns request bytes only, want code %d, got %d err %v",
+						name, code, got, err)
+				}
+				continue
+			}
 			if !errors.Is(err, errSockMapPerRequestL7) || got != 0 {
 				t.Fatalf("%s, mode %s: want errSockMapPerRequestL7 and code 0, got %d err %v",
 					name, mode, got, err)
 			}
 		}
+	}
+}
+
+// The response-direction allowance belongs to api_key_auth ALONE. Pair the
+// credential with a declaration that does own response bytes and the response
+// direction must go back to being refused — otherwise the split would have turned
+// "this one input is request-shaped" into "a credential excuses everything".
+func TestLbSockMapL7CodeResponseAllowanceIsApiKeyAuthOnly(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mutate     func(*cmn.LbServiceArg)
+		l7Attached bool
+	}{
+		"api_key_auth + sse_mode":       {mutate: func(s *cmn.LbServiceArg) { s.SSEMode = true }},
+		"api_key_auth + pd_disagg_mode": {mutate: func(s *cmn.LbServiceArg) { s.PDDisaggMode = true }},
+		"api_key_auth + l7 policy":      {l7Attached: true},
+	} {
+		serv := sockMapServ("response")
+		if tc.mutate != nil {
+			tc.mutate(&serv)
+		}
+		got, err := lbSockMapL7Code(&serv, 3, cmn.ApiKeyAuthRequired, tc.l7Attached)
+		if !errors.Is(err, errSockMapPerRequestL7) || got != 0 {
+			t.Fatalf("%s, mode response: want errSockMapPerRequestL7 and code 0, got %d err %v", name, got, err)
+		}
+	}
+}
+
+// The refusal names the direction it refused, so an operator reading a 400 on a
+// "both" request learns that "response" would have been accepted instead of
+// concluding the service can never be accelerated.
+func TestLbSockMapL7CodeRefusalNamesDirection(t *testing.T) {
+	serv := sockMapServ("both")
+	_, err := lbSockMapL7Code(&serv, 1, cmn.ApiKeyAuthRequired, false)
+	if err == nil || !strings.Contains(err.Error(), "request direction") {
+		t.Fatalf("api_key_auth on mode both: want the request direction named, got %v", err)
+	}
+
+	serv = sockMapServ("both")
+	serv.SSEMode = true
+	_, err = lbSockMapL7Code(&serv, 1, "", false)
+	if err == nil || !strings.Contains(err.Error(), "request and response direction") {
+		t.Fatalf("sse_mode on mode both: want both directions named, got %v", err)
+	}
+}
+
+// The directional split must not change what the two predicates disagree about.
+// sockMapPerRequestL7 still answers "is ANY direction refused", which is the
+// question the divergence test below asks.
+func TestSockMapPerRequestL7DirsSplit(t *testing.T) {
+	serv := sockMapServ("both")
+	if req, resp := sockMapPerRequestL7Dirs(&serv, cmn.ApiKeyAuthRequired, false); !req || resp {
+		t.Fatalf("api_key_auth owns the request direction only, got req=%v resp=%v", req, resp)
+	}
+	if req, resp := sockMapPerRequestL7Dirs(&serv, "", true); !req || !resp {
+		t.Fatalf("an L7 policy owns both directions, got req=%v resp=%v", req, resp)
+	}
+	s := sockMapServ("both")
+	s.SSEMode = true
+	if req, resp := sockMapPerRequestL7Dirs(&s, "", false); !req || !resp {
+		t.Fatalf("sse_mode owns both directions, got req=%v resp=%v", req, resp)
+	}
+	if req, resp := sockMapPerRequestL7Dirs(&serv, "", false); req || resp {
+		t.Fatalf("a service that declares nothing owns neither direction, got req=%v resp=%v", req, resp)
 	}
 }
 

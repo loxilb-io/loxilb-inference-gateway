@@ -18,6 +18,7 @@ package loxinet
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -55,6 +56,11 @@ func lbSockMapCode(serv *cmn.LbServiceArg, sockMapSupport bool) (uint8, error) {
 
 // errSockMapPerRequestL7 refuses sockmap acceleration on a service whose data
 // plane rewrites or inspects bytes on every request or response.
+//
+// It stays the sentinel for every such refusal, but the returned error wraps it
+// with the direction that was refused and the declaration that refused it,
+// because a service can now be refused in one direction and allowed in the
+// other: a declared api_key_auth owns the REQUEST bytes only.
 var errSockMapPerRequestL7 = errors.New("sockmap-accel is not allowed on a service whose data plane touches every request (sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy)")
 
 // errSockMapL7Policy is the same refusal seen from the L7 policy side.
@@ -91,8 +97,34 @@ var errSockMapL7Policy = errors.New("an L7 policy cannot be attached to a sockma
 // credential and the L7 policy are this function's own inputs, and they are
 // precisely where the two predicates answer differently.
 func sockMapPerRequestL7(serv *cmn.LbServiceArg, apiKeyAuth string, l7Attached bool) bool {
-	return aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, "") ||
-		apiKeyAuthWireValue(apiKeyAuth) != 0 || l7Attached
+	req, resp := sockMapPerRequestL7Dirs(serv, apiKeyAuth, l7Attached)
+	return req || resp
+}
+
+// sockMapPerRequestL7Dirs splits that answer by direction, because the three
+// declarations are not symmetric and the gate used to refuse as if they were.
+//
+//   - sse_mode / pd_disagg_mode own BOTH directions: admission re-runs at every
+//     keep-alive request boundary, and the request is recorded FROM its response.
+//   - an attached L7 policy owns BOTH: insertHeaders rewrites request headers,
+//     and sessionPersistence=HTTP_COOKIE injects Set-Cookie into responses.
+//   - a declared api_key_auth owns the REQUEST direction ONLY: the credential is
+//     validated and X-Api-Key is stripped before dispatch, both on the way in.
+//     Nothing in that declaration rewrites a response byte.
+//
+// So a service whose ONLY disqualification is api_key_auth can accelerate the
+// response direction while the request direction stays on the userspace relay —
+// which is where the acceleration is worth having anyway, since an inference
+// response dwarfs the request that asked for it.
+//
+// What it costs is stated at the call site rather than hidden here: api_key_auth
+// arms ai_gw_mode (dpebpf_linux.go), and an accelerated response direction is not
+// recorded, so response-derived accounting is lost for that connection. Admission,
+// the header strip and the API-key store verdict are NOT lost — they all live on
+// the request path, which is still relayed.
+func sockMapPerRequestL7Dirs(serv *cmn.LbServiceArg, apiKeyAuth string, l7Attached bool) (req bool, resp bool) {
+	bothWays := aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, "") || l7Attached
+	return bothWays || apiKeyAuthWireValue(apiKeyAuth) != 0, bothWays
 }
 
 // lbSockMapL7Code refuses a sockMapMode other than off on such a service and
@@ -108,15 +140,43 @@ func sockMapPerRequestL7(serv *cmn.LbServiceArg, apiKeyAuth string, l7Attached b
 // A snapshot restore replay is not failed, since that would abort the whole
 // loadbalancer domain. The rule is restored with acceleration off instead.
 func lbSockMapL7Code(serv *cmn.LbServiceArg, code uint8, apiKeyAuth string, l7Attached bool) (uint8, error) {
-	if code == 0 || !sockMapPerRequestL7(serv, apiKeyAuth, l7Attached) {
+	if code == 0 {
+		return code, nil
+	}
+	wantReq, wantResp := sockMapDirs(code)
+	blockReq, blockResp := sockMapPerRequestL7Dirs(serv, apiKeyAuth, l7Attached)
+	refusedReq, refusedResp := wantReq && blockReq, wantResp && blockResp
+	if !refusedReq && !refusedResp {
+		// Allowed. The one shape that gets here with a declared credential is a
+		// response-only mode on a service whose sole disqualification was that
+		// declaration, and it silently stops recording responses. Say so once, at
+		// the decision, so the accounting gap is in the log rather than inferred
+		// later from a metric that stopped moving.
+		if apiKeyAuthWireValue(apiKeyAuth) != 0 {
+			tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s on an api_key_auth service: the request direction stays relayed (credential check and X-Api-Key strip intact), accelerated responses are NOT recorded\n",
+				serv.ServIP, serv.ServPort, serv.SockMapMode)
+		}
 		return code, nil
 	}
 	if !serv.RestoreReplay {
-		return 0, errSockMapPerRequestL7
+		return 0, fmt.Errorf("%w: refused for the %s direction", errSockMapPerRequestL7,
+			sockMapDirName(refusedReq, refusedResp))
 	}
-	tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s dropped on restore, not allowed where the data plane touches every request\n",
-		serv.ServIP, serv.ServPort, serv.SockMapMode)
+	tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s dropped on restore, the %s direction is not allowed where the data plane touches every request\n",
+		serv.ServIP, serv.ServPort, serv.SockMapMode, sockMapDirName(refusedReq, refusedResp))
 	return 0, nil
+}
+
+// sockMapDirName names the refused direction(s) for an operator reading a 400.
+func sockMapDirName(req, resp bool) string {
+	switch {
+	case req && resp:
+		return "request and response"
+	case req:
+		return "request"
+	default:
+		return "response"
+	}
 }
 
 // sockMapDirs reports which directions a dataplane mode code accelerates
