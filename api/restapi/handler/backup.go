@@ -96,7 +96,9 @@ func ConfigGetExport(params operations.GetConfigExportParams, principal any) mid
 	}
 	defer snapshotGate.Store(false)
 
-	doc, err := snapshot.Capture(ApiHooks, cmn.Version, snapshotHostname(), snapshot.TriggerManual, components)
+	doc, err := captureWithConfigWritesHeld(func() (*snapshot.Document, error) {
+		return snapshot.Capture(ApiHooks, cmn.Version, snapshotHostname(), snapshot.TriggerManual, components)
+	})
 	if err != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -218,6 +220,7 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 		return snapshotBusyError()
 	}
 	defer snapshotGate.Store(false)
+	defer beginRestoreFreeze()()
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	result, err := engine.Restore(raw, snapshot.RestoreOptions{Mode: snapshot.ModeCommit, Components: components})
