@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,28 +37,88 @@ import (
 	tk "github.com/loxilb-io/loxilib"
 )
 
-// snapshotGate serializes snapshot/restore operations against each other,
-// and — via SnapshotRestoreActive and the mutation-freeze middleware in
-// configure_loxilb_rest_api.go — rejects (503) concurrent mutating API
-// calls while a restore holds it. This is the §5.3 "global config write
-// lock" at the REST layer: the engine's per-hook calls still take the
-// loxinet-internal mh.mtx individually; the gate is what keeps another
-// client's POST /config/loadbalancer from interleaving between restore
-// stages 4-7. Mutating requests already in flight when the gate is taken
-// are not interrupted (they hold mh.mtx per call); the freeze window
-// starts with the next routed request.
+// snapshotGate serializes the snapshot-family operations (capture, export,
+// persist, auto-persist, restore, import) against each other: a second one
+// arriving while the first runs is answered 409 rather than interleaved.
+// It says nothing about ordinary mutating config calls; those are governed
+// by the two mechanisms below, which differ in how long they hold writers
+// and therefore in what a writer sees.
 var snapshotGate atomic.Bool
 
-// SnapshotRestoreActive reports whether a snapshot capture or restore is in
+// restoreFreeze is set for the duration of a restore or import pipeline.
+// While it is set the mutation-freeze middleware in
+// configure_loxilb_rest_api.go answers mutating config calls with 503 and
+// Retry-After. This is the §5.3 "global config write lock" at the REST
+// layer: the engine's per-hook calls still take the loxinet-internal
+// mh.mtx individually; the freeze is what keeps another client's POST
+// /config/loadbalancer from interleaving between restore stages 4-7. A
+// restore takes seconds, so refusing with a retry hint is the right
+// contract for it: a write that waited the pipeline out could fail on
+// state it did not create and roll the whole restore back.
+var restoreFreeze atomic.Bool
+
+// configWrites keeps a config capture and the mutating config calls from
+// running at the same time. Mutating requests hold it shared for the
+// handler's duration (taken in the middleware); a capture -- snapshot,
+// export, persist, and the auto-persist write-through -- holds it
+// exclusively around the capture itself. A capture is milliseconds, so a
+// writer that arrives during one simply waits for it instead of being
+// refused: the auto-persist write-through fires one quiet period after
+// every accepted write, and a client that refused-on-503 there would see
+// its own earlier write turn its next write into a spurious "restore in
+// progress" at a fixed offset it never asked for. Exclusive hold also
+// gives the capture what the serialization alone did not: the running
+// config it encodes is one no write is changing under it.
+var configWrites sync.RWMutex
+
+// SnapshotRestoreActive reports whether a restore or import pipeline is in
 // progress (read by the mutation-freeze middleware).
 func SnapshotRestoreActive() bool {
-	return snapshotGate.Load()
+	return restoreFreeze.Load()
+}
+
+// beginRestoreFreeze raises the restore freeze and waits for the mutating
+// calls already past the middleware to finish, so the pipeline starts from
+// a config no write is still changing. New mutating calls are refused from
+// the moment the flag is set, and the middleware re-checks the flag after
+// it acquires its shared hold, so a writer that slipped past the check
+// before the flag went up is refused rather than admitted behind the
+// barrier. The returned func lowers the freeze; the caller defers it.
+func beginRestoreFreeze() func() {
+	restoreFreeze.Store(true)
+	configWrites.Lock()
+	configWrites.Unlock()
+	return func() { restoreFreeze.Store(false) }
+}
+
+// captureWithConfigWritesHeld runs one capture with mutating config calls
+// held off for its duration. Keep the function short: everything a writer
+// waits on is inside it, so encoding, dependency probes and the response
+// belong outside.
+func captureWithConfigWritesHeld[T any](capture func() (T, error)) (T, error) {
+	configWrites.Lock()
+	defer configWrites.Unlock()
+	return capture()
+}
+
+// writeThroughWithConfigWritesHeld is the write-through persist under the
+// same hold: the capture and the file publish together, so the document on
+// disk is the running config as of one instant with no write in between.
+func writeThroughWithConfigWritesHeld() (string, *snapshot.Document, error) {
+	configWrites.Lock()
+	defer configWrites.Unlock()
+	return snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 }
 
 // SnapshotFreezeMiddleware rejects mutating API calls with 503 (+Retry-After)
-// while a snapshot/restore holds the gate, so restore stages 4-7 run against
+// while a restore or import pipeline runs, so restore stages 4-7 run against
 // a frozen config (§5.3). Reads pass through; the snapshot/restore endpoints
-// themselves pass through to get the gate's own 409 instead.
+// themselves pass through to get the gate's own 409 instead. Every other
+// mutating call holds configWrites shared for its duration, which is what
+// lets a capture wait for in-flight writes and hold new ones -- for the
+// milliseconds a capture takes -- rather than refuse them. The
+// snapshot-family endpoints take that lock themselves and are excluded
+// from the shared hold so they cannot deadlock against their own request.
 //
 // It also holds mutating calls until the BOOT config replay has settled:
 // the API server starts serving before the boot restore runs, and a write
@@ -82,10 +143,20 @@ func SnapshotFreezeMiddleware(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(`{"code":503,"message":"Maintenance mode","result":"configuration writes are rejected until the boot config replay settles"}`))
 			return
 		}
-		if SnapshotRestoreActive() &&
-			!strings.HasSuffix(r.URL.Path, "/config/restore") &&
-			!strings.HasSuffix(r.URL.Path, "/config/snapshot") &&
-			!strings.HasSuffix(r.URL.Path, "/config/persist") {
+		exemptFromRestoreFreeze := strings.HasSuffix(r.URL.Path, "/config/restore") ||
+			strings.HasSuffix(r.URL.Path, "/config/snapshot") ||
+			strings.HasSuffix(r.URL.Path, "/config/persist")
+		if !exemptFromRestoreFreeze &&
+			!strings.HasSuffix(r.URL.Path, "/config/import") &&
+			!strings.HasSuffix(r.URL.Path, "/config/export") {
+			configWrites.RLock()
+			defer configWrites.RUnlock()
+		}
+		// Checked after the shared hold is taken: a restore raises its flag
+		// first and then waits for the shared holders to drain, so a call
+		// that reaches this line has either finished before the barrier or
+		// sees the flag.
+		if !exemptFromRestoreFreeze && SnapshotRestoreActive() {
 			w.Header().Set("Retry-After", "5")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -161,7 +232,9 @@ func ConfigGetSnapshot(params operations.GetConfigSnapshotParams, principal any)
 	}
 	defer snapshotGate.Store(false)
 
-	doc, err := snapshot.Capture(ApiHooks, cmn.Version, snapshotHostname(), snapshot.TriggerManual, components)
+	doc, err := captureWithConfigWritesHeld(func() (*snapshot.Document, error) {
+		return snapshot.Capture(ApiHooks, cmn.Version, snapshotHostname(), snapshot.TriggerManual, components)
+	})
 	if err != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -234,6 +307,7 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 		return snapshotBusyError()
 	}
 	defer snapshotGate.Store(false)
+	defer beginRestoreFreeze()()
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	restoreOpts := snapshot.RestoreOptions{
@@ -340,7 +414,7 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 	}
 	defer snapshotGate.Store(false)
 
-	path, doc, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
+	path, doc, err := writeThroughWithConfigWritesHeld()
 	if err != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -517,9 +591,11 @@ func InitAutoPersist() {
 		snapshot.AutoPersistQuiet, opts.Opts.ConfigPath, snapshot.PersistFileName)
 }
 
-// autoPersistFire is the debouncer callback: write through unless a
-// snapshot/restore holds the gate, in which case retry a quiet period
-// later (a restore commit does its own write-through anyway). It also
+// autoPersistFire is the debouncer callback: write through unless another
+// snapshot-family operation holds the gate, in which case retry a quiet
+// period later (a restore commit does its own write-through anyway).
+// Mutating calls that arrive during the write-through wait for it rather
+// than being refused; see configWrites. It also
 // refuses to write before the boot config replay settles -- a persist in
 // that window would capture a partially-replayed (or, after a failed boot
 // restore, empty) state over snapshot.json, turning a transient boot
@@ -536,7 +612,7 @@ func autoPersistFire() {
 		return
 	}
 	defer snapshotGate.Store(false)
-	if path, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
+	if path, _, err := writeThroughWithConfigWritesHeld(); err != nil {
 		// Loud, bounded, surfaced: the failure streak feeds the metrics
 		// and the readiness surface (config changes not reaching disk
 		// must never be a log-line-only signal), and the debouncer
