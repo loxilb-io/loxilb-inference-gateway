@@ -23,7 +23,7 @@
 #   3. four rules: off / request / response / both on one endpoint
 #   4. E-1,E-2  the echo sequence's records are identical to the off arm, client
 #               response headers and the request headers the backend saw included
-#   5. E-3..E-8, E-10..E-14  self-checking request and response shapes
+#   5. E-3..E-8, E-10..E-15  self-checking request and response shapes
 #   6. PEER_MISS stays zero and no sockmap failure is logged
 #
 # A case that fails on the OFF arm as well is a sockproxy defect, not an
@@ -77,11 +77,24 @@ ABORT_REPS=${ABORT_REPS:-40}
 # fix fail. Its body is deliberately small: an unpatched kernel duplicates bytes
 # on an accelerated response at multi-megabyte sizes, which would make the
 # length check meaningless.
+#
+# E-15 is E-14 with the FIN arriving AFTER the opening bytes rather than before.
+# Every other half-* case shuts the write side down before a response byte
+# exists, so none of them produces that order, and it carries two things nothing
+# else does. It is the only case that shows layer 1 truncating a stream rather
+# than losing it whole — off and request deliver the opening bytes and drop the
+# remainder, where E-14 has them deliver nothing. And it is the worst order for
+# any fix that answers the FIN by dropping the connection's acceleration, since
+# the kernel may already hold response bytes taken for redirect that no
+# userspace queue can see. Keep it whichever way that decision goes: the first
+# reason stands on its own.
 for arm in $MODES; do
   sockmap_xfail_register "E-13 $arm" \
     "the deferred teardown has an unconditional 50 ms bound with no response-complete release, so a backend slower than that is cut off on every arm"
   sockmap_xfail_register "E-14 $arm" \
     "same bound, with the answer already started: the client keeps the opening bytes and loses the remainder"
+  sockmap_xfail_register "E-15 $arm" \
+    "the same loss with the FIN arriving after the opening bytes, which is also where layer 1 truncates rather than losing the answer whole"
 done
 for arm in off request; do
   sockmap_xfail_register "E-11 $arm" \
@@ -176,7 +189,7 @@ done
 # Each of these asserts an absolute expectation rather than equality with off,
 # which is the stronger statement. off is run first so a pre-existing sockproxy
 # defect is distinguishable from an acceleration defect.
-sockmap_section 5 "E-3..E-8, E-10..E-14 — request and response shapes"
+sockmap_section 5 "E-3..E-8, E-10..E-15 — request and response shapes"
 for m in $MODES; do
   port=${PORT[$m]}
 
@@ -234,6 +247,12 @@ for m in $MODES; do
   # fix that keeps the response leg open from one that only delivers the opening.
   out=$($hexec l3h1 python3 "$CLIENT" halfsplit "$VIP" "$port" 500 2>&1)
   sockmap_result "E-14 $m: half-closed client, answer cut mid-stream" \
+    "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
+
+  # E-15: the FIN lands on an answer already in flight. See the registration
+  # comment for why this is not a duplicate of E-14.
+  out=$($hexec l3h1 python3 "$CLIENT" halfmid "$VIP" "$port" 500 2>&1)
+  sockmap_result "E-15 $m: half-close after the answer started" \
     "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
   out=$($hexec l3h1 python3 "$CLIENT" halfpartial "$VIP" "$port" 2>&1)

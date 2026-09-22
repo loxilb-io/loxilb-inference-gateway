@@ -22,6 +22,9 @@ on OK.
   halfsplit <host> <port> [ms]      same, against a backend that sends the opening
                                     bytes at once and the rest ms later; expects
                                     the WHOLE body, not just the opening bytes
+  halfmid   <host> <port> [ms]      the same split response, but the client waits
+                                    for the opening bytes BEFORE shutdown(SHUT_WR);
+                                    expects the whole body
   halfpartial <host> <port>         half a request, then shutdown(SHUT_WR); the
                                     connection goes away and the service keeps
                                     serving a fresh one
@@ -262,18 +265,47 @@ def mode_halfsplit(host, port, ms=500):
     response at multi-megabyte sizes, which would make the length check meaningless.
 
     Only meaningful through the proxy, for the reason in mode_halfslow."""
+    return _split_case(host, port, ms, '/halfsplit', wait_for_opening=False)
+
+
+def mode_halfmid(host, port, ms=500):
+    """halfsplit, but the client half-closes with the answer already in flight.
+
+    Every other half-* mode shuts its write side down before a single response
+    byte exists, so none of them produces the order where the FIN lands on top of
+    a response the proxy has already begun. Two things ride on that order:
+
+      - It is the only case that shows layer 1 truncating a stream rather than
+        losing it whole: off and request deliver the opening bytes and then drop
+        the remainder, where halfsplit has them deliver nothing at all.
+      - It is the worst order for a fix that responds to the FIN by dropping the
+        connection's acceleration, because the kernel may already hold response
+        bytes taken for redirect and no userspace queue can see them.
+
+    Keep it even if that fix is not the one taken: the first point stands on its
+    own. Only meaningful through the proxy, for the reason in mode_halfslow."""
+    return _split_case(host, port, ms, '/halfmid', wait_for_opening=True)
+
+
+def _split_case(host, port, ms, path_base, wait_for_opening):
     total, first = 65536, 4096
     s = connect(host, port)
     r = Reader(s)
-    path = '/halfsplit?bytes=%d&split=%d&rdelay=%d' % (total, first, ms)
+    path = '%s?bytes=%d&split=%d&rdelay=%d' % (path_base, total, first, ms)
     head, _ = request('GET', path, host)
     s.sendall(head)
+    if wait_for_opening:
+        try:
+            while b'\r\n\r\n' not in r.buf or \
+                    len(r.buf.split(b'\r\n\r\n', 1)[1]) < first:
+                r._fill()
+        except (OSError, EOFError) as e:
+            return 'FAIL the opening bytes never arrived (%s)' % e
     s.shutdown(socket.SHUT_WR)
     try:
         status, headers, body = r.response_full()
     except (OSError, EOFError) as e:
-        got = len(r.buf)
-        return 'FAIL cut after %d bytes (%s)' % (got, e)
+        return 'FAIL cut after %d bytes (%s)' % (len(r.buf), e)
     if status != 200:
         return 'FAIL status %d' % status
     if headers.get('content-length') != str(total):
@@ -528,7 +560,8 @@ RECORD_MODES = {'echo'}
 
 MODES = {'split': mode_split, 'stream': mode_stream, 'pipeline': mode_pipeline,
          'halfclose': mode_halfclose, 'halfslow': mode_halfslow,
-         'halfsplit': mode_halfsplit, 'halfpartial': mode_halfpartial,
+         'halfsplit': mode_halfsplit, 'halfmid': mode_halfmid,
+         'halfpartial': mode_halfpartial,
          'keepalive': mode_keepalive, 'echo': mode_echo, 'chunked': mode_chunked,
          'sizes': mode_sizes, 'special': mode_special, 'abort': mode_abort,
          'idle': mode_idle, 'volume': mode_volume}
