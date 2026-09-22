@@ -13,7 +13,11 @@ import (
 
 // GetStatusCapabilitiesURL generates an URL for the get status capabilities operation
 type GetStatusCapabilitiesURL struct {
+	ModelName *string
+
 	_basePath string
+	// avoid unkeyed usage
+	_ struct{}
 }
 
 // WithBasePath sets the base path for this url builder, only required when it's different from the
@@ -42,6 +46,18 @@ func (o *GetStatusCapabilitiesURL) Build() (*url.URL, error) {
 		_basePath = "/netlox/v1"
 	}
 	_result.Path = golangswaggerpaths.Join(_basePath, _path)
+
+	qs := make(url.Values)
+
+	var modelNameQ string
+	if o.ModelName != nil {
+		modelNameQ = *o.ModelName
+	}
+	if modelNameQ != "" {
+		qs.Set("model_name", modelNameQ)
+	}
+
+	_result.RawQuery = qs.Encode()
 
 	return &_result, nil
 }

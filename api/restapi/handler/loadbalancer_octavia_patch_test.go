@@ -25,7 +25,17 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/go-openapi/runtime"
+	"github.com/loxilb-io/loxilb/api/models"
+	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	cmn "github.com/loxilb-io/loxilb/common"
 )
 
 // TestPatchPresenceDistinguishesAbsentFromZero: a body that sets only name must report
@@ -222,5 +232,62 @@ func TestPatchEndpointsExplicitEmptyArrayRejected(t *testing.T) {
 	}
 	if len(epsN) == 0 {
 		t.Fatalf("a non-empty endpoints[] must NOT trip the empty-array reject (declarative replace)")
+	}
+}
+
+type patchPreconditionHook struct {
+	cmn.NetHookInterface
+	rules []cmn.LbRuleMod
+	err   error
+}
+
+func (h *patchPreconditionHook) NetLbRuleGet() ([]cmn.LbRuleMod, error) { return h.rules, nil }
+func (h *patchPreconditionHook) NetLbRuleAdd(*cmn.LbRuleMod) (int, error) {
+	return 0, h.err
+}
+
+// A merge-patch that adds allowedSources to a rule whose slot is past the
+// source-check range is refused by the rule engine as a server
+// precondition. The patch handler must let that classification reach the
+// wire as 412 rather than fold it into its 400 "malformed patch" answer:
+// the patch is valid, and no edit to it can lower the rule's slot.
+func TestPatchSourceCheckSlotPreconditionIs412(t *testing.T) {
+	prev := ApiHooks
+	perr := cmn.LbSourceCheckPrecondition(cmn.LbSourceCheckMaxSlot+1, cmn.LbSourceCheckSlotCount)
+	ApiHooks = &patchPreconditionHook{
+		rules: []cmn.LbRuleMod{{Serv: cmn.LbServiceArg{ServIP: "20.20.20.5", ServPort: 8080, Proto: "tcp"}}},
+		err:   fmt.Errorf("rule-allowed-src error: %w", perr),
+	}
+	t.Cleanup(func() { ApiHooks = prev })
+
+	raw := []byte(`{"allowedSources":[{"prefix":"10.0.0.0/8"}]}`)
+	req, _ := http.NewRequest("PATCH", "/config/loadbalancer/externalipaddress/20.20.20.5/port/8080/protocol/tcp", nil)
+	req = req.WithContext(WithRawPatchBody(req.Context(), raw))
+	params := operations.PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoParams{
+		HTTPRequest: req,
+		IPAddress:   "20.20.20.5",
+		Port:        8080,
+		Proto:       "tcp",
+		Attr:        &models.LoadbalanceEntry{AllowedSources: []*models.LoadbalanceEntryAllowedSourcesItems0{{Prefix: "10.0.0.0/8"}}},
+	}
+	rec := httptest.NewRecorder()
+	ConfigPatchLoadbalancer(params, nil).WriteResponse(rec, runtime.JSONProducer())
+	if rec.Code != 412 {
+		t.Fatalf("status %d body %s, want 412", rec.Code, rec.Body.String())
+	}
+	var body models.Error
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body.Result, "allocated slot 29") {
+		t.Fatalf("result does not carry the refusal: %q", body.Result)
+	}
+
+	// An ordinary rule-engine refusal keeps the patch handler's 400.
+	ApiHooks = &patchPreconditionHook{rules: []cmn.LbRuleMod{{Serv: cmn.LbServiceArg{ServIP: "20.20.20.5", ServPort: 8080, Proto: "tcp"}}}, err: errors.New("rule-hwm error")}
+	rec = httptest.NewRecorder()
+	ConfigPatchLoadbalancer(params, nil).WriteResponse(rec, runtime.JSONProducer())
+	if rec.Code != 400 {
+		t.Fatalf("ordinary refusal status %d, want 400", rec.Code)
 	}
 }

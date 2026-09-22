@@ -19,19 +19,27 @@ import (
 // swagger:model CapabilityStatus
 type CapabilityStatus struct {
 
-	// Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known value - "kv_exact_vllm": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm.
+	// For a capability with a budget, how much of it existing configuration holds. Present with limit - for lb_allowed_sources, the source-check-capable slots held by existing load-balancer rules, whether or not those rules carry allowedSources, because the slot is the rule's index.
+	// Example: 3
+	InUse *int64 `json:"in_use,omitempty"`
+
+	// For a capability with a budget, how many uses the deployment can hold at once. Present only for such capabilities - lb_allowed_sources reports the number of load-balancer rule slots able to carry source checks.
+	// Example: 29
+	Limit *int64 `json:"limit,omitempty"`
+
+	// Stable capability identifier. Deliberately not an enum: a build that gains a capability must not become unparseable to an older client. Known values - "kv_exact_vllm": admission of vLLM KV-exact (Tier 1.5) rules, kvExactMode 1 or 3 with kvEngineType vllm; "lb_allowed_sources": admission of allowedSources on the next load-balancer rule created.
 	// Example: kv_exact_vllm
 	// Required: true
 	Name *string `json:"name"`
 
-	// True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it.
+	// True when this Gateway can currently admit use of the capability. False means every attempt is refused with 412 until the deployment is changed - no request body can satisfy it. For kv_exact_vllm the verdict is complete for a model only when the request carried model_name; without it the tokenizer precondition is not evaluated.
 	// Required: true
 	Ready *bool `json:"ready"`
 
 	// The operator-facing sentence, identical to the one the 412 refusal carries. It names the setting and the required relationship, and is what an operator needs to fix the deployment. Absent when ready.
 	Reason string `json:"reason,omitempty"`
 
-	// Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - "KV_EXACT_SEED_UNSET": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; "KV_EXACT_SEED_TOO_LONG": the seed exceeds the 23-byte representable bound.
+	// Stable machine-readable code for why the capability is not ready, for clients that must branch without matching prose. Absent when ready. Known values - "KV_EXACT_SEED_UNSET": the Gateway was launched without a non-empty LLB_KV_NONE_HASH_SEED; "KV_EXACT_SEED_TOO_LONG": the seed exceeds the 23-byte representable bound; "KV_EXACT_TOKENIZER_UNLOADABLE": no tokenizer can be loaded for the model_name asked about (nothing staged under /etc/loxilb/tokenizers/<model-slug>/ and no published model profile carries one); "LB_SOURCE_CHECK_SLOTS_EXHAUSTED": every load-balancer rule slot able to carry source checks is held by an existing rule; "LB_RULES_UNAVAILABLE": this Gateway is not serving load-balancer rules (bgp-only mode).
 	// Example: KV_EXACT_SEED_UNSET
 	ReasonCode string `json:"reason_code,omitempty"`
 }

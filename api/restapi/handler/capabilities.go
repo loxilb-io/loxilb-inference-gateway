@@ -31,22 +31,73 @@ import (
 // ready while admission refuses.
 var capabilityEnv = os.LookupEnv
 
+// capabilityTokenizerReady is the tokenizer probe the kv_exact_vllm verdict
+// reads when asked about a model. Production is the rule engine's fresh
+// load through the hook, the same probe admission calls; tests inject.
+var capabilityTokenizerReady = func(modelName string) bool {
+	return ApiHooks.NetKvExactTokenizerReady(modelName)
+}
+
+// capabilitySourceCheckSlots is the slot budget the lb_allowed_sources
+// verdict reads: the rule engine's own numbers through the hook.
+var capabilitySourceCheckSlots = func() (cmn.LbSourceCheckSlots, error) {
+	return ApiHooks.NetLbSourceCheckSlotsGet()
+}
+
+// notReady stamps one precondition onto a capability. The sentence is the
+// same one the 412 refusal carries. Repeating it here rather than writing
+// a friendlier one is deliberate: an operator who sees it in both places
+// is looking at one fact, and a client that surfaces either is telling
+// the truth.
+func notReady(status *models.CapabilityStatus, perr *cmn.ServerPreconditionError) {
+	ready := false
+	status.Ready = &ready
+	status.ReasonCode = perr.Reason
+	status.Reason = perr.Error()
+}
+
 // kvExactVllmCapability reports whether this gateway can admit vLLM KV-exact
-// rules, deriving the verdict from cmn.KvExactSeedPrecondition -- the same
-// predicate admission calls, not a second copy of it.
-func kvExactVllmCapability() *models.CapabilityStatus {
+// rules, deriving the verdict from the predicates admission calls --
+// cmn.KvExactSeedPrecondition, and, when the client named the model it
+// would use, cmn.KvExactTokenizerPrecondition -- not second copies of them.
+// Without a model the tokenizer half cannot be evaluated: it is a per-model
+// artifact, and a verdict that pretended otherwise would report ready for
+// a model nothing is staged for.
+func kvExactVllmCapability(modelName string) *models.CapabilityStatus {
 	name := cmn.CapabilityKvExactVllm
 	ready := true
 	status := &models.CapabilityStatus{Name: &name, Ready: &ready}
 	if perr := cmn.KvExactSeedPrecondition(capabilityEnv); perr != nil {
-		ready = false
-		status.Ready = &ready
-		status.ReasonCode = perr.Reason
-		// The same sentence the 412 refusal carries. Repeating it here
-		// rather than writing a friendlier one is deliberate: an operator
-		// who sees it in both places is looking at one fact, and a client
-		// that surfaces either is telling the truth.
-		status.Reason = perr.Error()
+		notReady(status, perr)
+		return status
+	}
+	if modelName != "" {
+		if perr := cmn.KvExactTokenizerPrecondition("vllm", modelName, capabilityTokenizerReady); perr != nil {
+			notReady(status, perr)
+		}
+	}
+	return status
+}
+
+// lbAllowedSourcesCapability reports whether the next load-balancer rule
+// created can carry allowedSources, from the slot the rule engine would
+// allocate it and the same predicate admission applies to that slot. The
+// budget rides along so a client can show remaining capacity instead of
+// learning it by submitting.
+func lbAllowedSourcesCapability() *models.CapabilityStatus {
+	name := cmn.CapabilityLbAllowedSources
+	ready := true
+	status := &models.CapabilityStatus{Name: &name, Ready: &ready}
+	slots, err := capabilitySourceCheckSlots()
+	if err != nil {
+		notReady(status, &cmn.ServerPreconditionError{Reason: cmn.ReasonLbRulesUnavailable, Err: err})
+		return status
+	}
+	limit, inUse := int64(slots.Limit), int64(slots.InUse)
+	status.Limit = &limit
+	status.InUse = &inUse
+	if perr := cmn.LbSourceCheckPrecondition(slots.NextSlot, slots.InUse); perr != nil {
+		notReady(status, perr)
 	}
 	return status
 }
@@ -62,12 +113,17 @@ func kvExactVllmCapability() *models.CapabilityStatus {
 // this in would make such a gateway report itself down. This endpoint always
 // answers 200; the verdict lives in the body.
 func ConfigGetStatusCapabilities(params operations.GetStatusCapabilitiesParams, principal interface{}) middleware.Responder {
+	modelName := ""
+	if params.ModelName != nil {
+		modelName = *params.ModelName
+	}
 	payload := &models.CapabilityStatusList{
 		// Non-nil even when empty: the field is required, and a null here
 		// would make a client distinguish "no capabilities gated" from a
 		// malformed body.
 		Capabilities: []*models.CapabilityStatus{
-			kvExactVllmCapability(),
+			kvExactVllmCapability(modelName),
+			lbAllowedSourcesCapability(),
 		},
 	}
 	return operations.NewGetStatusCapabilitiesOK().WithPayload(payload)

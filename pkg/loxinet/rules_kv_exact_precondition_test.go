@@ -97,6 +97,43 @@ func TestKvExactSeedRefusalsAreServerPreconditions(t *testing.T) {
 	})
 }
 
+// The tokenizer is the other artifact admission needs from the deployment:
+// a staged tokenizer.json or a published profile carrying one. The model a
+// client names is the model its engines serve, so nothing in the request
+// can supply it -- which makes its absence a server precondition, not an
+// input rejection, and the sentence must stay the one operators already
+// know.
+func TestKvExactTokenizerRefusalIsAServerPrecondition(t *testing.T) {
+	deps := admissionDeps(func(d *kvExactAdmissionDeps) {
+		d.tokenizerReady = func(string) bool { return false }
+	})
+	_, err := kvExactRuntimeValidate("vllm", 3, "model-a", "", "", deps)
+	if err == nil {
+		t.Fatal("want a refusal, got nil")
+	}
+	var precond *cmn.ServerPreconditionError
+	if !errors.As(err, &precond) {
+		t.Fatalf("tokenizer refusal is not a ServerPreconditionError: %#v", err)
+	}
+	if precond.Reason != cmn.ReasonKvExactTokenizerUnloadable {
+		t.Errorf("Reason = %q, want %q", precond.Reason, cmn.ReasonKvExactTokenizerUnloadable)
+	}
+	want := "vllm kvExactMode tokenizer is required and must be loadable for model_name (stage /etc/loxilb/tokenizers/<model-slug>/tokenizer.json or bind a model profile before retry)"
+	if err.Error() != want {
+		t.Errorf("message changed -- this is an API contract change:\n got: %q\nwant: %q", err.Error(), want)
+	}
+
+	// Engine name rides in the sentence, as before.
+	deps = admissionDeps(func(d *kvExactAdmissionDeps) {
+		d.tokenizerReady = func(string) bool { return false }
+		d.getenv = func(string) (string, bool) { return "", false } // seed irrelevant off vllm
+	})
+	if _, err := kvExactRuntimeValidate("trtllm", 3, "model-a", "", "", deps); err == nil ||
+		!strings.HasPrefix(err.Error(), "trtllm kvExactMode tokenizer") {
+		t.Errorf("non-vllm engine sentence = %v", err)
+	}
+}
+
 // TestKvExactClientRefusalsAreNotPreconditions is the control the case above
 // needs: a refusal a client CAN fix by sending different fields must stay an
 // input rejection and keep its 400. Without this pair, typing every refusal
@@ -109,13 +146,6 @@ func TestKvExactClientRefusalsAreNotPreconditions(t *testing.T) {
 	}{
 		{"model_name omitted", func() error {
 			_, err := kvExactRuntimeValidate("vllm", 3, "", "", "", admissionDeps(nil))
-			return err
-		}},
-		{"tokenizer not loadable", func() error {
-			deps := admissionDeps(func(d *kvExactAdmissionDeps) {
-				d.tokenizerReady = func(string) bool { return false }
-			})
-			_, err := kvExactRuntimeValidate("vllm", 3, "model-a", "", "", deps)
 			return err
 		}},
 		{"profile not published", func() error {

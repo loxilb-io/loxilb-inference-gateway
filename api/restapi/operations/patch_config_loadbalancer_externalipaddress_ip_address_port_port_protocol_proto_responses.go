@@ -218,6 +218,51 @@ func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoN
 	}
 }
 
+// PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailedCode is the HTTP code returned for type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed
+const PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailedCode int = 412
+
+/*
+PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed Server precondition not met - the merged rule is valid but this Gateway's deployment cannot admit it (for example allowedSources on a rule whose slot is past the source-check range)
+
+swagger:response patchConfigLoadbalancerExternalipaddressIpAddressPortPortProtocolProtoPreconditionFailed
+*/
+type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed creates PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed with default headers values
+func NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed() *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed {
+
+	return &PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed{}
+}
+
+// WithPayload adds the payload to the patch config loadbalancer externalipaddress Ip address port port protocol proto precondition failed response
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed) WithPayload(payload *models.Error) *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the patch config loadbalancer externalipaddress Ip address port port protocol proto precondition failed response
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoPreconditionFailed) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(412)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoInternalServerErrorCode is the HTTP code returned for type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoInternalServerError
 const PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoInternalServerErrorCode int = 500
 

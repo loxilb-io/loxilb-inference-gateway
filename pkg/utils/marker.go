@@ -46,6 +46,15 @@ func (M *Marker) GetMarker() (uint64, error) {
 	return rid + M.begin, nil
 }
 
+// PeekMarker - Report the marker the next GetMarker would hand out,
+// without taking it. Errors when none is available.
+func (M *Marker) PeekMarker() (uint64, error) {
+	if M.cap <= 0 || M.start == ^uint64(0) {
+		return ^uint64(0), errors.New("Overflow")
+	}
+	return M.start + M.begin, nil
+}
+
 // ReleaseMarker - Return a marker to the available list
 func (M *Marker) ReleaseMarker(id uint64) error {
 	if id < M.begin || id >= M.begin+M.len {

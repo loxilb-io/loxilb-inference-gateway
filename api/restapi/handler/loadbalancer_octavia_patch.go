@@ -16,6 +16,7 @@
 package handler
 
 import (
+	"errors"
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -244,6 +245,15 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 			return operations.NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNotFound()
 		}
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
+		// A server precondition (allowedSources on a rule whose slot is
+		// past the source-check range) is not a malformed patch: the
+		// merged body is valid and no edit to it can help. Classify it
+		// structurally so it reaches the wire as 412, not as the 400
+		// that would send the operator back to their own form.
+		var precond *cmn.ServerPreconditionError
+		if errors.As(err, &precond) {
+			return &ErrorResponse{Payload: ResultErrorResponseError(err)}
+		}
 		return patchErr(err.Error())
 	}
 	return operations.NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK()

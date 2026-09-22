@@ -17,10 +17,12 @@ package loxinet
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/utils"
 )
 
 // TestKvExactCapabilityMatchesAdmission is the reason the seed predicate has
@@ -87,5 +89,102 @@ func TestKvExactCapabilityMatchesAdmission(t *testing.T) {
 				t.Errorf("message drift:\n admission:  %q\n capability: %q", admitted.Error(), surface.Error())
 			}
 		})
+	}
+}
+
+// The tokenizer half of the same contract: the verdict the capability surface
+// reaches for a model with cmn.KvExactTokenizerPrecondition must be the
+// refusal admission hands out for that model, reason and sentence alike.
+func TestKvExactTokenizerCapabilityMatchesAdmission(t *testing.T) {
+	for _, loadable := range []bool{true, false} {
+		t.Run(map[bool]string{true: "tokenizer loadable", false: "tokenizer unloadable"}[loadable], func(t *testing.T) {
+			probe := func(string) bool { return loadable }
+			surface := cmn.KvExactTokenizerPrecondition("vllm", "model-a", probe)
+
+			deps := admissionDeps(func(d *kvExactAdmissionDeps) { d.tokenizerReady = probe })
+			_, admitErr := kvExactRuntimeValidate("vllm", 3, "model-a", "", "", deps)
+
+			if surface == nil {
+				if admitErr != nil {
+					t.Fatalf("capability reports READY but admission refused: %v", admitErr)
+				}
+				return
+			}
+			if admitErr == nil {
+				t.Fatalf("capability reports NOT ready (%s) but admission accepted the rule", surface.Reason)
+			}
+			var admitted *cmn.ServerPreconditionError
+			if !errors.As(admitErr, &admitted) {
+				t.Fatalf("admission refused with a non-precondition error: %#v", admitErr)
+			}
+			if admitted.Reason != surface.Reason || admitted.Error() != surface.Error() {
+				t.Errorf("drift:\n admission:  %s %q\n capability: %s %q", admitted.Reason, admitted.Error(), surface.Reason, surface.Error())
+			}
+		})
+	}
+}
+
+// The source-check slot budget: the slot the allocator would hand out next
+// is what the capability surface scores, and it must be the slot the next
+// rule is actually given, so the verdict cannot drift from admission. The
+// allocator reuses freed slots first, which is also what the refusal
+// sentence tells the operator to rely on.
+func TestLbSourceCheckSlotsFollowTheAllocator(t *testing.T) {
+	R := &RuleH{}
+	R.tables[RtLB].eMap = make(map[string]*ruleEnt)
+	R.tables[RtLB].Mark = utils.NewMarker(0, uint64(MaxSrcLBMarkerNum)+8)
+
+	slots := R.LbSourceCheckSlots()
+	if slots.Limit != cmn.LbSourceCheckSlotCount || slots.InUse != 0 || slots.NextSlot != 0 {
+		t.Fatalf("fresh table: %+v", slots)
+	}
+	if cmn.LbSourceCheckPrecondition(slots.NextSlot, slots.InUse) != nil {
+		t.Fatal("fresh table must be ready for source checks")
+	}
+
+	// Fill every source-check-capable slot.
+	var taken []uint64
+	for i := 0; i <= int(MaxSrcLBMarkerNum); i++ {
+		m, err := R.tables[RtLB].Mark.GetMarker()
+		if err != nil {
+			t.Fatal(err)
+		}
+		R.tables[RtLB].eMap[strconv.Itoa(i)] = &ruleEnt{ruleNum: m}
+		taken = append(taken, m)
+	}
+	slots = R.LbSourceCheckSlots()
+	if slots.InUse != cmn.LbSourceCheckSlotCount || slots.NextSlot != uint64(MaxSrcLBMarkerNum)+1 {
+		t.Fatalf("full: %+v", slots)
+	}
+	perr := cmn.LbSourceCheckPrecondition(slots.NextSlot, slots.InUse)
+	if perr == nil || perr.Reason != cmn.ReasonLbSourceCheckSlotsExhausted {
+		t.Fatalf("full table must refuse source checks: %v", perr)
+	}
+	next, _ := R.tables[RtLB].Mark.GetMarker()
+	if next != slots.NextSlot {
+		t.Fatalf("allocator handed out %d, capability predicted %d", next, slots.NextSlot)
+	}
+	// That rule (in a slot past the range) does not count against the budget.
+	R.tables[RtLB].eMap["over"] = &ruleEnt{ruleNum: next}
+	if got := R.LbSourceCheckSlots().InUse; got != cmn.LbSourceCheckSlotCount {
+		t.Fatalf("rule past the range counted as in use: %d", got)
+	}
+
+	// Freeing a low slot makes it the next one handed out: ready again.
+	freed := taken[3]
+	delete(R.tables[RtLB].eMap, "3")
+	if err := R.tables[RtLB].Mark.ReleaseMarker(freed); err != nil {
+		t.Fatal(err)
+	}
+	slots = R.LbSourceCheckSlots()
+	if slots.NextSlot != freed || slots.InUse != cmn.LbSourceCheckSlotCount-1 {
+		t.Fatalf("after release: %+v, want next=%d", slots, freed)
+	}
+	if cmn.LbSourceCheckPrecondition(slots.NextSlot, slots.InUse) != nil {
+		t.Fatal("a freed low slot must make source checks admissible again")
+	}
+	next, _ = R.tables[RtLB].Mark.GetMarker()
+	if next != freed {
+		t.Fatalf("allocator handed out %d after release, want the freed slot %d", next, freed)
 	}
 }

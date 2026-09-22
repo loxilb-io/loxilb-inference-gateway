@@ -16,7 +16,10 @@
 
 package common
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // KvExactSeedEnv is the environment variable a vLLM KV-exact deployment must
 // set, matching the engine's PYTHONHASHSEED.
@@ -57,4 +60,27 @@ func KvExactSeedPrecondition(getenv func(string) (string, bool)) *ServerPrecondi
 		}
 	}
 	return nil
+}
+
+// KvExactTokenizerPrecondition reports the KV-exact tokenizer precondition
+// for one model, or nil when a tokenizer for it can be loaded right now.
+//
+// The same single-definition rule as the seed: rule admission and the
+// capability surface both call this with the same probe, so the verdict a
+// client reads for a model before submitting is the refusal it would get.
+// loadable is the probe (admission passes its fresh tokenizer load); it is
+// injected so the predicate stays deterministic under test.
+//
+// This is a server precondition and not an input rejection: the model a
+// client names is the model its engines serve, and the artifact that admits
+// it -- a staged tokenizer.json or a published model profile carrying one
+// -- is provisioned on the gateway. No request body can supply it.
+func KvExactTokenizerPrecondition(engine, modelName string, loadable func(modelName string) bool) *ServerPreconditionError {
+	if loadable != nil && loadable(modelName) {
+		return nil
+	}
+	return &ServerPreconditionError{
+		Reason: ReasonKvExactTokenizerUnloadable,
+		Err:    fmt.Errorf("%s kvExactMode tokenizer is required and must be loadable for model_name (stage /etc/loxilb/tokenizers/<model-slug>/tokenizer.json or bind a model profile before retry)", engine),
+	}
 }

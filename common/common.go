@@ -2196,6 +2196,16 @@ type NetHookInterface interface {
 	// a store outage can never hold a restore hostage -- readiness is
 	// where reachability belongs.
 	NetRecoveryDepReady(depType string) error
+	// NetKvExactTokenizerReady reports whether a KV-exact tokenizer for
+	// modelName can be loaded right now, with the same fresh probe rule
+	// admission uses. The capability surface reads it so a client asking
+	// about a model gets the verdict admission would reach.
+	NetKvExactTokenizerReady(modelName string) bool
+	// NetLbSourceCheckSlotsGet reports the source-check slot budget: the
+	// slot count, how many slots existing rules hold, and the slot the
+	// next rule would be allocated. The capability surface decides
+	// readiness from it with the same predicate admission applies.
+	NetLbSourceCheckSlotsGet() (LbSourceCheckSlots, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

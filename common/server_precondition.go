@@ -55,4 +55,17 @@ const (
 	// ReasonKvExactSeedTooLong: the seed is present but longer than the
 	// 23-byte bound the hashing data path can represent.
 	ReasonKvExactSeedTooLong = "KV_EXACT_SEED_TOO_LONG"
+	// ReasonKvExactTokenizerUnloadable: no tokenizer can be loaded for the
+	// rule's model_name -- nothing is staged under the tokenizer directory
+	// for that model and no published model profile carries one. The model
+	// the client names is the model it serves; the artifact that admits it
+	// lives on the gateway.
+	ReasonKvExactTokenizerUnloadable = "KV_EXACT_TOKENIZER_UNLOADABLE"
+	// ReasonLbSourceCheckSlotsExhausted: every load-balancer rule slot able
+	// to carry source checks (allowedSources) is held by an existing rule,
+	// so a new rule cannot carry them whatever its body says.
+	ReasonLbSourceCheckSlotsExhausted = "LB_SOURCE_CHECK_SLOTS_EXHAUSTED"
+	// ReasonLbRulesUnavailable: this gateway is not serving load-balancer
+	// rules at all (bgp-only mode), so no rule capability can be admitted.
+	ReasonLbRulesUnavailable = "LB_RULES_UNAVAILABLE"
 )
