@@ -587,6 +587,57 @@ else
     -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
     -d '{"tenant_id":"dp-tenant","rps":0,"tokens_per_min":100000}' 2>/dev/null
 
+  # ── DP-T6k: the gate runs on EVERY request of a reused client connection ──
+  #
+  # A client that opens one connection and keeps it open is checked on each
+  # request, not only the first. curl reuses the connection across --next
+  # segments and %{num_connects} reports whether a segment opened a new one,
+  # so the shape "200 on a new connection, 200 reused, 401 reused" proves the
+  # gate re-ran on the reused connection rather than the client reconnecting.
+  echo ""
+  echo "DP-T6k: bad key on the SECOND request of a reused connection → 401"
+  dp6k=$($hexec l3h1 curl -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: $DP_OPEN_KEY" http://10.10.10.254:2020/ \
+    --next -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: $DP_OPEN_KEY" http://10.10.10.254:2020/ \
+    --next -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: lxb_0000000000000000000000000000000000000000" http://10.10.10.254:2020/)
+  check "DP-T6k first request opens the connection → 200"   "200/1" "$(echo "$dp6k" | sed -n 1p)"
+  check "DP-T6k second request reuses the connection → 200" "200/0" "$(echo "$dp6k" | sed -n 2p)"
+  check "DP-T6k bad key on the reused connection → 401"     "401/0" "$(echo "$dp6k" | sed -n 3p)"
+
+  # ── DP-T6l: the gate re-run does not cost a backend connection per request ─
+  #
+  # The gate used to re-run only because the request boundary released the
+  # backend leg, so a kept-alive client cost one backend connect per request
+  # (TIME-WAIT toward the backend grew with the request rate). Four admitted
+  # requests on one client connection must ride one backend leg: the
+  # gateway-side TIME-WAIT count toward the backend port may grow by the one
+  # close that ends the connection, never by one per request.
+  echo ""
+  echo "DP-T6l: four requests on one client connection ride one backend leg"
+  tw0=$($hexec llb1 ss -Htan state time-wait '( dport = :8080 )' | wc -l)
+  dp6l=$($hexec l3h1 curl -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: $DP_OPEN_KEY" http://10.10.10.254:2020/ \
+    --next -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: $DP_OPEN_KEY" http://10.10.10.254:2020/ \
+    --next -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: $DP_OPEN_KEY" http://10.10.10.254:2020/ \
+    --next -s -o /dev/null --max-time 8 -w "%{http_code}/%{num_connects}\n" \
+      -H "X-Api-Key: $DP_OPEN_KEY" http://10.10.10.254:2020/)
+  sleep 1
+  tw1=$($hexec llb1 ss -Htan state time-wait '( dport = :8080 )' | wc -l)
+  check "DP-T6l all four requests admitted on one connection" "200/1
+200/0
+200/0
+200/0" "$dp6l"
+  if [[ $((tw1 - tw0)) -le 1 ]]; then
+    echo "  DP-T6l backend TIME-WAIT grew by $((tw1 - tw0)) for four requests (≤ 1) [OK]"
+  else
+    echo "  DP-T6l backend TIME-WAIT grew by $((tw1 - tw0)) for four requests — one backend connect per request [FAILED]"
+    code=1
+  fi
+
   # ── DP-T7: Revoke dp_open key → subsequent request returns 401 ─────────────
   echo ""
   echo "DP-T7: Revoke dp_open key → 401 on next request"
