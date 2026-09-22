@@ -94,8 +94,20 @@ sudo docker exec "$BUILDER" bash -c "
   cd /src
   go build -o loxilb.measure -ldflags=\"-X 'github.com/loxilb-io/loxilb/common.BuildInfo=measure-$TAG'\"
 "
-n=$(strings "$REPO/loxilb-ebpf/common/sockproxy.o" | grep -c "SOCK_READ" || true)
-echo "[build] sockproxy.o per-recv debug strings: $n (0 means logging removed)"
+# The per-recv trace lives in sockproxy_http.c (it moved there when sockproxy.c was
+# split); sockproxy.o has never carried it since, so grepping that object reported
+# "logging removed" for EVERY build, including the control one that keeps it. That
+# is the measurement baseline silently becoming unverified, so the count is now
+# taken from the right object AND asserted against the mode that was asked for.
+OBJ="$REPO/loxilb-ebpf/common/sockproxy_http.o"
+n=$(strings "$OBJ" 2>/dev/null | grep -c "SOCK_READ" || true)
+echo "[build] sockproxy_http.o per-recv debug strings: $n"
+if [[ "$KEEP_DEBUG" == "1" && "$n" -eq 0 ]]; then
+  echo "ERROR: control image asked to KEEP logging but the object has none."; exit 1
+fi
+if [[ "$KEEP_DEBUG" != "1" && "$n" -ne 0 ]]; then
+  echo "ERROR: measurement image asked to REMOVE logging but the object still has $n."; exit 1
+fi
 
 # ---- 4) swap only the binary and eBPF objects into the runtime image, then commit
 C=llbmk

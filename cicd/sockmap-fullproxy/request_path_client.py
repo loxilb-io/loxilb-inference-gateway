@@ -17,6 +17,8 @@ on OK.
   pipeline  <host> <port>           three requests in one write, then two more
                                     right behind them
   halfclose <host> <port>           request, then shutdown(SHUT_WR); expects an answer
+  halfslow  <host> <port> [ms]      same, against a backend that holds the response
+                                    back ms (default 500); expects an answer
   halfpartial <host> <port>         half a request, then shutdown(SHUT_WR); the
                                     connection goes away and the service keeps
                                     serving a fresh one
@@ -218,6 +220,28 @@ def mode_halfclose(host, port):
     err = check(*r.response(), '/halfclose')
     s.close()
     return 'FAIL ' + err if err else 'OK'
+
+
+def mode_halfslow(host, port, ms=500):
+    """halfclose against a slow backend. An immediate backend cannot tell whether
+    the proxy waits for the response: it answers inside the proxy's deferred-close
+    bound either way. Holding the response past that bound is what distinguishes
+    "the response leg is kept open" from "the pair is torn down on a timer".
+
+    Only meaningful through the proxy. Pointed straight at request_path_server.js
+    this fails on the backend rather than the proxy: Node's HTTP server destroys a
+    connection whose peer half-closes (httpAllowHalfOpen defaults to false). The
+    proxy does not propagate the client's FIN to the backend, so the backend never
+    sees the half-close on the path under test."""
+    s = connect(host, port)
+    r = Reader(s)
+    path = '/halfslow?rdelay=%d' % ms
+    head, _ = request('GET', path, host)
+    s.sendall(head)
+    s.shutdown(socket.SHUT_WR)
+    err = check(*r.response(), path)
+    s.close()
+    return 'FAIL ' + err if err else 'OK answered after %dms' % ms
 
 
 def mode_keepalive(host, port, secs, interval_ms):
@@ -461,7 +485,8 @@ def mode_idle(host, port, secs):
 RECORD_MODES = {'echo'}
 
 MODES = {'split': mode_split, 'stream': mode_stream, 'pipeline': mode_pipeline,
-         'halfclose': mode_halfclose, 'halfpartial': mode_halfpartial,
+         'halfclose': mode_halfclose, 'halfslow': mode_halfslow,
+         'halfpartial': mode_halfpartial,
          'keepalive': mode_keepalive, 'echo': mode_echo, 'chunked': mode_chunked,
          'sizes': mode_sizes, 'special': mode_special, 'abort': mode_abort,
          'idle': mode_idle, 'volume': mode_volume}

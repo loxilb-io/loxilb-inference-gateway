@@ -156,7 +156,7 @@ RESULT: SCENARIO-sockmap-fullproxy-control [OK] (6 known defect(s) xfailed) (7 c
 |---|---|
 | `sockmap_common.sh` | every suite: map readers, counters, rule helpers, the verdict vocabulary above |
 | `request_path_server.js` | HTTP/1.1 backend that echoes the request headers it received, with `?bytes=`, `?status=` and `?abort=` response shapes |
-| `request_path_client.py` | raw HTTP/1.1 client, one request shape per mode (`split`, `stream`, `pipeline`, `chunked`, `sizes`, `special`, `abort`, `halfclose`, `halfpartial`, `idle`, `keepalive`, `echo`, `volume`) |
+| `request_path_client.py` | raw HTTP/1.1 client, one request shape per mode (`split`, `stream`, `pipeline`, `chunked`, `sizes`, `special`, `abort`, `halfclose`, `halfslow`, `halfpartial`, `idle`, `keepalive`, `echo`, `volume`) |
 | `equivalence_diff.py` | compares two `echo` runs; normalizes only the Host port and `Date`, and exempts no header |
 | `h2c_server.js` | prior-knowledge HTTP/2 backend |
 | `sse_server.js`, `sse_client.js`, `sse_raw_probe.js` | SSE streaming load and the integrity oracle |

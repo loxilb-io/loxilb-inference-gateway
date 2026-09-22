@@ -12,6 +12,8 @@
 //   ?bytes=N   respond with N bytes of PATTERN instead of the JSON echo
 //   ?status=N  respond with status N (204/304 carry no body)
 //   ?abort=N   write N bytes, promise 2N, then FIN mid-response
+//   ?rdelay=N  hold the whole response back N ms (a backend slower than the
+//              proxy's deferred-close bound)
 // A HEAD request gets the GET headers and no body.
 //
 // PATTERN is sha256("sockmap-pattern") in hex, repeated — the client derives the
@@ -48,61 +50,76 @@ var server = http.createServer(function (req, res) {
     len += chunk.length;
   });
   req.on('end', function () {
-    var abort = query(req.url, 'abort');
-    if (abort !== null) {
-      // ?delay=ms holds the FIN back after the short write. It isolates a race:
-      // if a truncation only loses bytes when the FIN follows immediately, the
-      // bytes were still in flight when the connection was torn down.
-      var delay = query(req.url, 'delay');
-      // Headers promise more than is sent, then the socket dies: the client must
-      // see the same truncation with and without acceleration.
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream',
-                           'Content-Length': String(abort * 2) });
-      res.write(pattern(abort));
-      // FIN, not RST: a reset can make the client's stack discard the bytes it
-      // already buffered, which would make the truncation length flaky.
-      if (delay) {
-        setTimeout(function () { res.socket.end(); }, delay);
-      } else {
-        res.socket.end();
+    // ?rdelay=ms holds the RESPONSE back by ms before anything is written — the
+    // whole answer, not just the FIN (?delay=, below, is the ?abort= FIN knob).
+    // It is how the half-close cases reach a backend slower than the proxy's
+    // deferred-close bound: answered immediately, a client that shut its write
+    // side down is served inside that bound whether or not the proxy actually
+    // waits for the response, so an immediate backend cannot tell the two apart.
+    var rdelay = query(req.url, 'rdelay');
+    if (rdelay) {
+      setTimeout(answer, rdelay);
+    } else {
+      answer();
+    }
+
+    function answer() {
+      var abort = query(req.url, 'abort');
+      if (abort !== null) {
+        // ?delay=ms holds the FIN back after the short write. It isolates a race:
+        // if a truncation only loses bytes when the FIN follows immediately, the
+        // bytes were still in flight when the connection was torn down.
+        var delay = query(req.url, 'delay');
+        // Headers promise more than is sent, then the socket dies: the client must
+        // see the same truncation with and without acceleration.
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream',
+                             'Content-Length': String(abort * 2) });
+        res.write(pattern(abort));
+        // FIN, not RST: a reset can make the client's stack discard the bytes it
+        // already buffered, which would make the truncation length flaky.
+        if (delay) {
+          setTimeout(function () { res.socket.end(); }, delay);
+        } else {
+          res.socket.end();
+        }
+        return;
       }
-      return;
-    }
 
-    var status = query(req.url, 'status');
-    if (status !== null) {
-      // 204 and 304 are body-less by definition; Node enforces that.
-      res.writeHead(status);
-      res.end();
-      return;
-    }
+      var status = query(req.url, 'status');
+      if (status !== null) {
+        // 204 and 304 are body-less by definition; Node enforces that.
+        res.writeHead(status);
+        res.end();
+        return;
+      }
 
-    var bytes = query(req.url, 'bytes');
-    if (bytes !== null) {
-      var body = pattern(bytes);
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream',
-                           'Content-Length': String(body.length) });
+      var bytes = query(req.url, 'bytes');
+      if (bytes !== null) {
+        var body = pattern(bytes);
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream',
+                             'Content-Length': String(body.length) });
+        if (req.method === 'HEAD') {
+          res.end();
+        } else {
+          res.end(body);
+        }
+        return;
+      }
+
+      var headers = {};
+      Object.keys(req.headers).sort().forEach(function (k) {
+        headers[k] = req.headers[k];
+      });
+      var json = JSON.stringify({ name: name, method: req.method, path: req.url,
+                                  len: len, sha256: hash.digest('hex'),
+                                  headers: headers });
+      res.writeHead(200, { 'Content-Type': 'application/json',
+                           'Content-Length': Buffer.byteLength(json) });
       if (req.method === 'HEAD') {
         res.end();
       } else {
-        res.end(body);
+        res.end(json);
       }
-      return;
-    }
-
-    var headers = {};
-    Object.keys(req.headers).sort().forEach(function (k) {
-      headers[k] = req.headers[k];
-    });
-    var json = JSON.stringify({ name: name, method: req.method, path: req.url,
-                                len: len, sha256: hash.digest('hex'),
-                                headers: headers });
-    res.writeHead(200, { 'Content-Type': 'application/json',
-                         'Content-Length': Buffer.byteLength(json) });
-    if (req.method === 'HEAD') {
-      res.end();
-    } else {
-      res.end(json);
     }
   });
 });
