@@ -25,6 +25,8 @@ on OK.
   halfmid   <host> <port> [ms]      the same split response, but the client waits
                                     for the opening bytes BEFORE shutdown(SHUT_WR);
                                     expects the whole body
+  halfinflight <host> <port>        half-closes while the rest of a 256KB answer is
+                                    still in the pipeline; expects the whole body
   halfpartial <host> <port>         half a request, then shutdown(SHUT_WR); the
                                     connection goes away and the service keeps
                                     serving a fresh one
@@ -287,8 +289,33 @@ def mode_halfmid(host, port, ms=500):
     return _split_case(host, port, ms, '/halfmid', wait_for_opening=True)
 
 
-def _split_case(host, port, ms, path_base, wait_for_opening):
-    total, first = 65536, 4096
+def mode_halfinflight(host, port):
+    """A half-close that lands while the answer is still moving.
+
+    halfmid waits for the opening bytes and the backend then stays silent, so by
+    the time the FIN goes out the kernel has delivered everything it was given
+    and nothing is in flight. That is the same queue state as halfsplit; what
+    halfmid varies is the connection's state, not the kernel's.
+
+    Here the remainder follows the opening immediately and is far larger than one
+    buffer hop, so when the client reads its 4096 bytes and half-closes, the rest
+    is provably still in the pipeline. It is the order that matters to any fix
+    which responds to the FIN by dropping the connection's acceleration: the
+    unpair then happens on top of bytes the kernel has taken for redirect and no
+    userspace queue can see.
+
+    256KB is under the largest size measured intact on an unpatched kernel
+    (300KB); above that an accelerated response duplicates bytes and the length
+    check stops meaning anything.
+
+    Expect this to PASS on the arms where it passes today and keep passing: it is
+    a regression guard for that fix, not a defect case of its own."""
+    return _split_case(host, port, 0, '/halfinflight', wait_for_opening=True,
+                       total=262144)
+
+
+def _split_case(host, port, ms, path_base, wait_for_opening, total=65536):
+    first = 4096
     s = connect(host, port)
     r = Reader(s)
     path = '%s?bytes=%d&split=%d&rdelay=%d' % (path_base, total, first, ms)
@@ -561,7 +588,7 @@ RECORD_MODES = {'echo'}
 MODES = {'split': mode_split, 'stream': mode_stream, 'pipeline': mode_pipeline,
          'halfclose': mode_halfclose, 'halfslow': mode_halfslow,
          'halfsplit': mode_halfsplit, 'halfmid': mode_halfmid,
-         'halfpartial': mode_halfpartial,
+         'halfinflight': mode_halfinflight, 'halfpartial': mode_halfpartial,
          'keepalive': mode_keepalive, 'echo': mode_echo, 'chunked': mode_chunked,
          'sizes': mode_sizes, 'special': mode_special, 'abort': mode_abort,
          'idle': mode_idle, 'volume': mode_volume}
