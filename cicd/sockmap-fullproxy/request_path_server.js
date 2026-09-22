@@ -14,6 +14,8 @@
 //   ?abort=N   write N bytes, promise 2N, then FIN mid-response
 //   ?rdelay=N  hold the whole response back N ms (a backend slower than the
 //              proxy's deferred-close bound)
+//   ?split=N   with ?bytes=: send N bytes at once, the rest after ?rdelay= ms,
+//              under the promised Content-Length (a response cut mid-stream)
 // A HEAD request gets the GET headers and no body.
 //
 // PATTERN is sha256("sockmap-pattern") in hex, repeated — the client derives the
@@ -56,8 +58,17 @@ var server = http.createServer(function (req, res) {
     // deferred-close bound: answered immediately, a client that shut its write
     // side down is served inside that bound whether or not the proxy actually
     // waits for the response, so an immediate backend cannot tell the two apart.
+    //
+    // ?split=N pairs with ?bytes= and moves that pause INTO the response: the
+    // first N bytes go out at once and the rest follows ?rdelay= later, under
+    // the Content-Length already promised. That is the shape real inference
+    // traffic has (first token fast, stream for seconds), and it is the one an
+    // rdelay-only case cannot produce: with the whole answer held back, a proxy
+    // that gives up mid-wait always yields a clean EOF, so a fix that delivers
+    // only the opening bytes and drops the rest still looks like a pass.
     var rdelay = query(req.url, 'rdelay');
-    if (rdelay) {
+    var split = query(req.url, 'split');
+    if (rdelay && split === null) {
       setTimeout(answer, rdelay);
     } else {
       answer();
@@ -100,9 +111,14 @@ var server = http.createServer(function (req, res) {
                              'Content-Length': String(body.length) });
         if (req.method === 'HEAD') {
           res.end();
-        } else {
-          res.end(body);
+          return;
         }
+        if (split !== null && split > 0 && split < body.length) {
+          res.write(body.slice(0, split));
+          setTimeout(function () { res.end(body.slice(split)); }, rdelay || 0);
+          return;
+        }
+        res.end(body);
         return;
       }
 

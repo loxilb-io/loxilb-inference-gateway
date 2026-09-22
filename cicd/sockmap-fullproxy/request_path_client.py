@@ -19,6 +19,9 @@ on OK.
   halfclose <host> <port>           request, then shutdown(SHUT_WR); expects an answer
   halfslow  <host> <port> [ms]      same, against a backend that holds the response
                                     back ms (default 500); expects an answer
+  halfsplit <host> <port> [ms]      same, against a backend that sends the opening
+                                    bytes at once and the rest ms later; expects
+                                    the WHOLE body, not just the opening bytes
   halfpartial <host> <port>         half a request, then shutdown(SHUT_WR); the
                                     connection goes away and the service keeps
                                     serving a fresh one
@@ -242,6 +245,45 @@ def mode_halfslow(host, port, ms=500):
     err = check(*r.response(), path)
     s.close()
     return 'FAIL ' + err if err else 'OK answered after %dms' % ms
+
+
+def mode_halfsplit(host, port, ms=500):
+    """A half-closed client whose answer has already started.
+
+    halfslow holds the whole response back, so a proxy that gives up mid-wait
+    always yields a clean EOF and the case cannot tell "nothing was sent" from
+    "what was sent got cut". Here the opening bytes arrive at once under a
+    promised Content-Length and the rest follows ms later, so a proxy that
+    delivers the opening and drops the remainder is a FAIL rather than a pass.
+    That is the shape of real inference traffic, and the reason this case exists
+    alongside halfslow rather than replacing it.
+
+    Kept small on purpose: an unpatched kernel duplicates bytes on an accelerated
+    response at multi-megabyte sizes, which would make the length check meaningless.
+
+    Only meaningful through the proxy, for the reason in mode_halfslow."""
+    total, first = 65536, 4096
+    s = connect(host, port)
+    r = Reader(s)
+    path = '/halfsplit?bytes=%d&split=%d&rdelay=%d' % (total, first, ms)
+    head, _ = request('GET', path, host)
+    s.sendall(head)
+    s.shutdown(socket.SHUT_WR)
+    try:
+        status, headers, body = r.response_full()
+    except (OSError, EOFError) as e:
+        got = len(r.buf)
+        return 'FAIL cut after %d bytes (%s)' % (got, e)
+    if status != 200:
+        return 'FAIL status %d' % status
+    if headers.get('content-length') != str(total):
+        return 'FAIL promised %s bytes, expected %d' % (headers.get('content-length'), total)
+    if len(body) != total:
+        return 'FAIL truncated: promised %d, got %d' % (total, len(body))
+    want = pattern(total)
+    if body != want:
+        return 'FAIL body differs at offset %d' % first_diff(body, want)
+    return 'OK %d bytes, opening %d then the rest after %dms' % (total, first, ms)
 
 
 def mode_keepalive(host, port, secs, interval_ms):
@@ -486,7 +528,7 @@ RECORD_MODES = {'echo'}
 
 MODES = {'split': mode_split, 'stream': mode_stream, 'pipeline': mode_pipeline,
          'halfclose': mode_halfclose, 'halfslow': mode_halfslow,
-         'halfpartial': mode_halfpartial,
+         'halfsplit': mode_halfsplit, 'halfpartial': mode_halfpartial,
          'keepalive': mode_keepalive, 'echo': mode_echo, 'chunked': mode_chunked,
          'sizes': mode_sizes, 'special': mode_special, 'abort': mode_abort,
          'idle': mode_idle, 'volume': mode_volume}

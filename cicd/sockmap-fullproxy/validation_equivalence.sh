@@ -23,7 +23,7 @@
 #   3. four rules: off / request / response / both on one endpoint
 #   4. E-1,E-2  the echo sequence's records are identical to the off arm, client
 #               response headers and the request headers the backend saw included
-#   5. E-3..E-8, E-10..E-13  self-checking request and response shapes
+#   5. E-3..E-8, E-10..E-14  self-checking request and response shapes
 #   6. PEER_MISS stays zero and no sockmap failure is logged
 #
 # A case that fails on the OFF arm as well is a sockproxy defect, not an
@@ -67,9 +67,21 @@ ABORT_REPS=${ABORT_REPS:-40}
 # all four arms and MUST stay registered until the bound moves to the per-rule
 # timeouts: fixing only layer 1 turns this suite green while a slow backend is
 # still cut off on every arm.
+#
+# E-14 is the acceptance test for any fix to either layer. E-13 holds the whole
+# answer back, so a proxy that gives up mid-wait always yields a clean EOF and
+# the case cannot tell "nothing was sent" from "what was sent got cut" — a fix
+# that delivers the opening bytes and drops the remainder passes it. E-14 starts
+# the answer at once under a promised Content-Length and finishes it late, which
+# is both the shape of real inference traffic and the shape that makes such a
+# fix fail. Its body is deliberately small: an unpatched kernel duplicates bytes
+# on an accelerated response at multi-megabyte sizes, which would make the
+# length check meaningless.
 for arm in $MODES; do
   sockmap_xfail_register "E-13 $arm" \
     "the deferred teardown has an unconditional 50 ms bound with no response-complete release, so a backend slower than that is cut off on every arm"
+  sockmap_xfail_register "E-14 $arm" \
+    "same bound, with the answer already started: the client keeps the opening bytes and loses the remainder"
 done
 for arm in off request; do
   sockmap_xfail_register "E-11 $arm" \
@@ -164,7 +176,7 @@ done
 # Each of these asserts an absolute expectation rather than equality with off,
 # which is the stronger statement. off is run first so a pre-existing sockproxy
 # defect is distinguishable from an acceleration defect.
-sockmap_section 5 "E-3..E-8, E-10..E-13 — request and response shapes"
+sockmap_section 5 "E-3..E-8, E-10..E-14 — request and response shapes"
 for m in $MODES; do
   port=${PORT[$m]}
 
@@ -216,6 +228,12 @@ for m in $MODES; do
   # pair is torn down on a timer that the fast path happens to fit inside".
   out=$($hexec l3h1 python3 "$CLIENT" halfslow "$VIP" "$port" 500 2>&1)
   sockmap_result "E-13 $m: half-closed client, slow backend" \
+    "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
+
+  # E-14: the answer has already started when the bound expires. Distinguishes a
+  # fix that keeps the response leg open from one that only delivers the opening.
+  out=$($hexec l3h1 python3 "$CLIENT" halfsplit "$VIP" "$port" 500 2>&1)
+  sockmap_result "E-14 $m: half-closed client, answer cut mid-stream" \
     "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
   out=$($hexec l3h1 python3 "$CLIENT" halfpartial "$VIP" "$port" 2>&1)
