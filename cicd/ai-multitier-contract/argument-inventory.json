@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "5e36fc44f7bcae7588611893ef158e68e0f26c2a0e67d0a9fc719ab3c026c3bc",
-    "swagger.yml": "67ffeeb29fdbef18f35d46219e2ab0249d4b7cdfb348ad8e2f2d5c80a52666dc"
+    "swagger.yml": "7020f3d410b0d93492e8a3715d5635d3b03a3699384e10c79708942f74ab394f"
   },
   "fields": [
     {
@@ -39,7 +39,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/allowedSources",
       "required": false,
       "contract": {
-        "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization.",
+        "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.",
         "type": "array"
       }
     },
