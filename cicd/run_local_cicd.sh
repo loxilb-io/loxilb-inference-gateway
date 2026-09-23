@@ -168,6 +168,21 @@ run_scenario llamacpp-lb -- './config.sh' './validation.sh'
 
 run_scenario vllm-kvcache-routing-cpu -- './config.sh' './validation.sh'
 
+# backward-compat: vllm-pd-disagg must still pass on a runner that has just run
+# vllm-kvcache-routing-cpu. Both scenarios name their backends l3ep1/l3ep2, and
+# pd-disagg's apt-install aborts if it execs into the alpine reflect-echo image
+# the KV scenario leaves behind, so the clean handoff is a real claim worth
+# scoring. It used to be scored as a nested re-run inside the KV scenario's own
+# validation.sh, which put two scenarios' runtime inside ONE step's
+# SCENARIO_TIMEOUT — a budget that could not be satisfied once either grew, and
+# which killed the nested run mid-phase with no verdict in the log.
+#
+# Deliberately NO pre-clean here. The nested version tore the KV containers down
+# itself, which masked the only interesting failure: the KV scenario's own
+# rmconfig.sh is what has to leave the runner usable, and LEAK_STRICT fails the
+# scenario if it does not.
+run_scenario vllm-pd-disagg vllm-pd-disagg-after-kvcache -- './config.sh' './validation.sh'
+
 run_scenario sglang-loxilb-kvcache -- './config.sh' './validation.sh'
 
 run_scenario k8slbsim -- './config.sh' './validation.sh'

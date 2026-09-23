@@ -22,7 +22,7 @@
 #   check 9  P/D lifecycle taxonomy — a decode-leg wedge must move
 #            loxilb_ai_pd_requests_total{phase="decode",status="timeout"} and must leave
 #            {phase="prefill",status="timeout"} flat, carrying the request's own model
-#            label. Runs BEFORE check 8, whose collision pre-clean destroys the topology.
+#            label.
 #   check 11 P/D decode-leg death — a decode backend closing with ZERO response bytes must move
 #            loxilb_pd_decode_ep_died_total AND loxilb_pd_decode_zero_byte_eof_total by the same
 #            amount as the client-visible pd_decode_backend_died receipts. died is a SIX-writer
@@ -61,8 +61,11 @@
 #            the same amount and failover flat. Its control is the branch itself (endpoints
 #            refusing: attempts still move, only the success half declines), and its parity
 #            fault is armed PER REQUEST because the stub port is shared with the gateway's own
-#            /metrics scraper. Runs BEFORE check 8, whose collision pre-clean destroys the topology.
-#   check 8  vllm-pd-disagg byte-for-byte re-run [PASS] AFTER the l3ep1/l3ep2 collision pre-clean.
+#            /metrics scraper.
+#
+#   The vllm-pd-disagg backward-compat re-run is no longer a check here. It is a
+#   second, scored vllm-pd-disagg run in cicd/run_local_cicd.sh, placed right
+#   after this scenario; see the note above this file's exit gate for why.
 #
 # Metric source-of-truth (api/prometheus/sockproxy_metrics.go):
 #   loxilb_pd_kv_tier15_hits_total{ep_idx}        loxilb_pd_kv_tier15_miss_reason_total{reason}
@@ -511,7 +514,7 @@ fi
 #################################################################################
 # (layer 2) go test ./pkg/loxinet KV units — the Go-side KV inventory/subscriber/
 #     best-worker unit tests, bound into the SAME sentinel as layer 2 (ahead of the
-#     container integration + the backward-compat re-run). Scoped to the KV tests so the
+#     container integration). Scoped to the KV tests so the
 #     full loxinet suite (which needs eBPF/CGO) does not gate this layer.
 #################################################################################
 echo "=== (layer 2) go test ./pkg/loxinet KV units (layer 2 of the sentinel) ==="
@@ -1369,11 +1372,14 @@ done
 fam_ok=$([[ -z "${fam_missing}" ]] && echo 1 || echo 0)
 assert "all 8 KV routing/liveness metric families registered + emitted on /metrics" "$fam_ok"
 
-# NOTE: the backward-compat re-run is DELIBERATELY the LAST stage (after the exit gate): it
-# docker-rm's THIS scenario's llb1/l3ep* (collision pre-clean) and replaces the topology
-# with vllm-pd-disagg's — every assert that needs the KV-exact rule/topology (incl. the exit gate's
-# warm-route) must run BEFORE it. Early runs had the backward-compat re-run before the exit gate, so it polled
-# a topology whose loxilb had NO KV rule (ready=0 / tier15 forever 0 were partly THIS).
+# NOTE: this scenario no longer destroys its own topology at the end — the
+# vllm-pd-disagg backward-compat re-run that used to do so is now a separate
+# scored scenario in cicd/run_local_cicd.sh. Every assert that needs the
+# KV-exact rule/topology (incl. the exit gate's warm-route) therefore keeps a
+# live topology for the whole file, and the teardown is rmconfig.sh alone.
+# Keep it that way: an early revision ran the re-run before the exit gate and
+# the gate then polled a topology whose loxilb had NO KV rule (ready=0 /
+# tier15 forever 0 were partly THIS).
 
 #################################################################################
 # AUTHORITATIVE EXIT GATE — real-CPU-vLLM v0.17.0 contract-drift + warm-route.
@@ -1580,7 +1586,7 @@ fi
 #   assert tier15_hits_total advances + the no_worker miss stays flat on the hit corpus
 #   BEFORE trusting any number, so we never silently measure Tier-2 RR.
 #
-#   DELIBERATELY BEFORE the backward-compat collision pre-clean (which DESTROYS this topology).
+#   Needs this scenario's own topology, which now lives for the whole file.
 #
 #   OBSERVABILITY NOTE (deviation): the always-on per-stage
 #   µs histograms (record_kv_stage, sockproxy_metrics.c) are NOT yet bridged to /metrics
@@ -1795,9 +1801,6 @@ assert "HOL: single-client baseline + concurrent tail latency BOTH captured" "$h
 #     line together with the PRESENCE of the wedge line, both counted from the
 #     datapath log, which is a third oracle independent of Prometheus and of
 #     the client receipts.
-#
-#     Placed before the collision pre-clean below, which destroys this
-#     scenario's topology.
 #################################################################################
 echo "=== P/D lifecycle taxonomy: a decode wedge is reported as a decode fault ==="
 
@@ -2759,9 +2762,6 @@ assert "P/D trie gauge: gated off it is 0, opening it alone gives exactly the ro
 #     prefill candidates": selection fails before any connect is attempted and
 #     the counter reads a flat zero that looks exactly like "this family cannot
 #     be driven".
-#
-#     Placed before the collision pre-clean below, which destroys this
-#     scenario's topology.
 #################################################################################
 echo "=== P/D connect retry: a refused connect that succeeds on the SAME endpoint ==="
 
@@ -2967,32 +2967,34 @@ fi
 assert "P/D connect retry: a refused connect succeeds on the SAME endpoint and is counted as a SUCCESS" "$pd_retry_ok"
 
 #################################################################################
-# backward-compat — re-run cicd/vllm-pd-disagg byte-for-byte AFTER the collision pre-clean
-#     this scenario AND vllm-pd-disagg both name backends l3ep1/l3ep2. This stage re-enters the
-#     sibling vllm-pd-disagg harness on the SAME runner; without a docker rm -f + netns/network prune
-#     first the python3 apt-install execs into the wrong (alpine reflect-echo, no-apt) image and aborts
-#     Require SCENARIO-vllm-pd-disagg [PASS] byte-for-byte.
-#     DELIBERATELY THE LAST STAGE: the collision pre-clean DESTROYS this scenario's topology, so every
-#     KV-rule-dependent assert (the overlap scenarios, the counter/liveness checks, the exit gate) must already have run.
+# backward-compat — the vllm-pd-disagg re-run is NOT a stage here any more.
+#
+#     The claim it scored is real: this scenario and vllm-pd-disagg both name
+#     backends l3ep1/l3ep2, and pd-disagg's python3 apt-install aborts if it
+#     execs into the leftover alpine reflect-echo image. But it was scored in
+#     the wrong place. Nesting a whole sibling suite inside ONE step of this
+#     one meant two scenarios' runtime had to fit one scenario's
+#     SCENARIO_TIMEOUT: this file reaches its last stage at ~1020s, pd-disagg
+#     needs ~900s, and the 1800s budget killed the nested run mid-phase. It was
+#     never a slow test — the budget could not be satisfied by construction.
+#
+#     Three further defects came with the nesting: the run was captured through
+#     a command substitution, which is the pipe a daemonising helper can hold
+#     open forever (see the header of cicd/scenario_runner.sh) and which kept
+#     this scenario's log silent for the whole nested run; the pre-clean did
+#     `ip -all netns delete` plus a fixed container roster, destroying host-wide
+#     state belonging to other scenarios; and the pre-clean MASKED the thing
+#     actually worth testing, because it tore down this scenario's containers
+#     before pd-disagg could discover them.
+#
+#     The claim now lives in cicd/run_local_cicd.sh as a second, scored
+#     vllm-pd-disagg run placed immediately after this scenario. That is a
+#     stronger oracle, not a weaker one: the handoff is exercised WITHOUT a
+#     pre-clean, so this scenario's own rmconfig.sh has to be correct, and
+#     run_scenario's leak detector (LEAK_STRICT=1) fails the run if anything
+#     survives. Each half also gets its own timeout, its own artifact log and
+#     its own 176 scored assertions instead of one collapsed boolean.
 #################################################################################
-echo "=== backward-compat: vllm-pd-disagg byte-for-byte re-run [PASS] after l3ep1/l3ep2 collision pre-clean ==="
-AI_SCENARIO_DIR="../vllm-pd-disagg"
-AI_RUNNER="${AI_SCENARIO_DIR}/run-pd-cicd.sh"
-fr8_ok=0
-if [[ -d "${AI_SCENARIO_DIR}" && -x "${AI_RUNNER}" ]]; then
-    echo "  AI regression scenario present; pre-cleaning the l3ep1/l3ep2 collision set then re-running..."
-    # Collision pre-clean FIRST: tear down THIS scenario's containers + any stale netns/networks
-    # so vllm-pd-disagg stands up its OWN ubuntu `host` backends (apt-able) cleanly.
-    docker rm -f llb1 llb2 l3h1 l3ep1 l3ep2 l3ep3 l3ep4 l3ep5 l3ep6 r1 ka_llb1 ka_llb2 >/dev/null 2>&1 || true
-    sudo ip -all netns delete >/dev/null 2>&1 || true
-    docker network prune -f >/dev/null 2>&1 || true
-    g_out=$(cd "${AI_SCENARIO_DIR}" && ./run-pd-cicd.sh 2>&1)
-    echo "$g_out" | tail -15
-    echo "$g_out" | grep -qiE 'SCENARIO-vllm-pd-disagg \[PASS\]' && fr8_ok=1
-else
-    echo "  AI regression scenario MISSING or non-executable: ${AI_RUNNER}"
-fi
-assert "backward-compat: vllm-pd-disagg byte-for-byte [PASS] (collision pre-cleaned)" "$fr8_ok"
 
 #################################################################################
 # Result + scoped cleanup
