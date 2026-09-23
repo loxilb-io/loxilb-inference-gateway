@@ -26,3 +26,6 @@ jobs:
 
       - name: Validate public Swagger contract metadata
         run: ruby scripts/validate-swagger-contract.rb
+
+      - name: Verify the embedded CLI pin
+        run: bash scripts/check-loxicmd-pin.sh
