@@ -45,9 +45,17 @@ Modes (all take <host> <port>):
             SECOND full request on the FIRST connection. Detects a
             recycled/closed backend descriptor being reused under a live
             session.
+  pin       k full requests IN SEQUENCE on ONE connection, each carrying the
+            same `--system` prompt so every stream hashes to the same
+            endpoint, then a clean close. Reports which backend label
+            answered each stream. On a bounded-load (CHWBL) pool the label
+            set is the verdict: a stream that spills to another endpoint
+            with only ONE stream ever in flight was pushed off its hash by
+            load that nobody holds.
 
 Options: --token <file> | --model <name> | --nonce <n> (repeatable, one per
-stream) | --delay-ms <n> | --wait-ms <n> | --streams <k> | --churn <n>
+stream) | --delay-ms <n> | --wait-ms <n> | --streams <k> | --churn <n> |
+--system <prompt> (a system message ahead of the user message; "" = none)
 """
 
 import argparse
@@ -92,10 +100,14 @@ def hard_close(sock):
 
 def send_request(conn, sock, host, port, args, nonce):
     sid = conn.get_next_available_stream_id()
+    messages = []
+    if getattr(args, "system", ""):
+        messages.append({"role": "system", "content": args.system})
+    messages.append({"role": "user", "content": nonce})
     body = json.dumps({
         "model": args.model,
         "max_tokens": args.max_tokens,
-        "messages": [{"role": "user", "content": nonce}],
+        "messages": messages,
     }).encode()
     headers = [
         (":method", "POST"),
@@ -476,9 +488,53 @@ def mode_control(host, port, args):
     return 0
 
 
+def label_of(st):
+    """The backend label out of an echo reply, "" when the body is not one."""
+    try:
+        return str(json.loads(bytes(st["body"]).decode("utf8", "replace"))
+                   .get("label", ""))
+    except (ValueError, AttributeError):
+        return ""
+
+
+def mode_pin(host, port, args):
+    """k sequential streams on one connection: which endpoint answered each?
+
+    Sequential on purpose. A bounded-load selector is ALLOWED to spill when
+    several streams of one hash are in flight at once; with one stream in
+    flight at a time the hashed endpoint's load is at most 1, so any spill
+    can only come from units that were never handed back.
+    """
+    sock, conn = new_conn(host, port, timeout=20)
+    sts = {}
+    labels = {}
+    completed = 0
+    for i in range(args.streams):
+        nonce = "h2life-pin-%d" % i
+        try:
+            sid, st = one_full_request(sock, conn, host, port, args, nonce, 10)
+        except OSError:
+            break
+        sts[sid] = st
+        if st["done"] and st["status"] == "200":
+            completed += 1
+        label = label_of(st) or ("status-%s" % (st["status"] or "NONE"))
+        labels[label] = labels.get(label, 0) + 1
+        if not st["done"]:
+            break
+    try:
+        conn.close_connection()
+        sock.sendall(conn.data_to_send())
+        sock.close()
+    except OSError:
+        pass
+    emit(sts, "pin", asked=args.streams, completed=completed, labels=labels)
+    return 0 if completed == args.streams else 3
+
+
 MODES = {"rst": mode_rst, "kill": mode_kill, "goaway": mode_goaway,
          "hdrkill": mode_hdrkill, "hold": mode_hold, "control": mode_control,
-         "denyrst": mode_denyrst}
+         "denyrst": mode_denyrst, "pin": mode_pin}
 
 
 def main():
@@ -496,6 +552,7 @@ def main():
     ap.add_argument("--linger-ms", type=int, default=300)
     ap.add_argument("--streams", type=int, default=1)
     ap.add_argument("--churn", type=int, default=50)
+    ap.add_argument("--system", default="")
     args = ap.parse_args()
     if args.token_file:
         with open(args.token_file) as f:

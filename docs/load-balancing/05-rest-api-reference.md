@@ -84,6 +84,14 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `chwbl_mean_load_factor` | int | bounded-load spill threshold, % of mean (default `175` = 1.75×) |
 | `chwbl_replication` | int | CHWBL virtual nodes per endpoint, or WRR_HASH exact total vnode budget (default `256`) |
 
+> **What a bounded-load unit is.** The spill threshold is compared against one
+> unit per unit of work the selector routed: a connection on HTTP/1.1
+> (released when the connection closes) and a **stream** on HTTP/2 (released
+> when that stream's backend mapping closes, or with the session if the
+> connection goes first). A multiplexed HTTP/2 connection therefore never
+> weighs more than the streams it has in flight, and closing it leaves the
+> endpoint's load exactly where its remaining streams put it.
+
 **Prefill/Decode disaggregation**
 
 | Field | Type | Notes |
