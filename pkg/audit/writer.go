@@ -90,6 +90,10 @@ type Config struct {
 	// visible when the audit writer itself is the thing failing). Default
 	// stderr.
 	Logf func(format string, args ...any)
+	// ConfigGeneration reports the configuration mutation watermark. It is
+	// read once at start and stamped on every orphaned-intent record so an
+	// investigator can tell whether the intent's mutation landed.
+	ConfigGeneration func() uint64
 
 	now func() time.Time
 }
@@ -164,6 +168,7 @@ type syncReq struct {
 }
 
 type writerStats struct {
+	orphanedIntents atomic.Uint64
 	accepted        [numStreams]atomic.Uint64
 	dropped         [numStreams][numDropReasons]atomic.Uint64
 	writeFailures   atomic.Uint64
@@ -229,6 +234,7 @@ type Writer struct {
 	retention       atomic.Pointer[Retention]
 	reserveBreached atomic.Bool
 	sealedBytes     atomic.Int64
+	lastOrphan      atomic.Pointer[string]
 
 	stats writerStats
 
@@ -601,6 +607,7 @@ func (w *Writer) startRecords() {
 		w.writeSystem(sysRecord("sys.segment.open", "audit_segment:"+w.seg.uuid, &SysDetail{
 			PrevSegmentUUID: w.seg.prevUUID, FirstSeq: w.seg.firstSeq,
 		}))
+		w.scanOrphans()
 	}
 	w.flush()
 }
@@ -950,6 +957,12 @@ type Stats struct {
 	ReserveBreached bool
 	SealedBytes     int64
 
+	// OrphanedIntents counts management intents of the previous boot that
+	// had no result when this writer started; LastOrphanEventID names the
+	// most recent one.
+	OrphanedIntents   uint64
+	LastOrphanEventID string
+
 	SegmentUUID string
 	Producers   []ProducerStats
 }
@@ -982,6 +995,10 @@ func (w *Writer) Stats() Stats {
 		ReserveBreached: w.reserveBreached.Load(),
 		SealedBytes:     w.sealedBytes.Load(),
 		SegmentUUID:     w.seg.currentUUID(),
+		OrphanedIntents: w.stats.orphanedIntents.Load(),
+	}
+	if id := w.lastOrphan.Load(); id != nil {
+		s.LastOrphanEventID = *id
 	}
 	for i := range streamByIdx {
 		s.Accepted[streamByIdx[i]] = w.stats.accepted[i].Load()

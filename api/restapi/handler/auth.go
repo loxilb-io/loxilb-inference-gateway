@@ -30,6 +30,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/authz"
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -132,6 +133,10 @@ func AuthPostLogin(params auth.PostAuthLoginParams) middleware.Responder {
 		// timing as well.
 		return errorResponseWithCode(http.StatusUnauthorized, "Missing or invalid credentials")
 	}
+	// The session now exists, so the result phase of the audit pair
+	// carries the user it was issued to; the intent could only carry the
+	// name that was claimed.
+	RecordAuditActor(params.HTTPRequest, audit.Actor{Auth: audit.AuthSession, User: user.Username})
 	response.Token = token
 	return auth.NewPostAuthLoginOK().WithPayload(&response)
 }
@@ -164,6 +169,7 @@ func Authorized() runtime.Authorizer {
 // is not a management identity must read as 401 instead, indistinguishable from
 // an unknown token.
 func authorizePrincipal(r *http.Request, principal interface{}) error {
+	RecordAuditPrincipal(r, principal)
 	err := authz.Authorize(r.Method, r.URL.Path, principal)
 	if errors.Is(err, authz.ErrNotManagementPrincipal) {
 		return openapierrors.New(http.StatusUnauthorized, "Missing or invalid credentials")
@@ -211,6 +217,7 @@ func RequireManagementAuth(w http.ResponseWriter, r *http.Request) bool {
 		writeAuthError(w, code, msg)
 		return false
 	}
+	RecordAuditPrincipal(r, principal)
 	if err := authz.Authorize(r.Method, r.URL.Path, principal); err != nil {
 		code := authStatus(err)
 		msg := err.Error()

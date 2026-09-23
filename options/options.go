@@ -30,6 +30,8 @@ var Opts struct {
 	LogMaxBackups     int            `long:"log-max-backups" description:"Rotated files to keep per log, oldest deleted first (0 keeps all until log-max-age)" default:"4" env:"LOXILB_LOG_MAX_BACKUPS"`
 	LogMaxAge         int            `long:"log-max-age" description:"Days to retain rotated log files (0 keeps forever)" default:"28" env:"LOXILB_LOG_MAX_AGE"`
 	LogNoCompress     bool           `long:"log-no-compress" description:"Do not gzip rotated log files" env:"LOXILB_LOG_NO_COMPRESS"`
+	AuditDir          string         `long:"audit-dir" description:"Directory for the audit trail segments (created 0700; every management change is recorded here before it is applied)" default:"/var/log/loxilb/audit" env:"LOXILB_AUDIT_DIR"`
+	AuditRequired     bool           `long:"audit-required" description:"Refuse to start when the audit directory cannot be prepared; without it the gateway starts and refuses every audited management call instead" env:"LOXILB_AUDIT_REQUIRED"`
 	CPUProfile        string         `long:"cpuprofile" description:"Enable cpu profiling and specify file to use" default:"none" env:"CPUPROF"`
 	Prometheus        bool           `short:"p" long:"prometheus" description:"Run prometheus thread"`
 	MetricsAuth       string         `long:"metrics-auth" description:"Whether GET /metrics requires a bearer token: auto requires it only under mgmt-profile remote-tls; require always requires it; disable never does and is refused under remote-tls" default:"auto" choice:"auto" choice:"require" choice:"disable" env:"METRICS_AUTH"`

@@ -17,8 +17,10 @@
 package api
 
 import (
+	"context"
 	_ "embed"
 	"log"
+	"net/http"
 	"os"
 	"runtime/debug"
 	"time"
@@ -30,6 +32,8 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
 	"github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/audit"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -129,6 +133,42 @@ func RunAPIServer() {
 
 	server.ConfigureAPI()
 
+	// The audit trail is prepared before any socket binds: every management
+	// change is recorded ahead of the handler, so a directory that cannot
+	// be written is known now rather than on the first mutating call. A
+	// deployment that mandates auditing refuses to start; every other one
+	// starts and the gate refuses the audited calls instead, which is the
+	// same failure made visible at request time.
+	auditCtx := api.Context()
+	handler.SetAuditRouteLookup(swaggerSpec.BasePath(), func(r *http.Request) (string, bool) {
+		route, ok := auditCtx.LookupRoute(r)
+		if !ok || route == nil {
+			return "", false
+		}
+		return route.PathPattern, true
+	})
+	auditW, err := audit.New(audit.Config{
+		Dir:        options.Opts.AuditDir,
+		CreateDir:  true,
+		InstanceID: auditInstanceID(),
+		Logf: func(format string, args ...interface{}) {
+			tk.LogIt(tk.LogError, format+"\n", args...)
+		},
+		ConfigGeneration: snapshot.ConfigGeneration,
+	})
+	if err != nil {
+		tk.LogIt(tk.LogCritical, "api: audit trail unavailable: %s\n", err.Error())
+		if options.Opts.AuditRequired {
+			log.Fatalln(err)
+		}
+		tk.LogIt(tk.LogCritical, "api: audited management calls will be refused until the audit directory is usable (--audit-dir=%s)\n",
+			options.Opts.AuditDir)
+	} else {
+		auditW.Start()
+		handler.SetAuditWriter(auditW)
+		tk.LogIt(tk.LogInfo, "api: audit trail at %s (boot %s)\n", options.Opts.AuditDir, auditW.BootID())
+	}
+
 	// The management-listener profile decides where the API may listen and
 	// which listeners exist at all. A failed plan is fatal before any socket
 	// binds: every failure means a security precondition of the requested
@@ -183,6 +223,11 @@ func RunAPIServer() {
 
 	api.ServerShutdown = func() {
 		waitApiServerShutOk()
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := handler.CloseAuditWriter(closeCtx); err != nil {
+			tk.LogIt(tk.LogError, "api: audit trail close: %s\n", err.Error())
+		}
 		os.Exit(0)
 	}
 	ApiReady = true
@@ -192,4 +237,15 @@ func RunAPIServer() {
 		log.Fatalln(err)
 	}
 
+}
+
+// auditInstanceID is the identity written into every audit record. It is
+// the same LOXILB_INSTANCE_ID the trace exporter reports, so the two
+// pipelines name one deployment the same way; the package default applies
+// when it is unset.
+func auditInstanceID() string {
+	if v := os.Getenv("LOXILB_INSTANCE_ID"); v != "" {
+		return v
+	}
+	return audit.DefaultInstanceID
 }
