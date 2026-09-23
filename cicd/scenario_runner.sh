@@ -143,6 +143,22 @@ _sr_leaks() {
 # runner would then have to guarantee it kills, which is the class of bug this
 # is fixing.
 # ---------------------------------------------------------------------------
+# _sr_say <log> <msg> — say it on the console AND in the artifact.
+#
+# A step's verdict has to survive in the log, not only on the console. The
+# runner tells the caller to follow "$log", and "$log" is what gets archived,
+# but the verdict lines were echoed to stdout only. An archived log therefore
+# ended mid-run with no verdict, and a step killed at the deadline was
+# indistinguishable from a crash, a hang, or a product failure. Measured, not
+# reasoned: a scenario stopped at exactly SCENARIO_TIMEOUT left 42 passing
+# assertions, zero failing ones and no closing line, and establishing why took
+# a timeline reconstruction from file mtimes. Say it in both places.
+_sr_say() {
+  local log=$1; shift
+  echo "$*"
+  printf '%s\n' "$*" >> "$log" 2>/dev/null || true
+}
+
 _SR_RC=0
 _sr_run() {
   local dir=$1 log=$2 cmd=$3
@@ -205,10 +221,10 @@ run_scenario() {
       # timeout(1) reports 124 for the deadline; say so rather than leaving a
       # bare exit code that reads like a product failure.
       if [[ $rc == 124 ]]; then
-        echo "[TIMEOUT] $label: '$step' exceeded ${SCENARIO_TIMEOUT}s"
+        _sr_say "$log" "[TIMEOUT] $label: '$step' exceeded ${SCENARIO_TIMEOUT}s"
       fi
       failed_stage=$step
-      echo "[FAIL] $label: '$step' exited $rc — remaining steps skipped, cleanup still runs"
+      _sr_say "$log" "[FAIL] $label: '$step' exited $rc — remaining steps skipped, cleanup still runs"
       break
     fi
   done
@@ -219,7 +235,7 @@ run_scenario() {
   _sr_run "$dir" "$log" "$CLEANUP_CMD"
   crc=$_SR_RC
   if [[ $crc != 0 ]]; then
-    echo "[WARN] $label: cleanup exited $crc"
+    _sr_say "$log" "[WARN] $label: cleanup exited $crc"
     # A cleanup failure is only the verdict when the scenario itself passed;
     # otherwise the original failure is the more useful one to report.
     if [[ $rc == 0 ]]; then rc=$crc; failed_stage="$CLEANUP_CMD"; fi
@@ -231,7 +247,7 @@ run_scenario() {
   # --- leftover state -------------------------------------------------------
   local leaks; leaks=$(_sr_leaks "$dir" "$before")
   if [[ -n ${leaks// /} ]]; then
-    echo "[LEAK] $label: state survived cleanup: $leaks"
+    _sr_say "$log" "[LEAK] $label: state survived cleanup: $leaks"
     if [[ $LEAK_STRICT == 1 && $rc == 0 ]]; then
       rc=90; failed_stage="leftover-state"
     fi
@@ -244,7 +260,10 @@ run_scenario() {
     rm -f "$log"                       # keep artifacts only for failures
     _SR_RESULTS+=("$label|pass|$secs|-|")
   else
-    echo "[FAIL] $label (${secs}s, rc=$rc, stage: $failed_stage) — log: $log"
+    # The closing verdict goes into the log too: the archived artifact is often
+    # the only thing a reader has, and it must say how it ended. (The pass
+    # branch above deletes the log, so there is nothing to record there.)
+    _sr_say "$log" "[FAIL] $label (${secs}s, rc=$rc, stage: $failed_stage) — log: $log"
     _SR_RESULTS+=("$label|fail:$rc|$secs|$failed_stage|$leaks")
     _SR_FAILED=1
     if [[ $FAIL_FAST == 1 ]]; then

@@ -158,6 +158,46 @@ else
 fi
 rm -rf "$scen"
 
+# ---------------------------------------------------------------------------
+# Case 4: a step killed at the deadline says so IN THE ARTIFACT, not only on
+# the console.
+#
+# THE BUG THIS PINS: [TIMEOUT] and [FAIL] were echoed to stdout only. The
+# runner tells the caller to follow the log, and the log is what gets archived,
+# so a scenario stopped at SCENARIO_TIMEOUT left an artifact that ended
+# mid-run with no verdict — indistinguishable from a crash, a hang, or a
+# product failure.
+#
+# Measured before the fix: a scenario killed at exactly the deadline left 42
+# passing assertions, zero failing ones and no closing line, and establishing
+# the cause took a timeline reconstruction from file mtimes.
+# ---------------------------------------------------------------------------
+scen=sr-selftest-timeout
+mkdir -p "$scen"
+# Emit a line, then overrun the budget: the artifact must keep BOTH the output
+# and the verdict, so a reader can see where it got to and why it stopped.
+printf '#!/usr/bin/env bash\necho "MARKER-BEFORE-DEADLINE"\nsleep 60\n' > "$scen/step.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$scen/kill.sh"
+chmod +x "$scen/step.sh" "$scen/kill.sh"
+
+echo "SR-4: a step killed at the deadline records its verdict in the artifact log"
+run_case "$scen" 3 ./kill.sh ./step.sh > "$SELFTEST_TMP/case4.out" 2>&1
+sr4_log="$SELFTEST_TMP/artifacts-$scen/$scen.log"
+if [[ -f $sr4_log ]] &&
+   grep -q "MARKER-BEFORE-DEADLINE" "$sr4_log" &&
+   grep -q "\[TIMEOUT\] $scen" "$sr4_log" &&
+   grep -q "\[FAIL\] $scen" "$sr4_log"; then
+  ok "SR-4 the artifact carries the step's output AND the timeout verdict"
+else
+  bad "SR-4 the artifact does not say how the run ended:"
+  if [[ -f $sr4_log ]]; then
+    sed 's/^/        LOG| /' "$sr4_log" | tail -10
+  else
+    echo "        (no artifact log was retained)"
+  fi
+fi
+rm -rf "$scen"
+
 echo
 if [[ $fails == 0 ]]; then
   echo "SCENARIO-scenario-runner-selftest [OK]"
