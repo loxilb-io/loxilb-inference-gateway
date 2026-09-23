@@ -2,36 +2,42 @@
 #
 # sockmap-fullproxy / validation_apikey_response.sh
 #
-# Validates the DIRECTIONAL eligibility split for api_key_auth services.
+# A declared api_key_auth refuses sockmap acceleration in EVERY direction.
 #
-# The gate used to refuse acceleration on any service that declares api_key_auth,
-# in every direction. But that declaration only owns REQUEST bytes: the credential
-# is validated and X-Api-Key is stripped before dispatch, and nothing in it rewrites
-# a response byte. So the refusal now follows the direction actually asked for:
+# The gate once accepted sockMapMode=response on such a service, reasoning that
+# the credential check and the X-Api-Key strip both happen on the way in. That
+# reasoning stopped at the request: the declaration also arms the accounting that
+# reads every response, and the data plane's own per-connection guard never paired
+# a connection of such a service in either direction. So the accepted mode was
+# inert -- the rule showed "response" in its readback while every byte stayed on
+# the userspace relay. The control plane now refuses what the data plane never
+# did, and this suite holds it to that:
 #
-#   sockMapMode = both | request   -> 400, naming the request direction
-#   sockMapMode = response         -> accepted, with a warning that accelerated
-#                                     responses are no longer recorded
-#
-# That is worth having because an inference response dwarfs the request that asked
-# for it, so the response direction is where the copy avoidance actually pays.
-#
-# The scenario earns the allowance rather than assuming it. Step 5 is the one that
-# matters: ONE keep-alive connection whose first request carries a valid key and
-# whose later requests carry none. If the request direction were accelerated, those
-# later requests would skip admission and come back 200 -- the connection's first
-# request would have bought the rest a pass. They must all be 401.
+#   sockMapMode = both | request | response on an api_key_auth service
+#                                  -> 400, naming the refused direction, when the
+#                                     rule is created and when it is replaced;
+#                                     the rule keeps off
+#   traffic on that service        -> relayed: every request admitted on its own,
+#                                     X-Api-Key stripped on every request, no
+#                                     redirect in either direction
+#   a credential-free control rule -> accelerated, so a zero on the subject is
+#                                     a refusal and not a dead counter
 #
 # Self-contained: it creates its own rules and key and removes them, so it runs
 # standalone once config.sh has brought the testbed up.
 #
-#   VIP 10.10.10.254:2042  api_key_auth=required, sockMapMode=response  (subject)
-#   VIP 10.10.10.254:2043  api_key_auth=required, sockMapMode=off       (control)
+#   VIP 10.10.10.254:2042  api_key_auth=required, sockMapMode=off       (subject)
+#   VIP 10.10.10.254:2043  no credential,         sockMapMode=response  (control)
 #   backends 9092 / 9093, request_path_server.js -- it echoes every header the
 #   backend saw, which is what makes the X-Api-Key strip observable from a client.
 #
-# Requires: loxilb started with --sockmapsupport, on a kernel carrying the
-# sk_psock_backlog fix (see docs/sockmap-acceleration.md).
+# Requires: loxilb started with --sockmapsupport AND an API-key store, which the
+# testbed brings up only on request: SOCKMAP_AI_KEY_STORE=1 ./config.sh. Without
+# the store the key of Step 4 cannot be created, and the suite refuses to start
+# rather than run three steps and stop. Nothing on the subject rule is ever
+# accelerated, and the control rule carries a handful of small echoes, so the
+# kernel requirement in docs/sockmap-acceleration.md does not bear on the
+# verdicts here.
 
 source ../common.sh
 source ./sockmap_common.sh
@@ -40,29 +46,30 @@ sockmap_init_artifacts
 
 SCENARIO="SCENARIO-sockmap-fullproxy-apikey-response"
 VIP=10.10.10.254
-ACCEL_PORT=2042
+SUBJ_PORT=2042
 CTRL_PORT=2043
-EP_ACCEL=9092
+EP_SUBJ=9092
 EP_CTRL=9093
 EP_IP=31.31.31.1
 EP_NS=l3ep1        # the namespace 31.31.31.1 lives in
 CLIENT_NS=l3h1     # the namespace traffic is driven from
 LLB=llb1
 KA_REQS=6
+CTRL_REQS=6
 
 echo "$SCENARIO"
 
 API="http://localhost:11111/netlox/v1/config"
+REFUSAL="sockmap-accel is not allowed on a service whose data plane touches every request"
 
 # POSTs a rule and echoes "<http_code>|<body>", so a step can assert on both the
-# status and the message. Kept local rather than pushed into sockmap_common.sh
-# because it is the only caller that needs api_key_auth and sse_mode knobs.
+# status and the message.
 post_rule() {   # <port> <ep_port> <sockMapMode> <api_key_auth|""> <sse:true|false>
   local port=$1 ep_port=$2 mode=$3 akey=$4 sse=$5
   local akey_field=""
   [[ -n "$akey" ]] && akey_field="\"api_key_auth\": \"$akey\","
   local body
-  body=$(cat <<EOF
+  body=$(cat <<JSON
 {
   "serviceArguments": {
     "externalIP": "$VIP",
@@ -77,7 +84,7 @@ post_rule() {   # <port> <ep_port> <sockMapMode> <api_key_auth|""> <sse:true|fal
   },
   "endpoints": [ {"endpointIP":"$EP_IP","targetPort":$ep_port,"weight":1} ]
 }
-EOF
+JSON
 )
   local resp
   resp=$(_sm_dexec "$LLB" curl -sS -w '\n%{http_code}' -X POST \
@@ -88,42 +95,138 @@ EOF
   echo "${code}|$(echo "$payload" | tr '\n' ' ')"
 }
 
+# The sockMapMode the readback reports for a rule ("off" when the field is
+# omitted, "" when the rule is absent). Read through python: a shell pattern
+# cannot tell one rule's field from its neighbour's.
+rule_mode() {   # <port>
+  _sm_dexec "$LLB" curl -s "$API/loadbalancer/all" | python3 -c '
+import json, sys
+port = int(sys.argv[1])
+try:
+    rules = json.load(sys.stdin).get("lbAttr", [])
+except ValueError:
+    rules = []
+for r in rules:
+    sa = r.get("serviceArguments", {})
+    if sa.get("externalIP") == "10.10.10.254" and sa.get("port") == port and sa.get("protocol") == "tcp":
+        print(sa.get("sockMapMode") or "off")
+        break
+' "$1" 2>/dev/null
+}
+
+# One field of the client summary line.
+ka_field() {    # <jsonl> <field>
+  printf '%s\n' "$1" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    if d.get("summary"):
+        print(d.get(sys.argv[1], ""))
+' "$2" 2>/dev/null
+}
+
+# Requests of a run whose status is <code>; with a third argument, only those
+# with i >= that index.
+ka_count_status() {   # <jsonl> <code> [<from_i>]
+  printf '%s\n' "$1" | python3 -c '
+import json, sys
+code = int(sys.argv[1]); start = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+n = 0
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    if d.get("summary") or d.get("i", -1) < start:
+        continue
+    if d.get("status") == code:
+        n += 1
+print(n)
+' "$2" "${3:-0}" 2>/dev/null
+}
+
+# Requests of a run that were 200 AND whose backend echo was parsed and did NOT
+# contain the key. A null (unparsable echo) does not count: the strip is proven
+# per echo, never assumed from silence.
+ka_count_stripped() {   # <jsonl>
+  printf '%s\n' "$1" | python3 -c '
+import json, sys
+n = 0
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    if d.get("summary"):
+        continue
+    if d.get("status") == 200 and d.get("backend_saw_key") is False:
+        n += 1
+print(n)
+' 2>/dev/null
+}
+
 sockmap_wait_api_ready "$LLB" || { echo "FATAL: API never became ready"; exit 1; }
+
+# The store is a precondition of the whole suite, not of Step 4 alone: the
+# refusal steps before it are only half the contract, and a run that stops at
+# the key would leave them reading as a pass. So the store is probed at the
+# door and its absence is FATAL, named after the knob that supplies it. No
+# RESULT line is printed on this path, so a workflow step goes red.
+store_probe=$(_sm_dexec "$LLB" curl -s -o /dev/null -w '%{http_code}'                 "$API/ai/apikey?tenant_id=sockmap-probe" | tail -c 3)
+if [[ "$store_probe" != "200" ]]; then
+  echo "FATAL: no usable API-key store behind $LLB (GET $API/ai/apikey answered HTTP ${store_probe:-none})."
+  echo "       This suite creates a key. Bring the testbed up with: SOCKMAP_AI_KEY_STORE=1 ./config.sh"
+  exit 1
+fi
 
 echo "  -- Step 0: backends"
 
 # request_path_server.js rather than tcp_server.js: it answers with every header the
 # backend saw, which is the only way a client can tell whether the X-Api-Key strip
 # survived on the requests AFTER the first one.
-$hexec $EP_NS node ./request_path_server.js resp-accel "$EP_ACCEL" >/dev/null 2>&1 &
-$hexec $EP_NS node ./request_path_server.js resp-ctrl  "$EP_CTRL"  >/dev/null 2>&1 &
+$hexec $EP_NS node ./request_path_server.js resp-subject "$EP_SUBJ" >/dev/null 2>&1 &
+$hexec $EP_NS node ./request_path_server.js resp-ctrl    "$EP_CTRL" >/dev/null 2>&1 &
 for _ in $(seq 20); do
-  a=$($hexec $CLIENT_NS curl -s --max-time 2 -o /dev/null -w '%{http_code}' "http://$EP_IP:$EP_ACCEL/" 2>/dev/null)
+  a=$($hexec $CLIENT_NS curl -s --max-time 2 -o /dev/null -w '%{http_code}' "http://$EP_IP:$EP_SUBJ/" 2>/dev/null)
   b=$($hexec $CLIENT_NS curl -s --max-time 2 -o /dev/null -w '%{http_code}' "http://$EP_IP:$EP_CTRL/" 2>/dev/null)
   [[ "$a" == "200" && "$b" == "200" ]] && break
   sleep 1
 done
 if [[ "$a" != "200" || "$b" != "200" ]]; then
-  echo "FATAL: backends did not come up ($EP_ACCEL=$a $EP_CTRL=$b)"
+  echo "FATAL: backends did not come up ($EP_SUBJ=$a $EP_CTRL=$b)"
   sockmap_kill_tcp_servers
   exit 1
 fi
 
-echo "  -- Step 1: the gate refuses the request direction and names it"
+echo "  -- Step 1: the gate refuses every direction on a credential, and names it"
 
-for mode in both request; do
-  out=$(post_rule "$ACCEL_PORT" "$EP_ACCEL" "$mode" required false)
+declare -A WANT_DIR=( [both]="request and response direction" [request]="request direction" [response]="response direction" )
+for mode in both request response; do
+  out=$(post_rule "$SUBJ_PORT" "$EP_SUBJ" "$mode" required false)
   code=${out%%|*}; msg=${out#*|}
-  if [[ "$code" == "400" ]] && echo "$msg" | grep -q "request direction"; then
-    sockmap_result "gate: api_key_auth + $mode refused" "OK" "400, request direction"
+  if [[ "$code" == "400" ]] && echo "$msg" | grep -q "$REFUSAL" && echo "$msg" | grep -q "refused for the ${WANT_DIR[$mode]}"; then
+    sockmap_result "gate: api_key_auth + $mode refused at POST" "OK" "400, ${WANT_DIR[$mode]}"
   else
-    sockmap_result "gate: api_key_auth + $mode refused" "FAILED" "HTTP $code: $msg"
+    sockmap_result "gate: api_key_auth + $mode refused at POST" "FAILED" "HTTP $code: $msg"
   fi
 done
 
-# The allowance is api_key_auth's alone: pair it with a declaration that DOES own
-# response bytes and the response direction must go back to being refused.
-out=$(post_rule "$ACCEL_PORT" "$EP_ACCEL" response required true)
+# An explicit "disabled" enforces no credential but still claims X-Api-Key for
+# the gateway, so it is a declaration like any other.
+out=$(post_rule "$SUBJ_PORT" "$EP_SUBJ" response disabled false)
+code=${out%%|*}
+if [[ "$code" == "400" ]] && echo "${out#*|}" | grep -q "refused for the response direction"; then
+  sockmap_result "gate: api_key_auth=disabled + response refused" "OK" "400"
+else
+  sockmap_result "gate: api_key_auth=disabled + response refused" "FAILED" "HTTP $code: ${out#*|}"
+fi
+
+# Combined with a declaration that owns both directions on its own the answer
+# must not change.
+out=$(post_rule "$SUBJ_PORT" "$EP_SUBJ" response required true)
 code=${out%%|*}
 if [[ "$code" == "400" ]]; then
   sockmap_result "gate: api_key_auth + sse_mode + response refused" "OK" "400"
@@ -131,50 +234,86 @@ else
   sockmap_result "gate: api_key_auth + sse_mode + response refused" "FAILED" "HTTP $code"
 fi
 
-echo "  -- Step 2: the response direction is accepted"
+# Nothing above may have created a rule.
+if [[ -z "$(rule_mode "$SUBJ_PORT")" ]]; then
+  sockmap_result "a refused POST created no rule" "OK"
+else
+  sockmap_result "a refused POST created no rule" "FAILED" "rule $VIP:$SUBJ_PORT exists with mode $(rule_mode "$SUBJ_PORT")"
+fi
 
-out=$(post_rule "$ACCEL_PORT" "$EP_ACCEL" response required false)
+echo "  -- Step 2: off is the only mode the rule can hold, at create and at replace"
+
+out=$(post_rule "$SUBJ_PORT" "$EP_SUBJ" off required false)
 code=${out%%|*}
 if [[ "$code" =~ ^20 ]]; then
-  sockmap_result "gate: api_key_auth + response accepted" "OK" "HTTP $code"
+  sockmap_result "gate: api_key_auth + off accepted" "OK" "HTTP $code"
 else
-  sockmap_result "gate: api_key_auth + response accepted" "FAILED" "HTTP $code: ${out#*|}"
+  sockmap_result "gate: api_key_auth + off accepted" "FAILED" "HTTP $code: ${out#*|}"
   echo "FATAL: the subject rule was not created, nothing below can run"
+  sockmap_kill_tcp_servers
   exit 1
 fi
 
-out=$(post_rule "$CTRL_PORT" "$EP_CTRL" off required false)
-[[ "${out%%|*}" =~ ^20 ]] || { echo "FATAL: control rule not created: $out"; exit 1; }
+# A POST against an existing rule is a replace, and a replace that OMITS
+# api_key_auth keeps the credential the rule already carries. The gate has to
+# judge the credential the rule will carry, not the field on the wire, or an
+# update that leaves the field out would accelerate a protected service.
+for mode in both request response; do
+  out=$(post_rule "$SUBJ_PORT" "$EP_SUBJ" "$mode" "" false)
+  code=${out%%|*}; msg=${out#*|}
+  if [[ "$code" == "400" ]] && echo "$msg" | grep -q "refused for the ${WANT_DIR[$mode]}"; then
+    sockmap_result "gate: replace omitting the credential + $mode refused" "OK" "400, ${WANT_DIR[$mode]}"
+  else
+    sockmap_result "gate: replace omitting the credential + $mode refused" "FAILED" "HTTP $code: $msg"
+  fi
+done
 
-# Accepting it must say what it costs, rather than letting response accounting stop
-# moving and leaving an operator to discover that from a flat graph.
+got_mode=$(rule_mode "$SUBJ_PORT")
+if [[ "$got_mode" == "off" ]]; then
+  sockmap_result "readback: the subject rule stayed off" "OK"
+else
+  sockmap_result "readback: the subject rule stayed off" "FAILED" "sockMapMode=$got_mode"
+fi
+
+# The acceptance-time warning of the withdrawn allowance must be gone with it:
+# a log line promising a trade that is no longer offered would mislead exactly
+# the operator it was written for.
 if $dexec $LLB grep -q "accelerated responses are NOT recorded" /var/log/loxilb.log 2>/dev/null; then
-  sockmap_result "accounting trade is logged" "OK"
+  sockmap_result "no acceptance warning is logged" "FAILED" "the withdrawn allowance still logs its trade"
 else
-  sockmap_result "accounting trade is logged" "FAILED" "no warning in loxilb.log"
+  sockmap_result "no acceptance warning is logged" "OK"
 fi
 
-echo "  -- Step 3: the accelerated rule is in the portset, the control rule is not"
+echo "  -- Step 3: a credential-free control rule IS accelerated, so the counters are live"
 
-sockmap_portset_wait "$LLB" "$VIP" "$ACCEL_PORT" 10
-if sockmap_portset_has "$LLB" "$VIP" "$ACCEL_PORT"; then
-  sockmap_result "portset holds the response-accelerated rule" "OK"
+out=$(post_rule "$CTRL_PORT" "$EP_CTRL" response "" false)
+[[ "${out%%|*}" =~ ^20 ]] || { echo "FATAL: control rule not created: $out"; sockmap_kill_tcp_servers; exit 1; }
+
+sockmap_portset_wait "$LLB" "$SOCKMAP_VIP_NAME" "$CTRL_PORT" present 20 "$VIP"
+if sockmap_portset_has "$LLB" "$SOCKMAP_VIP_NAME" "$CTRL_PORT" "$VIP"; then
+  sockmap_result "portset holds the control rule" "OK"
 else
-  sockmap_result "portset holds the response-accelerated rule" "FAILED" "$VIP:$ACCEL_PORT absent"
+  sockmap_result "portset holds the control rule" "FAILED" "$VIP:$CTRL_PORT absent"
 fi
-if sockmap_portset_has "$LLB" "$VIP" "$CTRL_PORT"; then
-  sockmap_result "portset excludes the off rule" "FAILED" "$VIP:$CTRL_PORT present"
+if sockmap_portset_has "$LLB" "$SOCKMAP_VIP_NAME" "$SUBJ_PORT" "$VIP"; then
+  sockmap_result "portset excludes the subject rule" "FAILED" "$VIP:$SUBJ_PORT present"
 else
-  sockmap_result "portset excludes the off rule" "OK"
+  sockmap_result "portset excludes the subject rule" "OK"
 fi
 
-echo "  -- Step 4: a valid key is admitted, and the backend never sees it"
+echo "  -- Step 4: a valid key is admitted on every request, and the backend never sees it"
 
-KEY_RESP=$($dexec $LLB curl -sS -X POST "$API/ai/apikey" \
+KEY_RESP=$($dexec $LLB curl -sS -w '\n%{http_code}' -X POST "$API/ai/apikey" \
   -H 'Content-Type: application/json' \
   -d '{"tenant_id":"sockmap-tenant","name":"sockmap-resp-key"}')
-RAW_KEY=$(echo "$KEY_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
-[[ -n "$RAW_KEY" ]] || { echo "FATAL: API key creation failed: $KEY_RESP"; exit 1; }
+KEY_CODE=${KEY_RESP##*$'\n'}
+RAW_KEY=$(printf '%s' "${KEY_RESP%$'\n'*}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
+if [[ "$KEY_CODE" != "201" || -z "$RAW_KEY" ]]; then
+  echo "FATAL: API key creation failed (HTTP $KEY_CODE): ${KEY_RESP%$'\n'*}"
+  [[ "$KEY_CODE" == "503" ]] && echo "       The store answered 503 after passing the probe above; check llb1's log for the key store dial."
+  sockmap_kill_tcp_servers
+  exit 1
+fi
 
 REQ_BEFORE=$(sockmap_redirect_req_count "$LLB")
 RESP_BEFORE=$(sockmap_redirect_resp_count "$LLB")
@@ -182,88 +321,134 @@ DROP_BEFORE=$(sockmap_redirect_drop_count "$LLB")
 MISS_BEFORE=$(sockmap_peer_miss_count "$LLB")
 
 specs=(); for ((i = 0; i < KA_REQS; i++)); do specs+=("key:$RAW_KEY"); done
-happy=$($hexec $CLIENT_NS python3 ./apikey_ka_client.py "$VIP" "$ACCEL_PORT" "${specs[@]}")
+happy=$($hexec $CLIENT_NS python3 ./apikey_ka_client.py "$VIP" "$SUBJ_PORT" "${specs[@]}")
 echo "$happy" > "$SOCKMAP_ARTIFACTS_DIR/apikey_happy_path.jsonl"
 
-n_200=$(echo "$happy" | grep -c '"status": 200')
-if [[ "$n_200" == "$KA_REQS" ]]; then
-  sockmap_result "valid key: all $KA_REQS requests admitted" "OK"
+h_done=$(ka_field "$happy" completed)
+h_200=$(ka_count_status "$happy" 200)
+h_conns=$(ka_field "$happy" connections)
+h_stripped=$(ka_count_stripped "$happy")
+
+if [[ "$h_done" == "$KA_REQS" && "$h_200" == "$KA_REQS" ]]; then
+  sockmap_result "valid key: all $KA_REQS requests answered 200" "OK"
 else
-  sockmap_result "valid key: all $KA_REQS requests admitted" "FAILED" "$n_200/$KA_REQS were 200"
+  sockmap_result "valid key: all $KA_REQS requests answered 200" "FAILED" "completed=${h_done:-?} 200s=${h_200:-?}"
 fi
 
-# The strip is the other half of what the credential declaration owns. It happens on
-# the request path, which is still relayed, so it must hold for every request of the
-# connection -- not just the first.
-if echo "$happy" | grep -q '"backend_saw_key": true'; then
-  sockmap_result "X-Api-Key stripped on every request" "FAILED" "a backend echo contained the key"
+# Keep-alive is intact on the admitted path: one connection carried them all.
+if [[ "$h_conns" == "1" ]]; then
+  sockmap_result "the $KA_REQS admitted requests shared one connection" "OK"
 else
-  sockmap_result "X-Api-Key stripped on every request" "OK"
+  sockmap_result "the $KA_REQS admitted requests shared one connection" "FAILED" "connections=${h_conns:-?}"
 fi
 
-if echo "$happy" | grep -q '"reused": true'; then
-  sockmap_result "the $KA_REQS requests shared one connection" "OK"
+# The strip is proven per echo: every 200 must carry a parsed echo that lacks the
+# key. An echo that could not be parsed proves nothing and counts as a failure.
+if [[ "$h_stripped" == "$KA_REQS" ]]; then
+  sockmap_result "X-Api-Key stripped on every request (parsed per echo)" "OK" "$h_stripped/$KA_REQS"
 else
-  sockmap_result "the $KA_REQS requests shared one connection" "FAILED" "client reconnected, result is meaningless"
+  sockmap_result "X-Api-Key stripped on every request (parsed per echo)" "FAILED" "$h_stripped/$KA_REQS echoes proved the strip"
 fi
 
 echo "  -- Step 5: request 1's credential does NOT buy the connection a pass"
 
-# The attack the response-only allowance has to survive, and the one an "authenticate
-# once then offload" design would fail: valid key first, nothing afterwards.
+# Valid key first, nothing afterwards. Every later request must be refused on
+# its own; a refusal is answered by the gateway with Connection: close, so each
+# later denial costs the client a reconnect, and the count of those is asserted
+# rather than hidden.
 specs=("key:$RAW_KEY"); for ((i = 1; i < KA_REQS; i++)); do specs+=("none"); done
-tofu=$($hexec $CLIENT_NS python3 ./apikey_ka_client.py "$VIP" "$ACCEL_PORT" "${specs[@]}")
+tofu=$($hexec $CLIENT_NS python3 ./apikey_ka_client.py "$VIP" "$SUBJ_PORT" "${specs[@]}")
 echo "$tofu" > "$SOCKMAP_ARTIFACTS_DIR/apikey_tofu.jsonl"
 
-first=$(echo "$tofu" | head -1 | python3 -c "import sys,json; print(json.loads(sys.stdin.readline())['status'])" 2>/dev/null)
-later_200=$(echo "$tofu" | grep '"i": [1-9]' | grep -c '"status": 200')
-later_401=$(echo "$tofu" | grep '"i": [1-9]' | grep -c '"status": 401')
+t_done=$(ka_field "$tofu" completed)
+t_first=$(printf '%s\n' "$tofu" | head -1 | python3 -c "import sys,json; print(json.loads(sys.stdin.readline()).get('status'))" 2>/dev/null)
+t_later_200=$(ka_count_status "$tofu" 200 1)
+t_later_401=$(ka_count_status "$tofu" 401 1)
+t_closed=$(ka_field "$tofu" closed_by_server)
+t_conns=$(ka_field "$tofu" connections)
 
-if [[ "$first" == "200" ]]; then
+if [[ "$t_done" == "$KA_REQS" ]]; then
+  sockmap_result "every request of the mixed run drew a response" "OK"
+else
+  sockmap_result "every request of the mixed run drew a response" "FAILED" "completed=${t_done:-?}/$KA_REQS"
+fi
+if [[ "$t_first" == "200" ]]; then
   sockmap_result "keyed first request admitted" "OK"
 else
-  sockmap_result "keyed first request admitted" "FAILED" "status $first"
+  sockmap_result "keyed first request admitted" "FAILED" "status $t_first"
 fi
-if [[ "$later_200" == "0" && "$later_401" == "$((KA_REQS - 1))" ]]; then
-  sockmap_result "later unkeyed requests all refused" "OK" "$later_401 x 401"
+if [[ "$t_later_200" == "0" && "$t_later_401" == "$((KA_REQS - 1))" ]]; then
+  sockmap_result "later unkeyed requests all refused" "OK" "$t_later_401 x 401"
 else
   sockmap_result "later unkeyed requests all refused" "FAILED" \
-    "$later_200 admitted without a credential -- the request direction skipped admission"
+    "$t_later_200 admitted without a credential, $t_later_401 refused"
+fi
+# A denial ends the connection and the next request opens a new one. The first
+# denial rides the connection the admitted request left open, so N-1 denials
+# are N-1 closes over N-1 connections: one fewer connection than requests, and
+# not one per request. A client that reconnected eagerly after the last close
+# would count one more, which is why the count is taken from the lazy client.
+if [[ "$t_closed" == "$((KA_REQS - 1))" && "$t_conns" == "$((KA_REQS - 1))" ]]; then
+  sockmap_result "each denial closed the connection, each next request reconnected" "OK" "closed=$t_closed connections=$t_conns"
+else
+  sockmap_result "each denial closed the connection, each next request reconnected" "FAILED" "closed=${t_closed:-?} connections=${t_conns:-?}"
 fi
 
-echo "  -- Step 6: only the response direction was redirected"
+echo "  -- Step 6: nothing on the subject was redirected, in either direction"
 
 REQ_DELTA=$(( $(sockmap_redirect_req_count "$LLB") - REQ_BEFORE ))
 RESP_DELTA=$(( $(sockmap_redirect_resp_count "$LLB") - RESP_BEFORE ))
+if [[ "$REQ_DELTA" -eq 0 ]]; then
+  sockmap_result "subject: request direction never redirected" "OK"
+else
+  sockmap_result "subject: request direction never redirected" "FAILED" "+$REQ_DELTA -- requests bypassed the relay that enforces the credential"
+fi
+if [[ "$RESP_DELTA" -eq 0 ]]; then
+  sockmap_result "subject: response direction never redirected" "OK"
+else
+  sockmap_result "subject: response direction never redirected" "FAILED" "+$RESP_DELTA -- responses of a credential service left the relay"
+fi
+
+echo "  -- Step 7: the same counter moves for the control rule, so the zero above is a refusal"
+
+CREQ_BEFORE=$(sockmap_redirect_req_count "$LLB")
+CRESP_BEFORE=$(sockmap_redirect_resp_count "$LLB")
+ctrl_ok=0
+for ((i = 0; i < CTRL_REQS; i++)); do
+  c=$($hexec $CLIENT_NS curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://$VIP:$CTRL_PORT/echo" 2>/dev/null)
+  [[ "$c" == "200" ]] && ctrl_ok=$((ctrl_ok + 1))
+done
+sleep 1
+CREQ_DELTA=$(( $(sockmap_redirect_req_count "$LLB") - CREQ_BEFORE ))
+CRESP_DELTA=$(( $(sockmap_redirect_resp_count "$LLB") - CRESP_BEFORE ))
 MISS_DELTA=$(( $(sockmap_peer_miss_count "$LLB") - MISS_BEFORE ))
 
-if [[ "$RESP_DELTA" -gt 0 ]]; then
-  sockmap_result "response direction accelerated" "OK" "+$RESP_DELTA"
+if [[ "$ctrl_ok" == "$CTRL_REQS" ]]; then
+  sockmap_result "control: all $CTRL_REQS requests answered 200" "OK"
 else
-  sockmap_result "response direction accelerated" "FAILED" "no response redirect"
+  sockmap_result "control: all $CTRL_REQS requests answered 200" "FAILED" "$ctrl_ok/$CTRL_REQS"
 fi
-if [[ "$REQ_DELTA" -eq 0 ]]; then
-  sockmap_result "request direction never accelerated" "OK"
+if [[ "$CRESP_DELTA" -gt 0 ]]; then
+  sockmap_result "control: response direction redirected" "OK" "+$CRESP_DELTA"
 else
-  sockmap_result "request direction never accelerated" "FAILED" \
-    "+$REQ_DELTA -- requests bypassed the relay that enforces the credential"
+  sockmap_result "control: response direction redirected" "FAILED" "no response redirect -- the counter is dead and the subject's zero proves nothing"
+fi
+if [[ "$CREQ_DELTA" -eq 0 ]]; then
+  sockmap_result "control: request direction stays on the relay" "OK"
+else
+  sockmap_result "control: request direction stays on the relay" "FAILED" "+$CREQ_DELTA on a response-only rule"
 fi
 if [[ "$MISS_DELTA" -eq 0 ]]; then
   sockmap_result "no peer_miss" "OK"
 else
   sockmap_result "no peer_miss" "FAILED" "+$MISS_DELTA"
 fi
-sockmap_assert_no_redirect_drop "$LLB" "$DROP_BEFORE"
+sockmap_assert_no_redirect_drop "$LLB" "$DROP_BEFORE" "no redirect was refused"
 
-echo "  -- Step 7: cleanup"
+echo "  -- Step 8: cleanup"
 
-sockmap_delete_lb_via_api "$LLB" "$VIP" "$ACCEL_PORT"
+sockmap_delete_lb_via_api "$LLB" "$VIP" "$SUBJ_PORT"
 sockmap_delete_lb_via_api "$LLB" "$VIP" "$CTRL_PORT"
 sockmap_kill_tcp_servers
 
-if [[ "$SOCKMAP_FAIL_COUNT" -eq 0 ]]; then
-  echo "$SCENARIO [OK]"
-  exit 0
-fi
-echo "$SCENARIO [FAILED] ($SOCKMAP_FAIL_COUNT)"
-exit 1
+sockmap_finalize "$SCENARIO"

@@ -5,9 +5,13 @@ acceleration on FullProxy). The feature itself is documented in
 [`docs/sockmap-acceleration.md`](../../docs/sockmap-acceleration.md) — read its
 **kernel requirement** section before believing any result from this directory.
 
-This directory is **not wired into any GitHub workflow.** Every suite here is run
-by hand. Unlike the other `cicd/` scenarios, it holds many `validation_*.sh`
-scripts over one shared testbed rather than a single `validation.sh`.
+One suite here runs in CI: `validation_apikey_response.sh`, as the
+`sockmap-refusal-sanity` job of `.github/workflows/ai-gateway-sanity.yml`. It
+accelerates nothing on the service it judges, so the kernel requirement below
+does not bear on its verdicts. **Every other suite is run by hand**: the
+acceleration suites need a patched kernel the hosted runners do not have. Unlike
+the other `cicd/` scenarios, this directory holds many `validation_*.sh` scripts
+over one shared testbed rather than a single `validation.sh`.
 
 ## Before you run anything
 
@@ -24,6 +28,15 @@ overridden with `LOXILB_IMAGE`. The daemon is started with `--sockmapsupport` by
 ```bash
 LOXILB_IMAGE=ghcr.io/loxilb-io/loxilb-inference-gateway:sockmap-xyz ./config.sh
 ```
+
+**API-key store.** `validation_apikey_response.sh` creates a key and drives keyed
+traffic, so it needs the PostgreSQL key store the testbed does not start by
+default. `SOCKMAP_AI_KEY_STORE=1 ./config.sh` spawns one (`postgres:18.6`,
+bootstrapped by `scripts/aigw-db-bootstrap.sql`, the fixture `cicd/ai-apikey`
+uses) and starts `llb1` with the `--aikey-db-*` options; `rmconfig.sh` removes
+it. The store is configured by its own options, not by `--userservice`, so the
+REST API stays token-free for every other suite. Without the knob the suite
+refuses to start and says so.
 
 **CPU suites need a quiet build.** The default image is a
 `HAVE_PROXY_EXTRA_DEBUG` build that logs on every `recv()`, which only the
@@ -52,6 +65,7 @@ cd cicd/sockmap-fullproxy
 | script | what it pins |
 |---|---|
 | `validation.sh` | assets attach, R1 registers and R2 does not, portset cleanup on delete, and the configuration-time refusals (cases R-1..R-16) |
+| `validation_apikey_response.sh` | a declared `api_key_auth` is refused acceleration in every direction, when the rule is created and when it is replaced, naming the direction; its traffic is relayed (every request admitted on its own, `X-Api-Key` stripped on every request, no redirect either way) while a credential-free control rule on the same testbed is accelerated, so the subject's zero is a refusal and not a dead counter. Needs `SOCKMAP_AI_KEY_STORE=1 ./config.sh`. Runs in CI |
 | `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup, mode change on a reused listener, and one endpoint shared by an accelerated and an `off` rule |
 | `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |
 | `validation_concurrent.sh` | concurrent connections over one rule |
@@ -111,7 +125,7 @@ enforces it, and a collision shows up as a rule replace, not as an error.
 |---|---|
 | 2000, 2030 | `validation_perf.sh`, `validation-cpu.sh` |
 | 2020, 2021 | `config.sh` (R1, R2) — also read by refcount and concurrent |
-| 2040–2043 | `validation_directional.sh` (2040/2041), `validation-sse-cpu.sh` |
+| 2040–2043 | `validation_directional.sh` (2040/2041), `validation-sse-cpu.sh`; `validation_apikey_response.sh` (2042/2043, self-contained: creates and deletes its own rules) |
 | 2044, 2045 | `validation_directional.sh` shared-endpoint step |
 | 2050–2055 | `validation_refcount.sh` |
 | 2060, 2061 | `validation.sh` AI-gateway refusals, `validation_integrity.sh` |

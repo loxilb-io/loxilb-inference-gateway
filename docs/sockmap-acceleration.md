@@ -162,7 +162,7 @@ A service is rejected at configuration time unless all of these hold:
 | plaintext service (no TLS) | see below |
 | IPv4 external IP | current implementation limit |
 | daemon started with `--sockmapsupport` | the BPF assets must be loaded |
-| the data plane changes no byte in the direction being accelerated: no `sse_mode`, no `pd_disagg_mode`, no attached L7 policy, and — for the request direction — no declared `api_key_auth` | see below |
+| the data plane changes no byte on the connection: no `sse_mode`, no `pd_disagg_mode`, no attached L7 policy, no declared `api_key_auth` | see below |
 
 Setting `sockMapMode` on a service that does not qualify returns
 `sockmap-accel requires plaintext tcp fullproxy ipv4 service`, or
@@ -170,9 +170,10 @@ Setting `sockMapMode` on a service that does not qualify returns
 daemon flag is missing, or
 `sockmap-accel is not allowed on a service whose data plane touches every request (sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy): refused for the <direction> direction`.
 
-The last check is **per direction**. A service whose only disqualification is a
-declared `api_key_auth` is refused for `both` and `request`, and accepted for
-`response` — see [Which direction each declaration owns](#which-direction-each-declaration-owns).
+The refusal names the direction that was asked for (`request`, `response`, or
+`request and response`), so a 400 on `both` reads the same as one on `response`.
+No declaration leaves one direction unowned — see
+[Which direction each declaration owns](#which-direction-each-declaration-owns).
 
 ### Why only a service that rewrites nothing
 
@@ -187,7 +188,7 @@ Four declarations put work on that path:
 | declaration | what an accelerated direction would skip |
 |---|---|
 | `sse_mode`, `pd_disagg_mode` | admission is re-run at each keep-alive request boundary, and each request is recorded from its response |
-| `api_key_auth` = `required` / `jwt` / `apikey-or-jwt` | the credential check, and the strip that keeps the caller's `X-Api-Key` out of the backend |
+| `api_key_auth` = `required` / `jwt` / `apikey-or-jwt` | the credential check, the strip that keeps the caller's `X-Api-Key` out of the backend, and the accounting the declaration arms (`ai_gw_mode`), which reads every response for its usage object and stream end |
 | `api_key_auth` = an explicit `disabled` | the strip. This value enforces no credential, but it still declares `X-Api-Key` the **gateway's** namespace, so the header is removed before dispatch. Accelerated, the tenant's key would reach the backend from the second keep-alive request on |
 | an attached L7 policy | `X-Forwarded-For` is overwritten with the real peer address, `X-Forwarded-Port` and `-Proto` are added, and the `insertHeaders` SET/ADD/REMOVE operations are applied — on every request. A `HTTP_COOKIE` route also injects a `Set-Cookie` on every response |
 
@@ -197,41 +198,36 @@ header is rewritten.
 
 ### Which direction each declaration owns
 
-The four declarations are not symmetric, and the refusal follows the direction
-actually asked for rather than banning the service outright:
+The refusal follows the direction actually asked for, and every declaration
+owns both of them:
 
 | declaration | `request` | `response` |
 |---|---|---|
 | `sse_mode`, `pd_disagg_mode` | refused | refused |
 | an attached L7 policy | refused | refused |
-| any declared `api_key_auth` | refused | **allowed** |
+| any declared `api_key_auth` | refused | refused |
 
 `sse_mode` and `pd_disagg_mode` own both directions because they re-run admission
 on the way in **and** record each request from its response. An L7 policy owns both
 because `insertHeaders` rewrites requests and `sessionPersistence: HTTP_COOKIE`
 injects `Set-Cookie` into responses.
 
-A declared `api_key_auth` owns the **request** direction only. Validating the
-credential and stripping `X-Api-Key` both happen before dispatch; nothing in that
-declaration rewrites a response byte. So `sockMapMode: response` on such a service
-keeps every guarantee the credential is there for — admission, the API-key store
-verdict and the header strip all stay on the relayed request path — while the
-response, which in an inference workload dwarfs the request that asked for it, is
-redirected in the kernel.
-
-What it costs is accounting. `api_key_auth` arms `ai_gw_mode`, and an accelerated
-response is not recorded, so response-derived usage for that connection is lost.
-The daemon logs a warning naming the trade when it accepts such a rule:
+A declared `api_key_auth` owns both as well. Validating the credential and
+stripping `X-Api-Key` happen on the way in; the declaration also arms
+`ai_gw_mode`, under which every response is read for its usage object and stream
+end so the request can be recorded and charged. An earlier revision accepted
+`sockMapMode: response` on such a service with a warning that accelerated
+responses would not be recorded. That mode was never honoured: the data plane
+declines to pair any connection of a service that carries a declared
+`api_key_auth`, in either direction, so the rule showed an accelerated mode in its
+readback while every byte stayed on the userspace relay. The control plane now
+refuses what the data plane never did:
 
 ```
-lb-rule 10.10.10.254:2030: sockMapMode response on an api_key_auth service:
-the request direction stays relayed (credential check and X-Api-Key strip intact),
-accelerated responses are NOT recorded
+sockmap-accel is not allowed on a service whose data plane touches every request
+(sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy):
+refused for the response direction
 ```
-
-Combining `api_key_auth` with any declaration that does own response bytes brings
-the refusal back: `api_key_auth` + `sse_mode`, `+ pd_disagg_mode` or `+ an L7
-policy` is refused in both directions.
 
 The pairing is refused from both sides, because either can come second:
 
@@ -520,6 +516,7 @@ being torn down. `sockmap_stats` cannot see these. Look for them in two steps:
 | script | covers | guarantee |
 |---|---|---|
 | `validation.sh` | BPF assets attach, rules register, offload engages, AI gateway services refuse a `sockMapMode` | 6 |
+| `validation_apikey_response.sh` | a declared `api_key_auth` is refused acceleration in every direction, at create and at replace, naming the direction; its traffic stays on the relay (every request admitted on its own, `X-Api-Key` stripped on every request, no redirect either way) while a credential-free control rule on the same testbed is accelerated. Runs in CI; needs the testbed's optional key store | 4, 6 |
 | `validation_integrity.sh` | the relayed stream compared byte by byte against a predictable body, accelerated vs `off` | 1 |
 | `validation_observability.sh` | service statistics equal to `off`, including connections closed by `sockmapreset`; a refused redirect counted as one; `psock-drops.bt` attributing a drop | 3 |
 | `validation_concurrent.sh` | concurrent connection handling, maps drain after close, an `off` control arm | 4 |
