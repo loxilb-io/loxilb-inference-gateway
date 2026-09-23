@@ -19,8 +19,11 @@ function health() {
     fi
 
     $hexec l3ep1 ../common/http2/https-server/server -host server1 -key 31.31.31.1/key.pem -cert 31.31.31.1/cert.pem -cacert minica.pem -port 8081 $opt > /dev/null 2>&1 &
+    track_helper
     $hexec l3ep2 ../common/http2/https-server/server -host server2 -key 32.32.32.1/key.pem -cert 32.32.32.1/cert.pem -cacert minica.pem -port 8081 $opt > /dev/null 2>&1 &
+    track_helper
     $hexec l3ep3 ../common/http2/https-server/server -host server3 -key 33.33.33.1/key.pem -cert 33.33.33.1/cert.pem -cacert minica.pem -port 8081 $opt > /dev/null 2>&1 &
+    track_helper
 
     sleep 10
     code=0
@@ -43,9 +46,7 @@ function health() {
             then
                 echo "All Servers are not UP" >&2
                 echo SCENARIO-e2ehttpsproxy-prefix [FAILED] >&2
-                $hexec l3ep1 killall -9 server > /dev/null 2>&1
-                $hexec l3ep2 killall -9 server > /dev/null 2>&1
-                $hexec l3ep3 killall -9 server > /dev/null 2>&1
+                stop_helpers
                 echo 1
                 return
             fi
@@ -105,9 +106,7 @@ function health() {
 
     echo "Load distribution /v1/orders: server3=${orders_ok}/${orders_total}" >&2
 
-    $hexec l3ep1 killall -9 server > /dev/null 2>&1
-    $hexec l3ep2 killall -9 server > /dev/null 2>&1
-    $hexec l3ep3 killall -9 server > /dev/null 2>&1
+    stop_helpers
     echo $code
 }
 

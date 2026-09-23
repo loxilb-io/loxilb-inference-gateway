@@ -124,3 +124,6 @@ __pycache__/
 .code-review-graph/
 CODEBUDDY.md
 QODER.md
+
+# Scenario helper pid records (cicd/common.sh track_helper/stop_helpers)
+cicd/**/.loxi-helpers.pid

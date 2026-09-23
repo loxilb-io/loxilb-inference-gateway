@@ -83,6 +83,7 @@ AUTH="-H Authorization:\ Bearer\ $TOKEN"
 
 # Start a simple HTTP backend on l3ep1 port 8080
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 sleep 3
 
 # ── T1: Create API key ────────────────────────────────────────────────────────
@@ -1578,7 +1579,7 @@ else
   echo "  QOS-API-Z2 no undeclared cases ran [OK]"
 fi
 
-sudo killall -9 node 2>/dev/null
+stop_helpers
 echo ""
 echo "Running CLI (REST API) validation tests..."
 bash validate_cli.sh

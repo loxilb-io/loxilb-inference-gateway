@@ -2,8 +2,11 @@
 source ../common.sh
 echo SCENARIO-e2ehttps-tcplb-prefix
 $hexec l3ep1 node ../common/tcp_https_server.js server1 10.10.10.254 &
+track_helper
 $hexec l3ep2 node ../common/tcp_https_server.js server2 10.10.10.254 &
+track_helper
 $hexec l3ep3 node ../common/tcp_https_server.js server3 10.10.10.254 &
+track_helper
 
 sleep 5
 code=0
@@ -58,5 +61,5 @@ else
 fi
 done
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 exit $code

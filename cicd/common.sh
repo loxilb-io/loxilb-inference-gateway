@@ -9,6 +9,68 @@ pid=""
 vrn="/var/run/"
 hexec="sudo ip netns exec "
 dexec="sudo docker exec -i "
+
+# ---------------------------------------------------------------------------
+# Scenario helpers are stopped BY PID, never by process name.
+#
+# WHY: `hexec` is `ip netns exec`, which shares only the NETWORK namespace. A
+# helper launched that way keeps the host's pid namespace, so `killall -9 node`
+# or `pkill -f <name>` reaches every matching process on the runner — other
+# scenarios' backends and the operator's own. The scenarios that do this run
+# sequentially today, which hides it, but it also MASKS the leak detector: a
+# scenario that sweeps up a neighbour's leftovers ensures the neighbour's leak
+# is never reported.
+#
+# WHY NOT `docker exec`: the helpers are not container processes. They are host
+# processes that merely borrow the container's netns, and their binaries (e.g.
+# ../common/http2/http-server/http-server) do not exist inside the image at all,
+# so `docker exec <c> pkill ...` cannot see them.
+#
+# WHY TWO KILLS: `$!` after `$hexec ... &` is the root-owned `sudo` wrapper, not
+# the workload — `ip netns exec` execs the command, so the workload is sudo's
+# direct child. Measured: $! -> `sudo` (root), its child -> the real process.
+# A non-root kill on the wrapper fails, and killing the wrapper first orphans
+# the workload. So: children first, then the wrapper, both under sudo.
+# ---------------------------------------------------------------------------
+# The record is a FILE, not just a variable: a scenario launches its helpers in
+# validation.sh and often stops them in rmconfig.sh, which is a separate
+# process. Each entry is "pid starttime", where starttime is field 22 of
+# /proc/<pid>/stat. The starttime is what makes a stale record safe: pids are
+# recycled, and a leftover file must never let a later run kill whatever
+# process happens to hold that number now.
+LOXI_HELPER_PIDFILE="${LOXI_HELPER_PIDFILE:-.loxi-helpers.pid}"
+
+_loxi_starttime() { awk '{print $22}' "/proc/$1/stat" 2>/dev/null; }
+
+# track_helper [pid] — record a backgrounded helper. Defaults to $!, so the
+# idiom is a bare `track_helper` on the line after the launch.
+track_helper() {
+  local p="${1:-$!}" st
+  [[ -n "$p" ]] || return 0
+  st=$(_loxi_starttime "$p")
+  [[ -n "$st" ]] || return 0          # already gone; nothing to track
+  printf '%s %s\n' "$p" "$st" >> "$LOXI_HELPER_PIDFILE" 2>/dev/null
+  return 0
+}
+
+# stop_helpers — stop every tracked helper, then forget them. Safe to call more
+# than once, and safe when nothing was tracked.
+stop_helpers() {
+  local p st now
+  [[ -f "$LOXI_HELPER_PIDFILE" ]] || return 0
+  while read -r p st; do
+    [[ -n "$p" ]] || continue
+    now=$(_loxi_starttime "$p")
+    # Gone, or the number belongs to a different process now: leave it alone.
+    [[ -n "$now" && "$now" == "$st" ]] || continue
+    # Children first: $! after `$hexec ... &` is the root-owned sudo wrapper and
+    # the workload is its child, so killing the wrapper first would orphan it.
+    sudo pkill -9 -P "$p" 2>/dev/null
+    sudo kill  -9    "$p" 2>/dev/null
+  done < "$LOXI_HELPER_PIDFILE"
+  rm -f "$LOXI_HELPER_PIDFILE" 2>/dev/null
+  return 0
+}
 hns="sudo ip netns "
 hexist="$vrn$hn"
 lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"

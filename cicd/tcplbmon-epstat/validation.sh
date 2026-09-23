@@ -36,8 +36,11 @@ eps() {
 }
 
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 
 sleep 15
 code=0
@@ -58,7 +61,7 @@ do
         if [[ $waitCount == 10 ]];
         then
             echo "All Servers are not UP"
-            sudo killall -9 node 2>&1 > /dev/null
+            stop_helpers
             echo SCENARIO-tcplbmon-epstat [FAILED]
             exit 1
         fi
@@ -81,7 +84,7 @@ $dexec llb1 loxicmd get lb -o wide
 if [[ $P2a -le 0 || $P3a -le 0 ]]
 then
     echo "no baseline traffic recorded on healthy endpoints"
-    sudo killall -9 node 2>&1 > /dev/null
+    stop_helpers
     echo SCENARIO-tcplbmon-epstat [FAILED]
     exit 1
 fi
@@ -104,7 +107,7 @@ done
 if [[ $downOk -eq 0 ]]
 then
     echo "liveness monitor never marked ep1 down"
-    sudo killall -9 node 2>&1 > /dev/null
+    stop_helpers
     echo SCENARIO-tcplbmon-epstat [FAILED]
     exit 1
 fi
@@ -144,10 +147,13 @@ fi
 # ---- failback: restore ep1, confirm counters keep climbing through recovery ----
 $hexec l3ep1 ip addr add 31.31.31.1/24 dev el3ep1llb1
 $hexec l3ep1 ip route add default via 31.31.31.254
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 echo "ep1 restored; waiting for liveness monitor to mark it ok..."
 upOk=0
 for i in {1..90}
@@ -178,7 +184,7 @@ else
     code=1
 fi
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 if [[ $code == 0 ]]
 then
     echo SCENARIO-tcplbmon-epstat [OK]

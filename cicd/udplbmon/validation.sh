@@ -2,8 +2,11 @@
 source ../common.sh
 echo SCENARIO-udplbmon
 $hexec l3ep1 ../common/udp_server 8080 server1 &
+track_helper
 $hexec l3ep2 ../common/udp_server 8080 server2 &
+track_helper
 $hexec l3ep3 ../common/udp_server 8080 server3 &
+track_helper
 
 sleep 15
 ps -ef | grep udp_server
@@ -103,7 +106,9 @@ sudo pkill udp_server 2>&1 >> /dev/null
 sleep 1
 #$hexec l3ep1 ../common/udp_server 8080 server1 &
 $hexec l3ep2 ../common/udp_server 8080 server2 &
+track_helper
 $hexec l3ep3 ../common/udp_server 8080 server3 &
+track_helper
 echo "Waiting 140s...."
 sleep 140
 $dexec llb1 loxicmd get ep
@@ -123,15 +128,18 @@ then
     echo SCENARIO-udplbmon p2 [OK]
 else
     echo SCENARIO-udplbmon p2 [FAILED]
-    sudo killall -9 node 2>&1 > /dev/null
+    stop_helpers
     exit $code
 fi
 
 sudo pkill udp_server 2>&1 >> /dev/null
 sleep 1
 $hexec l3ep1 ../common/udp_server 8080 server1 &
+track_helper
 $hexec l3ep2 ../common/udp_server 8080 server2 &
+track_helper
 $hexec l3ep3 ../common/udp_server 8080 server3 &
+track_helper
 echo "Waiting 30s...."
 sleep 30
 $dexec llb1 loxicmd get ep

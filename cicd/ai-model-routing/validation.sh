@@ -238,7 +238,7 @@ check_eq "T12d delete naming the model" "200" "$(del_l7 'path_prefix=%2F&path_ma
 check_eq "T12d no rule left on port 2040" "" "$(models_2040)"
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
-sudo killall -9 node 2>/dev/null
+stop_helpers
 
 # ── CLI (REST API) Validation (T-CLI-1 through T-CLI-7) ──────────────────────
 echo ""

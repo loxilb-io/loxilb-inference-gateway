@@ -128,13 +128,15 @@ echo "#########################################"
 # /tmp/backend_reqs.log, and every reader must read it there. The processes
 # are host processes now — reap any survivor from an earlier run first, or
 # its socket keeps the port and this run serves stale state.
-sudo pkill -f count_server.py 2>/dev/null || true
+stop_helpers
 sleep 1
 $hexec l3ep1 python3 "$PWD/count_server.py" server1 > /tmp/count_server1.out 2>&1 &
+track_helper
 # Second instance on :8081 — the decode role of P/D rules needs a real,
 # listening endpoint (an endpoint that exists only to satisfy create-time
 # validation would be a fixture lying about the topology).
 $hexec l3ep1 python3 "$PWD/count_server.py" server2 8081 > /tmp/count_server2.out 2>&1 &
+track_helper
 sleep 2
 
 echo "#########################################"

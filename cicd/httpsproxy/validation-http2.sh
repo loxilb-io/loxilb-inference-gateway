@@ -3,8 +3,11 @@ source ../common.sh
 echo SCENARIO-http-tcplb
 
 $hexec l3ep1 ../common/http2/http-server/http-server -host server1 -port 8081 $opt > /dev/null 2>&1 &
+track_helper
 $hexec l3ep2 ../common/http2/http-server/http-server -host server2 -port 8081 $opt > /dev/null 2>&1 &
+track_helper
 $hexec l3ep3 ../common/http2/http-server/http-server -host server3 -port 8081 $opt > /dev/null 2>&1 &
+track_helper
 
 sleep 5
 code=0
@@ -30,9 +33,7 @@ do
         then
             echo "All Servers are not UP"
             echo SCENARIO-http-tcplb [FAILED]
-            $hexec l3ep1 killall -9 http-server > /dev/null 2>&1
-            $hexec l3ep2 killall -9 http-server > /dev/null 2>&1
-            $hexec l3ep3 killall -9 http-server > /dev/null 2>&1
+            stop_helpers
             exit 1
         fi
     fi
@@ -83,7 +84,5 @@ else
 fi
 done
 
-$hexec l3ep1 killall -9 http-server > /dev/null 2>&1
-$hexec l3ep2 killall -9 http-server > /dev/null 2>&1
-$hexec l3ep3 killall -9 http-server > /dev/null 2>&1
+stop_helpers
 exit $code
