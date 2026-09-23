@@ -96,6 +96,14 @@ docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged \
 > *restart* but is **lost when the container is recreated** — which is exactly what happens
 > on an image upgrade. See [Configuration persistence](#configuration-persistence--snapshots).
 
+> ⚠️ **Give the container at least 2 GiB of memory.** The eBPF datapath's maps are charged
+> to the container as kernel memory when the gateway boots (about 550 MB on the current
+> build) and stay allocated for its lifetime. Under a 1 GiB memory limit the gateway is
+> OOM-killed as soon as it takes load. If you set a limit (`--memory`, `mem_limit`, a pod
+> `resources.limits.memory`), set it to **2 GiB or more**: the maps, the proxy's 512 MiB
+> working budget, and headroom. The proxy's own resident memory stays within that budget
+> under the sustained streaming and burst profiles the project tests.
+
 | Your situation | Use case |
 |---|---|
 | A pool of identical vLLM replicas | [1 — vLLM, non-disaggregated](#use-case-1--vllm-serving-non-disaggregated) |
