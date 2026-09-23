@@ -129,6 +129,13 @@
 #                                              connect is the only shape that
 #                                              exercises the failure path
 #
+#     2070 jwt            profile kc           HTTP/2 bounded load: BOTH h2c
+#                                              echoes (l3ep1, l3ep2) behind one
+#                                              CHWBL service, so a stream pushed
+#                                              off its hash by load nobody holds
+#                                              has somewhere else to land and
+#                                              the push is visible by label
+#
 #   :2053 and :2069 are NOT in this map on purpose — the P2 case creates a
 #   rule at :2053 at RUNTIME to prove a 63-byte profile name is usable, and
 #   the HTTP/2 rule-deletion case creates and then DELETES one at :2069. A
@@ -576,6 +583,44 @@ add_lb_rule() {
   esac
 }
 
+# A bounded-load (CHWBL) service over several endpoints. The selector spills a
+# hash to another endpoint once the hashed one carries more than its bounded
+# share, so the pool needs at least two members for a spill to be observable.
+add_chwbl_h2_rule() {
+  local port=$1 model=$2 auth=$3 profile=$4 tport=$5; shift 5
+  local eps="" ep resp
+  for ep in "$@"; do
+    eps="$eps${eps:+, }{\"endpointIP\": \"$ep\", \"targetPort\": $tport, \"weight\": 1}"
+  done
+  resp=$($hexec l3h1 curl -s -X POST \
+    http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+    -H "Content-Type: application/json" \
+    -d '{
+      "serviceArguments": {
+        "externalIP":              "10.10.10.254",
+        "port":                     '"$port"',
+        "protocol":                "tcp",
+        "sel":                      8,
+        "mode":                     4,
+        "host":                    "10.10.10.254",
+        "path_prefix":             "/",
+        "path_match_mode":         "prefix",
+        "model_name":              "'"$model"'",
+        "api_key_auth":            "'"$auth"'",
+        "jwt_auth_profile":        "'"$profile"'",
+        "chwbl_prefix_hash_level":  1,
+        "chwbl_mean_load_factor":   125,
+        "inactiveTimeOut":          30
+      },
+      "endpoints": ['"$eps"']
+    }')
+  echo "  rule $port/$model ($auth/$profile, chwbl) -> $*: $resp"
+  case "$resp" in
+    *Success*) ;;
+    *) echo "FATAL: LB rule $port/$model rejected"; exit 1 ;;
+  esac
+}
+
 # Both pools on the two enforcing VIPs: a model-denied request must be
 # refused by authorization, not by the absence of somewhere to send it.
 add_lb_rule 2040 "llama-70b"  "31.31.31.1" jwt           kc
@@ -648,6 +693,8 @@ add_lb_rule 2067 "llama-70b"  "31.31.31.1" jwt           kc 8090
 # never run. 8099 is not served by any backend config.sh starts -- keep it
 # that way.
 add_lb_rule 2068 "llama-70b"  "31.31.31.1" jwt           kc 8099
+# HTTP/2 bounded load: one CHWBL service over both h2c echoes.
+add_chwbl_h2_rule 2070 "llama-70b" jwt kc 8090 31.31.31.1 32.32.32.1
 
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS

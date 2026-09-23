@@ -61,6 +61,8 @@ note_case() {
     # shape this function does not list is a case Z1 can never report
     # missing, so the block would run unprotected.
     H2-LIFE-[0-9][0-9][0-9]) ;;
+    # ...and the HTTP/2 bounded-load block, same shape, its own prefix.
+    H2-LOAD-[0-9][0-9][0-9]) ;;
     *) return ;;
   esac
   case " $SEEN_CASES " in
@@ -2859,6 +2861,47 @@ gw_vmdata_kb() {
     tr -dc '0-9'
 }
 
+# gw_maps_snapshot -- one line per private writable mapping of the gateway
+# process, "start-end size_kB name", so two snapshots can say WHICH mapping a
+# data-segment jump landed in: the brk heap ([heap]), the Go arenas (the
+# 0xc000000000 range), or an anonymous glibc arena. Diagnostic only; a
+# VmData verdict that cannot say where the bytes went has been argued over
+# before, and this is the line that ends the argument.
+gw_maps_snapshot() { # gw_maps_snapshot <file>
+  local pid; pid=$(gw_pid)
+  [ -n "$pid" ] || { : > "$1"; return; }
+  docker exec llb1 sh -c "cat /proc/$pid/maps" 2>/dev/null | python3 -c '
+import sys
+for line in sys.stdin:
+    f = line.split()
+    if len(f) < 5 or not f[1].startswith("rw"):
+        continue
+    name = f[5] if len(f) > 5 else "[anon]"
+    if not name.startswith("["):
+        continue                      # file-backed data: not the heap
+    lo, hi = f[0].split("-")
+    print(f[0], (int(hi, 16) - int(lo, 16)) // 1024, name)' > "$1"
+}
+gw_maps_growth() { # gw_maps_growth <before> <after>  -- mappings that grew or appeared
+  python3 -c '
+import sys
+def load(path):
+    d = {}
+    for line in open(path):
+        f = line.split()
+        if len(f) == 3:
+            d[f[0]] = (int(f[1]), f[2])
+    return d
+before, after = load(sys.argv[1]), load(sys.argv[2])
+grown = []
+for rng, (kb, name) in after.items():
+    was = before.get(rng, (0, name))[0]
+    if kb > was:
+        grown.append((kb - was, rng, name, rng not in before))
+for d, rng, name, new in sorted(grown, reverse=True)[:6]:
+    print("%s +%d kB %s%s" % (rng, d, name, " (new)" if new else ""))' "$1" "$2"
+}
+
 # h2l_sample -- the two families every case here reads, sampled together so
 # a case cannot accidentally compare a request count from one moment with a
 # token count from another.
@@ -3100,6 +3143,7 @@ done
 # Measurement -- the scored rounds, on a process that has proven it is quiet.
 H2L_DATA0=$(gw_vmdata_kb)
 H2L_RSS0=$(gw_rss_kb)
+gw_maps_snapshot .h2l_maps_before
 H2L_DELTAS=""
 H2L_READ_OK=1
 h2l_prev=$H2L_DATA0
@@ -3119,6 +3163,7 @@ for h2l_m in $(seq 1 "$H2L_MEAS_ROUNDS"); do
 done
 H2L_DATA3=$h2l_prev
 H2L_RSS3=$(gw_rss_kb)
+gw_maps_snapshot .h2l_maps_after
 
 # A series shorter than the rounds actually driven is a different claim --
 # silently a weaker one -- and an empty one sums to zero and reads as flat.
@@ -3168,6 +3213,8 @@ else
     echo "         $(( H2L_GROW * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never scavenged back, so this is"
     echo "         memory allocated and not returned, not resident-page noise"
     FAIL=$((FAIL + 1))
+    echo "         where the growth landed (mappings that grew or appeared, largest first):"
+    gw_maps_growth .h2l_maps_before .h2l_maps_after | sed 's/^/           /'
   fi
 fi
 r=$(bearer_req 2048 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
@@ -3373,11 +3420,119 @@ sleep "$QOS_SETTLE_WAIT"
 h2l_sample
 h2l_delta_ok "H2-LIFE-007 only the probe was recorded and charged;" 1 12 "$H2L_REQ0" "$H2L_TOK0"
 
+echo ""
+echo "== H2-LOAD: bounded-load units on an HTTP/2 connection are per STREAM =="
+echo "   CHWBL keeps one load unit per unit of work it routed and spills a hash"
+echo "   to another endpoint once the hashed one carries more than its bounded"
+echo "   share. On HTTP/1.1 the unit is the connection. On HTTP/2 it has to be"
+echo "   the stream: many requests share one connection, and a unit taken per"
+echo "   stream but handed back per CONNECTION leaves one phantom unit behind"
+echo "   for every stream but the last -- for the life of the process. The"
+echo "   symptom is not a crash. The hashed endpoint looks busy, later streams"
+echo "   of that hash are pushed onto another endpoint, and the cache affinity"
+echo "   the selector exists for is gone."
+echo "   Driven with ONE stream in flight at a time, so the hashed endpoint's"
+echo "   true load never exceeds 1 and a spill can only come from units nobody"
+echo "   holds. :2070 is a CHWBL pool over BOTH h2c echoes, so a pushed stream"
+echo "   has somewhere to land and the push is visible in the reply's label."
+h2l_tokens "H2-LOAD-001"
+H2LD_UF0=$(gw_log_count "underflow protection")
+H2LD_SYS="bounded-load-probe"
+
+# Summary fields of a `pin` run. Read through python: the labels are a JSON
+# object and a shell pattern cannot count its keys.
+h2ld_field() { # h2ld_field <summary-json> <field>
+  printf '%s' "$1" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+v = d.get(sys.argv[1], "")
+if isinstance(v, dict):
+    print(" ".join("%s=%d" % (k, v[k]) for k in sorted(v)))
+else:
+    print(v)' "$2" 2>/dev/null
+}
+h2ld_only_label() { # the single label of a labels field, "" if not exactly one
+  case "$1" in
+    *" "*|"") echo "" ;;
+    *) printf '%s' "${1%%=*}" ;;
+  esac
+}
+
+echo ""
+echo "H2-LOAD-001: 40 sequential streams on one connection, one hash, all"
+echo "             answered by the endpoint the hash chose."
+echo "             The hash is the system prompt; every stream carries the same"
+echo "             one. With at most one stream in flight the bounded share is"
+echo "             never exceeded, so a second label in the reply set means the"
+echo "             selector saw load on the hashed endpoint that no stream held."
+h2life pin 2070 "$TOK_hl1" --streams 40 --max-tokens 10 --system "$H2LD_SYS"
+H2LD_DONE=$(h2ld_field "$H2L_SUM" completed)
+H2LD_LABELS=$(h2ld_field "$H2L_SUM" labels)
+H2LD_PIN=$(h2ld_only_label "$H2LD_LABELS")
+note_case "H2-LOAD-001"
+if [ "$H2LD_DONE" = "40" ]; then
+  echo "  [PASS] H2-LOAD-001 all 40 streams completed with a 200"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] H2-LOAD-001 - only ${H2LD_DONE:-0} of 40 streams completed with a 200"
+  echo "         ($H2L_SUM)"
+  FAIL=$((FAIL + 1))
+fi
+note_case "H2-LOAD-001"
+case "$H2LD_PIN" in
+  server-h2-llama|server-h2-mistral)
+    echo "  [PASS] H2-LOAD-001 every stream was answered by the one endpoint its hash chose ($H2LD_PIN)"
+    PASS=$((PASS + 1)) ;;
+  *)
+    echo "  [FAIL] H2-LOAD-001 - the replies came from more than one endpoint or from"
+    echo "         none ($H2LD_LABELS): streams of ONE hash, driven one at a time,"
+    echo "         were pushed off their endpoint by load that no stream was holding"
+    FAIL=$((FAIL + 1)) ;;
+esac
+
+echo ""
+echo "H2-LOAD-002: the closed connection left nothing behind. A fresh"
+echo "             connection drives the same hash and must land on the same"
+echo "             endpoint: units released per stream leave the endpoint at"
+echo "             load 0 once the connection is gone, units released per"
+echo "             connection would leave 39 of them there."
+h2life pin 2070 "$TOK_hl1" --streams 3 --max-tokens 10 --system "$H2LD_SYS"
+H2LD_DONE2=$(h2ld_field "$H2L_SUM" completed)
+H2LD_LABELS2=$(h2ld_field "$H2L_SUM" labels)
+H2LD_PIN2=$(h2ld_only_label "$H2LD_LABELS2")
+note_case "H2-LOAD-002"
+if [ "$H2LD_DONE2" = "3" ] && [ -n "$H2LD_PIN" ] && [ "$H2LD_PIN2" = "$H2LD_PIN" ]; then
+  echo "  [PASS] H2-LOAD-002 a fresh connection on the same hash still lands on $H2LD_PIN (3/3)"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] H2-LOAD-002 - after the 40-stream connection closed, the same hash"
+  echo "         answered from ($H2LD_LABELS2), ${H2LD_DONE2:-0}/3 completed; it was"
+  echo "         pinned to ${H2LD_PIN:-nothing}. Load the closed connection never"
+  echo "         handed back is still steering the hash"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "H2-LOAD-003: nothing was released twice. A per-stream unit that is also"
+echo "             handed back at connection teardown drives the endpoint's"
+echo "             counter below zero, which the selector runtime refuses and"
+echo "             logs as an underflow; the count of that line must not move."
+H2LD_UF1=$(gw_log_count "underflow protection")
+note_case "H2-LOAD-003"
+if [ "$H2LD_UF1" = "$H2LD_UF0" ]; then
+  echo "  [PASS] H2-LOAD-003 no bounded-load underflow was logged across the two connections"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] H2-LOAD-003 - the bounded-load underflow line was logged $(( H2LD_UF1 - H2LD_UF0 )) time(s):"
+  echo "         a unit was handed back more than once (per stream AND per connection)"
+  FAIL=$((FAIL + 1))
+fi
+
 # Lifecycle hygiene. Not asserted: the verdicts are in, and a teardown
 # failure must not be reported as a product verdict.
 qos_cfg POST /config/ai/tenant/ratelimit "{\"tenant_id\":\"$H2L_T\",\"tokens_per_min\":0}"
 QOS_CFG_FRESH=0
-rm -f .h2life_hold.out .tok_h2life .tok_h2life_hold
+rm -f .h2life_hold.out .tok_h2life .tok_h2life_hold .h2l_maps_before .h2l_maps_after
 
 echo ""
 echo "== Z: the suite ran what it claims to run =="
@@ -3393,7 +3548,8 @@ QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005 QOS-TPM-006 \
 QOS-RES-001 QOS-RES-002 QOS-RES-003 \
 QOS-OUT-001 QOS-OUT-002 QOS-OUT-003 QOS-OUT-004 \
 QOS-ID-001 QOS-ID-002 \
-H2-LIFE-001 H2-LIFE-002 H2-LIFE-003 H2-LIFE-004 H2-LIFE-005 H2-LIFE-006 H2-LIFE-007"
+H2-LIFE-001 H2-LIFE-002 H2-LIFE-003 H2-LIFE-004 H2-LIFE-005 H2-LIFE-006 H2-LIFE-007 \
+H2-LOAD-001 H2-LOAD-002 H2-LOAD-003"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in
