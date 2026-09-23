@@ -28,6 +28,19 @@ echo "Spawning PostgreSQL for the two stores"
 echo "#########################################"
 
 docker rm -f "$PG_NAME" >/dev/null 2>&1
+# The container runs with --rm, so the previous run's `docker stop` hands its
+# removal to the daemon asynchronously and the `docker rm -f` above may return
+# while that removal is still in progress. A `docker run` that reuses the name
+# inside that window fails with a name conflict and the scenario dies before
+# PostgreSQL exists — seen on the second of two back-to-back runs. Wait,
+# bounded, until the name is actually free.
+for i in $(seq 1 30); do
+  docker inspect "$PG_NAME" >/dev/null 2>&1 || break
+  sleep 1
+done
+if docker inspect "$PG_NAME" >/dev/null 2>&1; then
+  echo "a previous $PG_NAME container is still being removed; giving up"; exit 1
+fi
 docker run --rm -d --name "$PG_NAME" \
   -e POSTGRES_USER="$PG_OWNER" \
   -e POSTGRES_PASSWORD="$PG_OWNER_PW" \
@@ -195,6 +208,32 @@ $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer
     },
     "endpoints": [
       {"endpointIP": "31.31.31.1", "targetPort": 8080, "weight": 1}
+    ]
+  }'
+
+echo ""
+
+# Second enforcing rule for the oversized-request arms (validation.sh FC-T*):
+# same policy, its own VIP port, fronting the recording backend on 8081 so
+# the receipt record it keeps is never mixed with the plain backend's
+# traffic. Created here, before the readiness wait below, so its auto-persist
+# write cannot freeze a later mutation in validation.sh.
+$hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "serviceArguments": {
+      "externalIP":      "10.10.10.254",
+      "port":            2021,
+      "protocol":        "tcp",
+      "mode":            4,
+      "sse_mode":        true,
+      "api_key_auth":    "required",
+      "inactiveTimeOut": 60,
+      "host":            "10.10.10.254"
+    },
+    "endpoints": [
+      {"endpointIP": "31.31.31.1", "targetPort": 8081, "weight": 1}
     ]
   }'
 

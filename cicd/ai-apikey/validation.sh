@@ -1579,6 +1579,350 @@ else
   echo "  QOS-API-Z2 no undeclared cases ran [OK]"
 fi
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ADMISSION BEFORE STREAMED DISPATCH (FC-T1 – FC-T13)
+#
+# A request whose body the gateway relays instead of buffering — any body
+# above the streaming threshold that is not JSON, or a JSON body above the
+# inspect cap — is dispatched from the read that completed its headers. The
+# parser never completes such a body before the backend sees it, so the gate
+# that runs at message-complete cannot be the one that protects it. These
+# arms prove the gate runs BEFORE the first backend byte for every streamed
+# shape, on the first request of a connection and on a kept backend leg.
+#
+# Oracle: a recording backend (bigsink.py, VIP :2021 → l3ep1:8081). Every
+# request carries a unique nonce in its bytes; the record shows which nonces
+# reached the backend, on which connection, and whether the body arrived
+# whole. A refusal is proven by the ABSENCE of the nonce and of any new
+# backend connection — a client-side status alone cannot tell "refused
+# before dispatch" from "forwarded, then answered". Counts are compared
+# exactly, never by substring.
+# ══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo "=== ADMISSION BEFORE STREAMED DISPATCH (FC-T1 – FC-T13) ==="
+
+FC_SEEN=""
+fc_note() {
+  local id="${1%% *}"
+  case "$id" in FC-T*) ;; *) return ;; esac
+  case " $FC_SEEN " in *" $id "*) ;; *) FC_SEEN="$FC_SEEN $id" ;; esac
+}
+fccheck() { fc_note "$1"; check "$@"; }
+# Exact comparison: "0" must not be satisfied by "10".
+fccheck_eq() {
+  local label="$1" want="$2" got="$3"
+  fc_note "$label"
+  if [[ "$got" == "$want" ]]; then
+    echo "  $label [OK]"
+  else
+    echo "  $label [FAILED] — expected exactly '$want', got: '$got'"
+    code=1
+  fi
+}
+
+FC_DIR=$(mktemp -d)
+FC_REC="$FC_DIR/bigsink.jsonl"
+: > "$FC_REC"
+FC_VIP="http://10.10.10.254:2021/v1/chat/completions"
+
+# Record readers. The record is appended by the backend (root, via hexec)
+# and read here; a missing record is a lost measurement and reads as such.
+fc_accepts()    { grep -c '"event":"accept"' "$FC_REC" 2>/dev/null || true; }
+fc_nonce_hits() { grep -c "\"nonce\":\"$1\"" "$FC_REC" 2>/dev/null || true; }
+# fc_req_field <nonce> <field> — the field of the first request carrying the nonce
+fc_req_field() {
+  python3 - "$FC_REC" "$1" "$2" <<'PY'
+import json, sys
+path, nonce, field = sys.argv[1:4]
+for line in open(path, "rb"):
+    try:
+        o = json.loads(line)
+    except Exception:
+        continue
+    if o.get("event") == "request" and o.get("nonce") == nonce:
+        print(o.get(field))
+        break
+PY
+}
+fc_nonce() { printf 'nonce-%s' "$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"; }
+
+$hexec l3ep1 python3 ./bigsink.py 8081 "$FC_REC" &
+track_helper
+for i in $(seq 1 20); do
+  if $hexec l3ep1 ss -ltn 2>/dev/null | grep -q ':8081 '; then break; fi
+  sleep 0.5
+done
+if ! $hexec l3ep1 ss -ltn 2>/dev/null | grep -q ':8081 '; then
+  echo "  FATAL: recording backend never listened on l3ep1:8081 — FC arms cannot be measured"
+  code=1
+fi
+
+# Keys for these arms live under their own tenants so no DP-T* quota state
+# leaks in. The open key's token budget must clear a 900 KiB request's
+# byte-derived reservation (~230k tokens), or the positive twin could only
+# fail on quota.
+fc_key() { # <tenant> <name> <allowed_models_json> <tokens_per_min>
+  $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/ai/apikey \
+    -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+    -d "{\"tenant_id\":\"$1\",\"name\":\"$2\",\"allowed_models\":$3,\"rate_limit_rps\":100,\"burst_size\":200,\"tokens_per_min\":$4,\"enabled\":true}"
+}
+fc_open=$(fc_key fc-tenant fc-open '[]' 5000000)
+FC_OPEN_KEY=$(echo "$fc_open" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
+FC_OPEN_ID=$(echo  "$fc_open" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key_id',''))"  2>/dev/null)
+fc_model=$(fc_key fc-tenant fc-model '["llama-3"]' 5000000)
+FC_MODEL_KEY=$(echo "$fc_model" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
+FC_MODEL_ID=$(echo  "$fc_model" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key_id',''))"  2>/dev/null)
+fc_quota=$(fc_key fc-tenant-q fc-quota '[]' 1000)
+FC_QUOTA_KEY=$(echo "$fc_quota" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
+FC_QUOTA_ID=$(echo  "$fc_quota" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key_id',''))"  2>/dev/null)
+$hexec llb1 curl -s -o /dev/null -X POST http://localhost:11111/netlox/v1/config/ai/tenant/ratelimit \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"tenant_id":"fc-tenant-q","rps":100,"tokens_per_min":1000}'
+
+if [[ -z "$FC_OPEN_KEY" || -z "$FC_MODEL_KEY" || -z "$FC_QUOTA_KEY" ]]; then
+  echo "  FATAL: failed to create the FC keys — FC arms cannot run"
+  code=1
+else
+
+# Request bodies. Sizes: 900 KiB JSON sits above the 768 KiB inspect cap
+# (streamed with a bounded routing prefix); 1 MiB binary is above the 64 KiB
+# streaming threshold; 2 MiB chunked JSON cannot fit the 1 MiB receive buffer.
+# A chunked body has no Content-Length, so it is never streamed; one that
+# still fits the buffer completes and is gated like any buffered request,
+# and one in the last 5 % of the buffer is timing-dependent (the guard fires
+# only when a read ends there with the message still open) — so this arm
+# sits well above the buffer, where the verdict is deterministic.
+# puts it after 900 KiB of content.
+N1=$(fc_nonce);  N2=$(fc_nonce);  N3=$(fc_nonce);  N4=$(fc_nonce);  N5=$(fc_nonce)
+N6=$(fc_nonce);  N7=$(fc_nonce);  N8=$(fc_nonce);  N9=$(fc_nonce);  N10=$(fc_nonce)
+N11=$(fc_nonce); N12=$(fc_nonce); N13=$(fc_nonce); N14=$(fc_nonce); N15=$(fc_nonce)
+python3 - "$FC_DIR" \
+  "mf_nokey.json:mf:$N1:921600"   "mf_badkey.json:mf:$N2:921600" \
+  "mf_mistral.json:mfm:$N3:921600" "mf_quota.json:mf:$N4:921600" \
+  "bin_nokey.dat:bin:$N5:1048576"  "mf_ok.json:mf:$N6:921600" \
+  "small_a.json:small:$N7:0"      "mf_ka_nokey.json:mf:$N8:921600" \
+  "small_b.json:small:$N9:0"      "mf_ka_ok.json:mf:$N10:921600" \
+  "ml_ok.json:ml:$N11:921600"     "ml_nokey.json:ml:$N12:921600" \
+  "ml_expect.json:ml:$N13:921600" "chunk.json:mf:$N14:2097152" \
+  "bin_ok.dat:bin:$N15:1048576" <<'PY'
+import os, sys
+d = sys.argv[1]
+for spec in sys.argv[2:]:
+    name, kind, nonce, size = spec.split(":")
+    size = int(size)
+    if kind == "small":
+        body = '{"model":"llama-3","nonce":"%s","messages":[{"role":"user","content":"hi"}]}' % nonce
+        open(os.path.join(d, name), "w").write(body)
+        continue
+    if kind == "mf":
+        head = '{"model":"llama-3","nonce":"%s","max_tokens":16,"messages":[{"role":"user","content":"' % nonce
+        tail = '"}]}'
+    elif kind == "mfm":
+        head = '{"model":"mistral-7b","nonce":"%s","max_tokens":16,"messages":[{"role":"user","content":"' % nonce
+        tail = '"}]}'
+    elif kind == "ml":
+        head = '{"nonce":"%s","messages":[{"role":"user","content":"' % nonce
+        tail = '"}],"max_tokens":16,"model":"llama-3"}'
+    else:  # bin
+        head, tail = nonce, ""
+    fill = "A" * (size - len(head) - len(tail))
+    with open(os.path.join(d, name), "w") as f:
+        f.write(head + fill + tail)
+    assert os.path.getsize(os.path.join(d, name)) == size, name
+PY
+
+# fc_post <label-id> <file> <content-type> <extra curl args...> → prints "code"
+# and leaves the body in $FC_DIR/resp. Expect is pinned off unless an arm
+# sets it: curl's own Expect heuristics must not decide when the body starts.
+fc_post() {
+  local file="$1" ctype="$2"; shift 2
+  : > "$FC_DIR/resp"   # a request that gets no answer must not read the previous body
+  $hexec l3h1 curl -s -o "$FC_DIR/resp" -w '%{http_code}' --max-time 30 \
+    -H 'Expect:' -H "Content-Type: $ctype" "$@" --data-binary @"$file" "$FC_VIP"
+}
+fc_settle() { sleep 1; }
+
+# ── FC-T1: 900 KiB JSON, model in the prefix, no key → 401, zero backend bytes
+echo ""
+echo "FC-T1: streamed JSON without a key is refused before dispatch"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/mf_nokey.json" application/json); fc_settle
+fccheck    "FC-T1 no key → 401" "401" "$rc"
+fccheck    "FC-T1 error code" "invalid_api_key" "$(cat "$FC_DIR/resp")"
+fccheck_eq "FC-T1 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T1 backend never saw the nonce" "0" "$(fc_nonce_hits "$N1")"
+
+# ── FC-T2: unknown key → 401
+echo ""
+echo "FC-T2: streamed JSON with an unknown key is refused before dispatch"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/mf_badkey.json" application/json -H 'X-Api-Key: lxb_00000000000000000000000000000000'); fc_settle
+fccheck    "FC-T2 unknown key → 401" "401" "$rc"
+fccheck_eq "FC-T2 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T2 backend never saw the nonce" "0" "$(fc_nonce_hits "$N2")"
+
+# ── FC-T3: the model resolved from the prefix drives authorization → 403
+echo ""
+echo "FC-T3: key allows llama-3 only; streamed body names mistral-7b → 403"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/mf_mistral.json" application/json -H "X-Api-Key: $FC_MODEL_KEY"); fc_settle
+fccheck    "FC-T3 disallowed model in the prefix → 403" "403" "$rc"
+fccheck    "FC-T3 error code" "model_not_allowed" "$(cat "$FC_DIR/resp")"
+fccheck_eq "FC-T3 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T3 backend never saw the nonce" "0" "$(fc_nonce_hits "$N3")"
+
+# ── FC-T4: the reservation is sized from the declared length → 429 on a
+# 1000-token budget (900 KiB implies ~230k tokens), zero backend bytes
+echo ""
+echo "FC-T4: streamed JSON against a 1000 tokens/min budget → 429 before dispatch"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/mf_quota.json" application/json -H "X-Api-Key: $FC_QUOTA_KEY"); fc_settle
+fccheck    "FC-T4 byte-sized reservation over budget → 429" "429" "$rc"
+fccheck    "FC-T4 error code" "token_quota_would_exceed" "$(cat "$FC_DIR/resp")"
+fccheck_eq "FC-T4 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T4 backend never saw the nonce" "0" "$(fc_nonce_hits "$N4")"
+
+# ── FC-T5: 1 MiB binary upload, no key → 401 (the non-JSON streaming shape)
+echo ""
+echo "FC-T5: streamed binary upload without a key is refused before dispatch"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/bin_nokey.dat" application/octet-stream); fc_settle
+fccheck    "FC-T5 no key → 401" "401" "$rc"
+fccheck_eq "FC-T5 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T5 backend never saw the nonce" "0" "$(fc_nonce_hits "$N5")"
+
+# ── FC-T6: positive twin — the admitted streamed JSON arrives whole
+echo ""
+echo "FC-T6: streamed JSON with a valid key reaches the backend whole"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/mf_ok.json" application/json -H "X-Api-Key: $FC_OPEN_KEY"); fc_settle
+fccheck    "FC-T6 valid key → 200" "200" "$rc"
+fccheck    "FC-T6 response carries the nonce" "$N6" "$(cat "$FC_DIR/resp")"
+fccheck_eq "FC-T6 backend accepted exactly one connection" "1" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T6 backend saw the nonce exactly once" "1" "$(fc_nonce_hits "$N6")"
+fccheck_eq "FC-T6 body arrived whole" "921600" "$(fc_req_field "$N6" body_bytes)"
+fccheck_eq "FC-T6 body marked complete" "True" "$(fc_req_field "$N6" complete)"
+
+# ── FC-T7: kept backend leg — request 2 (streamed, no key) is gated on the
+# leg request 1 opened. num_connects=0 proves the client reused its socket.
+echo ""
+echo "FC-T7: on a kept leg, a streamed second request without a key is refused"
+a0=$(fc_accepts)
+out=$($hexec l3h1 curl -s -o /dev/null --max-time 30 -w '%{http_code}/%{num_connects}\n' \
+    -H 'Expect:' -H 'Content-Type: application/json' -H "X-Api-Key: $FC_OPEN_KEY" \
+    --data-binary @"$FC_DIR/small_a.json" "$FC_VIP" \
+  --next -s -o /dev/null --max-time 30 -w '%{http_code}/%{num_connects}\n' \
+    -H 'Expect:' -H 'Content-Type: application/json' \
+    --data-binary @"$FC_DIR/mf_ka_nokey.json" "$FC_VIP"); fc_settle
+fccheck_eq "FC-T7 first request opens the connection → 200" "200/1" "$(echo "$out" | sed -n 1p)"
+fccheck_eq "FC-T7 streamed second request on the reused socket → 401" "401/0" "$(echo "$out" | sed -n 2p)"
+fccheck_eq "FC-T7 backend saw the first request" "1" "$(fc_nonce_hits "$N7")"
+fccheck_eq "FC-T7 backend never saw the refused second request" "0" "$(fc_nonce_hits "$N8")"
+fccheck_eq "FC-T7 one backend connection for the pair" "1" "$(( $(fc_accepts) - a0 ))"
+
+# ── FC-T8: kept backend leg, positive — both requests ride ONE backend conn
+echo ""
+echo "FC-T8: on a kept leg, an admitted streamed second request rides the same backend connection"
+a0=$(fc_accepts)
+out=$($hexec l3h1 curl -s -o /dev/null --max-time 30 -w '%{http_code}/%{num_connects}\n' \
+    -H 'Expect:' -H 'Content-Type: application/json' -H "X-Api-Key: $FC_OPEN_KEY" \
+    --data-binary @"$FC_DIR/small_b.json" "$FC_VIP" \
+  --next -s -o /dev/null --max-time 30 -w '%{http_code}/%{num_connects}\n' \
+    -H 'Expect:' -H 'Content-Type: application/json' -H "X-Api-Key: $FC_OPEN_KEY" \
+    --data-binary @"$FC_DIR/mf_ka_ok.json" "$FC_VIP"); fc_settle
+fccheck_eq "FC-T8 first request → 200 on a new connection" "200/1" "$(echo "$out" | sed -n 1p)"
+fccheck_eq "FC-T8 streamed second request → 200 on the reused socket" "200/0" "$(echo "$out" | sed -n 2p)"
+fccheck_eq "FC-T8 backend saw both nonces" "1/1" "$(fc_nonce_hits "$N9")/$(fc_nonce_hits "$N10")"
+fccheck_eq "FC-T8 both requests on one backend connection" "$(fc_req_field "$N9" conn)" "$(fc_req_field "$N10" conn)"
+fccheck_eq "FC-T8 second body arrived whole" "921600" "$(fc_req_field "$N10" body_bytes)"
+fccheck_eq "FC-T8 one backend connection for the pair" "1" "$(( $(fc_accepts) - a0 ))"
+
+# ── FC-T9: model beyond the prefix, valid key → 413 (cannot bind the model)
+echo ""
+echo "FC-T9: streamed JSON whose model lies beyond the routing prefix → 413"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/ml_ok.json" application/json -H "X-Api-Key: $FC_OPEN_KEY"); fc_settle
+fccheck    "FC-T9 model unresolvable in the prefix → 413" "413" "$rc"
+fccheck    "FC-T9 error code" "request_too_large_for_admission" "$(cat "$FC_DIR/resp")"
+fccheck_eq "FC-T9 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T9 backend never saw the nonce" "0" "$(fc_nonce_hits "$N11")"
+
+# ── FC-T10: same shape, no key → the credential is checked FIRST (401)
+echo ""
+echo "FC-T10: model beyond the prefix and no key → 401, not 413"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/ml_nokey.json" application/json); fc_settle
+fccheck    "FC-T10 credential refused before the size verdict → 401" "401" "$rc"
+fccheck_eq "FC-T10 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T10 backend never saw the nonce" "0" "$(fc_nonce_hits "$N12")"
+
+# ── FC-T11: Expect: 100-continue — the gateway solicits the body while it
+# hunts for the model, then refuses. The client must see the final 401.
+echo ""
+echo "FC-T11: refusal after a 100 Continue is delivered as a final status"
+a0=$(fc_accepts)
+: > "$FC_DIR/resp"
+rc=$($hexec l3h1 curl -s -o "$FC_DIR/resp" -w '%{http_code}' --max-time 30 \
+    -H 'Expect: 100-continue' -H 'Content-Type: application/json' \
+    --data-binary @"$FC_DIR/ml_expect.json" "$FC_VIP"); fc_settle
+fccheck    "FC-T11 final status after 100 Continue → 401" "401" "$rc"
+fccheck_eq "FC-T11 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T11 backend never saw the nonce" "0" "$(fc_nonce_hits "$N13")"
+
+# ── FC-T12: chunked body that outgrows the buffer → deterministic 413
+echo ""
+echo "FC-T12: chunked 2 MiB JSON on the enforcing service → 413, not a reset"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/chunk.json" application/json -H "X-Api-Key: $FC_OPEN_KEY" -H 'Transfer-Encoding: chunked'); fc_settle
+fccheck    "FC-T12 buffer overflow answered 413" "413" "$rc"
+fccheck    "FC-T12 error code" "request_body_too_large" "$(cat "$FC_DIR/resp")"
+fccheck_eq "FC-T12 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T12 backend never saw the nonce" "0" "$(fc_nonce_hits "$N14")"
+
+# ── FC-T13: positive twin for the non-JSON shape — admitted, forwarded whole
+echo ""
+echo "FC-T13: streamed binary upload with a valid key reaches the backend whole"
+a0=$(fc_accepts)
+rc=$(fc_post "$FC_DIR/bin_ok.dat" application/octet-stream -H "X-Api-Key: $FC_OPEN_KEY" -H 'X-Model: llama-3'); fc_settle
+fccheck    "FC-T13 valid key → 200" "200" "$rc"
+fccheck_eq "FC-T13 backend accepted exactly one connection" "1" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T13 backend saw the nonce exactly once" "1" "$(fc_nonce_hits "$N15")"
+fccheck_eq "FC-T13 body arrived whole" "1048576" "$(fc_req_field "$N15" body_bytes)"
+
+# ── cleanup of the FC keys
+for id in "$FC_OPEN_ID" "$FC_MODEL_ID" "$FC_QUOTA_ID"; do
+  [[ -n "$id" ]] && $hexec llb1 curl -s -o /dev/null -X DELETE \
+    -H "Authorization: Bearer $TOKEN" "http://localhost:11111/netlox/v1/config/ai/apikey/$id"
+done
+fi  # FC keys created
+
+# Inventory: every declared FC case must have asserted, and nothing
+# undeclared may run — a deleted arm turns the suite red instead of
+# shrinking it silently.
+FC_EXPECTED="FC-T1 FC-T2 FC-T3 FC-T4 FC-T5 FC-T6 FC-T7 FC-T8 FC-T9 FC-T10 FC-T11 FC-T12 FC-T13"
+fc_missing=""
+for want in $FC_EXPECTED; do
+  case " $FC_SEEN " in *" $want "*) ;; *) fc_missing="$fc_missing $want" ;; esac
+done
+fc_extra=""
+for got in $FC_SEEN; do
+  case " $FC_EXPECTED " in *" $got "*) ;; *) fc_extra="$fc_extra $got" ;; esac
+done
+if [[ -n "$fc_missing" ]]; then
+  echo "  FC-Z1 declared cases that never ran:$fc_missing [FAILED]"
+  code=1
+else
+  echo "  FC-Z1 every declared FC case ran [OK]"
+fi
+if [[ -n "$fc_extra" ]]; then
+  echo "  FC-Z2 cases ran that are not declared:$fc_extra — add them to FC_EXPECTED [FAILED]"
+  code=1
+else
+  echo "  FC-Z2 no undeclared FC cases ran [OK]"
+fi
+rm -rf "$FC_DIR"
+
+
 stop_helpers
 echo ""
 echo "Running CLI (REST API) validation tests..."
