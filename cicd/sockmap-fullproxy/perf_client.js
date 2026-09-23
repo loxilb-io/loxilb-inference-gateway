@@ -1,6 +1,6 @@
 // perf_client.js - closed-loop load generator for sockmap-fullproxy comparison.
 //
-//   node perf_client.js <host> <port> <concurrency> <durMs> <bytes> <warmMs>
+//   node perf_client.js <host> <port> <concurrency> <durMs> <bytes> <warmMs> [upBytes]
 //
 // Holds <concurrency> keep-alive connections and fires GET /?bytes=<bytes> back to
 // back. keep-alive is required: sockmap splice only engages on a connection after its
@@ -9,6 +9,12 @@
 // parsed form:
 //
 //   PERFLINE <requests> <errors> <rps> <mbps> <lat_mean_ms> <lat_p50_ms> <lat_p99_ms>
+//
+// With upBytes > 0 every request is instead a POST carrying a body of that many bytes,
+// under Content-Length. That is the request-heavy shape: it loads the request
+// direction, which a GET load never does, and is what lets the CPU comparison say how
+// much of the gain each direction is worth on its own. mbps then counts both
+// directions, since that is the volume the proxy moved.
 
 const http = require('http');
 
@@ -18,8 +24,13 @@ const conc = parseInt(process.argv[4] || '16', 10);
 const durMs = parseInt(process.argv[5] || '6000', 10);
 const bytes = parseInt(process.argv[6] || '256', 10);
 const warmMs = parseInt(process.argv[7] || '1500', 10);
+const upBytes = parseInt(process.argv[8] || '0', 10);
 
 const path = `/?bytes=${bytes}`;
+const upBody = upBytes > 0 ? Buffer.alloc(upBytes, 'u') : null;
+const method = upBody ? 'POST' : 'GET';
+const headers = upBody ? { 'Content-Type': 'application/octet-stream',
+                           'Content-Length': upBytes } : {};
 const agent = new http.Agent({ keepAlive: true, maxSockets: conc, maxFreeSockets: conc });
 
 let measuring = false;
@@ -33,13 +44,13 @@ let measureStart = 0;
 function fire() {
   if (done) return;
   const t0 = process.hrtime.bigint();
-  const req = http.request({ host, port, path, method: 'GET', agent }, (res) => {
+  const req = http.request({ host, port, path, method, headers, agent }, (res) => {
     let b = 0;
     res.on('data', (d) => { b += d.length; });
     res.on('end', () => {
       if (measuring) {
         count++;
-        totBytes += b;
+        totBytes += b + upBytes;
         lats.push(Number(process.hrtime.bigint() - t0) / 1e6);
       }
       fire();
@@ -50,7 +61,11 @@ function fire() {
     if (measuring) errors++;
     setTimeout(fire, 5);
   });
-  req.end();
+  if (upBody) {
+    req.end(upBody);
+  } else {
+    req.end();
+  }
 }
 
 for (let i = 0; i < conc; i++) fire();

@@ -62,6 +62,7 @@ cd cicd/sockmap-fullproxy
 | `validation_integrity.sh` | byte-level integrity of a streamed response against a sequence oracle — the suite that can see the kernel's duplication defect |
 | `validation_perf.sh` | throughput, on vs off, over two rules that share every port |
 | `validation-cpu.sh` | loxilb CPU, on vs off, on that same pair |
+| `validation-cpu-dir.sh` | the same CPU measure split by **direction**: off / request / response / both over three workloads (response-heavy, request-heavy, symmetric), trial order rotated every round so host drift lands on every arm equally |
 | `validation-sse-cpu.sh` | CPU per token under SSE streaming, including the `request` and `response` arms |
 
 Each suite creates and deletes its own rules, except where noted below.
