@@ -108,6 +108,16 @@ curl -s http://10.10.10.254:2020/v1/chat/completions \
 | Missing/unknown key | `401` `invalid_api_key` |
 | Model not in the key's `allowed_models` | `403` `model_not_allowed` |
 | Per-key or per-tenant rate/token limit exceeded | `429` |
+| JSON body above the inspect cap whose top-level `model` is not within the first 64 KiB of the body | `413` `request_too_large_for_admission` |
+| Chunked (or length-less) body larger than the gateway's 1 MiB request buffer | `413` `request_body_too_large` |
+
+Enforcement runs before the first byte reaches a backend for every request
+shape, including bodies the gateway streams instead of buffering (any non-JSON
+body above 64 KiB, or a JSON body above 768 KiB). For a streamed JSON body the
+model is resolved from the first 64 KiB, so put `model` early in the object;
+the token reservation for such a request is sized from its `Content-Length`.
+A chunked request body is never streamed and must fit the request buffer;
+declare `Content-Length` for large uploads.
 
 Backend connectivity failures surface through the same VIP and are easy to mistake for
 quota errors: `502 backend_unreachable` / `503 no_healthy_backend` come from the proxy's
