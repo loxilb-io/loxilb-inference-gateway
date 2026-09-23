@@ -2,9 +2,13 @@
 source ../common.sh
 echo SCENARIO-tcplb-maxep
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 $hexec l3ep4 node ../common/tcp_server.js server4 &
+track_helper
 
 sleep 5
 code=0
@@ -38,7 +42,7 @@ do
         then
             echo "All Servers are not UP"
             echo SCENARIO-tcplb-maxep [FAILED]
-            sudo killall -9 node 2>&1 > /dev/null
+            stop_helpers
             exit 1
         fi
     fi
@@ -72,5 +76,5 @@ else
   echo SCENARIO-tcplb-maxep [FAILED]
 fi
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 exit $code

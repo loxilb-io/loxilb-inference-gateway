@@ -2,8 +2,11 @@
 source ../common.sh
 echo LB6-TIMEOUT
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 
 sleep 5
 code=0
@@ -35,10 +38,14 @@ done
 
 SERVICE="nc"
 $hexec l3ep1 iperf -s -p 8080 -V -B 4ffe::1 >> /dev/null 2>&1 &
+track_helper
 $hexec l3ep2 iperf -s -p 8080 -V -B 5ffe::1 >> /dev/null 2>&1 &
+track_helper
 $hexec l3ep3 iperf -s -p 8080 -V -B 6ffe::! >> /dev/null 2>&1 &
+track_helper
 sleep 30
 $hexec l3h1 nohup nc -6 2001::1 2020 >> /dev/null 2>&1 &
+track_helper
 ncpid=$!
 
 sleep 10
@@ -63,9 +70,8 @@ else
     echo LB6-TIMEOUT [OK]
     code=0
 fi
-sudo killall -9 iperf >> /dev/null 2>&1
+stop_helpers
 sudo kill -9 $ncpid >> /dev/null 2>&1
-sudo killall -9 nc >> /dev/null 2>&1
-sudo killall -9 node >> /dev/null 2>&1
+stop_helpers
 sudo rm -f nohup.out
 exit $code

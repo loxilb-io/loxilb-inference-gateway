@@ -5,8 +5,11 @@ echo SCENARIO-e2e-mtls-fullproxy
 # Start backend HTTPS servers with mTLS support
 # These servers will verify loxilb's client certificate
 $hexec l3ep1 node ../common/tcp_https_mtls_server.js server1 8443 31.31.31.1/cert.pem 31.31.31.1/key.pem minica.pem &
+track_helper
 $hexec l3ep2 node ../common/tcp_https_mtls_server.js server2 8443 32.32.32.1/cert.pem 32.32.32.1/key.pem minica.pem &
+track_helper
 $hexec l3ep3 node ../common/tcp_https_mtls_server.js server3 8443 33.33.33.1/cert.pem 33.33.33.1/key.pem minica.pem &
+track_helper
 
 sleep 5
 code=0
@@ -337,7 +340,7 @@ else
     code=1
 fi
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 
 # REST API validation — verify mTLS rule fields are stored/retrievable via API
 if [[ -f ./validate_api.sh ]]; then

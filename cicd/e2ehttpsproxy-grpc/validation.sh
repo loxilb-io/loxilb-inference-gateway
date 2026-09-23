@@ -64,9 +64,7 @@ do
 done
 
 # Cleanup
-$hexec l3ep1 killall -9 grpc-server > /dev/null 2>&1
-$hexec l3ep2 killall -9 grpc-server > /dev/null 2>&1
-$hexec l3ep3 killall -9 grpc-server > /dev/null 2>&1
+stop_helpers
 
 if [[ $code == 0 ]]
 then

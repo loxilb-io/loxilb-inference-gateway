@@ -42,10 +42,12 @@ add_route l3ep2 10.10.10.0/24 32.32.32.254
 
 ## ── Start mock SSE backend on l3ep1 (port 8080) ────────────────────────────
 $hexec l3ep1 python3 $(pwd)/mock_sse_server.py &
+track_helper
 sleep 2
 
 ## ── Start simple HTTP backend on l3ep2 (port 8080) ─────────────────────────
 $hexec l3ep2 node ../common/tcp_server.js server-nosse &
+track_helper
 sleep 2
 
 ## ── Wait for loxilb REST API ────────────────────────────────────────────────

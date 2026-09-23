@@ -5,8 +5,11 @@ servArr=( "server1" "server2" "server3" )
 ep=( "31.31.31.1" "32.32.32.1" "33.33.33.1" )
 
 $hexec l3ep1 ../common/sctp_server ${ep[0]} 8080 server1 >/dev/null 2>&1 &
+track_helper
 $hexec l3ep2 ../common/sctp_server ${ep[1]} 8080 server2 >/dev/null 2>&1 &
+track_helper
 $hexec l3ep3 ../common/sctp_server ${ep[2]} 8080 server3 >/dev/null 2>&1 &
+track_helper
 
 sleep 15
 code=0
@@ -26,7 +29,7 @@ do
         then
             echo "All Servers are not UP"
             echo SCENARIO-sctplbmon [FAILED]
-            sudo killall -9 sctp_server 2>&1 > /dev/null
+            stop_helpers
             exit 1
         fi
     fi
@@ -46,7 +49,7 @@ while [[ ${#warmup_seen[@]} -lt 3 ]]; do
     if [[ $warmupCount -ge 30 ]]; then
         echo "VIP health monitor not ready (only ${#warmup_seen[@]}/3 backends active)"
         echo SCENARIO-sctplbmon [FAILED]
-        sudo killall -9 sctp_server 2>&1 > /dev/null
+        stop_helpers
         exit 1
     fi
     sleep 3
@@ -92,7 +95,7 @@ then
     echo SCENARIO-sctplbmon p1 [OK]
 else
     echo SCENARIO-sctplbmon p1 [FAILED]
-    sudo killall -9 sctp_server 2>&1 > /dev/null
+    stop_helpers
     exit $code
 fi
 
@@ -116,16 +119,19 @@ then
     echo SCENARIO-sctplbmon p2 [OK]
 else
     echo SCENARIO-sctplbmon p2 [FAILED]
-    sudo killall -9 node 2>&1 > /dev/null
+    stop_helpers
     exit $code
 fi
 
 $hexec l3ep1 ip addr add 31.31.31.1/24 dev el3ep1llb1
 $hexec l3ep1 ip route add default via 31.31.31.254
-sudo killall -9 sctp_server 2>&1 > /dev/null
+stop_helpers
 $hexec l3ep1 ../common/sctp_server ${ep[0]} 8080 server1 >/dev/null 2>&1 &
+track_helper
 $hexec l3ep2 ../common/sctp_server ${ep[1]} 8080 server2 >/dev/null 2>&1 &
+track_helper
 $hexec l3ep3 ../common/sctp_server ${ep[2]} 8080 server3 >/dev/null 2>&1 &
+track_helper
 sleep 30
 $dexec llb1 loxicmd get ep
 
@@ -168,5 +174,5 @@ else
     echo SCENARIO-sctplbmon p3 [FAILED]
 fi
 
-sudo killall -9 sctp_server 2>&1 > /dev/null
+stop_helpers
 exit $code

@@ -2,9 +2,7 @@
 source ../common.sh
 echo SCENARIO-ai-model-routing-cleanup
 
-$hexec l3ep1 sudo killall -9 node 2>/dev/null
-$hexec l3ep2 sudo killall -9 node 2>/dev/null
-$hexec l3ep3 sudo killall -9 node 2>/dev/null
+stop_helpers
 sleep 1
 
 disconnect_docker_hosts llb1 l3h1

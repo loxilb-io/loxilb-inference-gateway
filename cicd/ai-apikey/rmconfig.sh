@@ -3,7 +3,7 @@ source ../common.sh
 echo SCENARIO-ai-apikey-cleanup
 
 # Stop backend process
-$hexec l3ep1 sudo killall -9 node 2>/dev/null
+stop_helpers
 
 ## wait for processes to die
 sleep 1

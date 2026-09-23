@@ -2,6 +2,7 @@
 source ../common.sh
 echo SCENARIO-masquerade
 $hexec l3h1 node ../common/tcp_server.js server1 &
+track_helper
 
 sleep 15
 code=0
@@ -35,5 +36,5 @@ else
     code=1
 fi
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 exit $code

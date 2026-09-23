@@ -2,8 +2,11 @@
 source ../common.sh
 echo SCENARIO-tcplbmark
 $hexec l3ep1 socat -v -T0.05 tcp-l:8080,reuseaddr,fork system:"echo 'server1'; cat" >/dev/null 2>&1 &
+track_helper
 $hexec l3ep2 socat -v -T0.05 tcp-l:8080,reuseaddr,fork system:"echo 'server2'; cat" >/dev/null 2>&1 &
+track_helper
 $hexec l3ep3 socat -v -T0.05 tcp-l:8080,reuseaddr,fork system:"echo 'server3'; cat" >/dev/null 2>&1 &
+track_helper
 
 sleep 5
 code=0
@@ -48,7 +51,5 @@ then
 else
     echo SCENARIO-tcplbmark [FAILED]
 fi
-$hexec l3ep1 killall  -9 socat > /dev/null 2>&1
-$hexec l3ep2 killall  -9 socat > /dev/null 2>&1
-$hexec l3ep3 killall  -9 socat > /dev/null 2>&1
+stop_helpers
 exit $code

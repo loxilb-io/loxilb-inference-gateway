@@ -14,8 +14,11 @@ function health() {
     fi
 
     $hexec l3ep1 ./server/server -host server1 -key 31.31.31.1/key.pem -cert 31.31.31.1/cert.pem -cacert minica.pem $opt > /dev/null 2>&1 &
+    track_helper
     $hexec l3ep2 ./server/server -host server2 -key 32.32.32.1/key.pem -cert 32.32.32.1/cert.pem -cacert minica.pem $opt > /dev/null 2>&1 &
+    track_helper
     $hexec l3ep3 ./server/server -host server3 -key 33.33.33.1/key.pem -cert 33.33.33.1/cert.pem -cacert minica.pem $opt > /dev/null 2>&1 &
+    track_helper
 
     sleep 30
     code=0
@@ -58,9 +61,7 @@ function health() {
         sleep 1
     done
     done
-    $hexec l3ep1 killall -9 server > /dev/null 2>&1
-    $hexec l3ep2 killall -9 server > /dev/null 2>&1
-    $hexec l3ep3 killall -9 server > /dev/null 2>&1
+    stop_helpers
     echo $code
 }
 

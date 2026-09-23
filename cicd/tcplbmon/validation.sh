@@ -2,8 +2,11 @@
 source ../common.sh
 echo SCENARIO-tcplbmon
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 
 sleep 15
 code=0
@@ -25,7 +28,7 @@ do
         if [[ $waitCount == 10 ]];
         then
             echo "All Servers are not UP"
-            sudo killall -9 node 2>&1 > /dev/null
+            stop_helpers
             echo SCENARIO-tcplbmon [FAILED]
             exit 1
         fi
@@ -50,7 +53,7 @@ while [[ ${#warmup_seen[@]} -lt 3 ]]; do
     if [[ $warmupCount -ge 30 ]]; then
         echo "VIP health monitor not ready (only ${#warmup_seen[@]}/3 backends active)"
         echo SCENARIO-tcplbmon [FAILED]
-        sudo killall -9 node 2>&1 > /dev/null
+        stop_helpers
         exit 1
     fi
     sleep 3
@@ -94,9 +97,7 @@ then
     echo SCENARIO-tcplbmon p1 [OK]
 else
     echo SCENARIO-tcplbmon p1 [FAILED]
-    $hexec l3ep1 killall -9 node 2>&1 > /dev/null
-    $hexec l3ep2 killall -9 node 2>&1 > /dev/null
-    $hexec l3ep3 killall -9 node 2>&1 > /dev/null
+    stop_helpers
     exit $code
 fi
 
@@ -119,16 +120,19 @@ then
     echo SCENARIO-tcplbmon p2 [OK]
 else
     echo SCENARIO-tcplbmon p2 [FAILED]
-    sudo killall -9 node 2>&1 > /dev/null
+    stop_helpers
     exit $code
 fi
 
 $hexec l3ep1 ip addr add 31.31.31.1/24 dev el3ep1llb1
 $hexec l3ep1 ip route add default via 31.31.31.254
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 sleep 30
 $dexec llb1 loxicmd get ep
 
@@ -168,5 +172,5 @@ else
     echo SCENARIO-tcplbmon p3 [FAILED]
 fi
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 exit $code

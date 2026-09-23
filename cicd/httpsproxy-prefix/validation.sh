@@ -2,8 +2,11 @@
 source ../common.sh
 echo SCENARIO-https-tcplb
 $hexec l3ep1 node ../common/tcp_server.js server1 &
+track_helper
 $hexec l3ep2 node ../common/tcp_server.js server2 &
+track_helper
 $hexec l3ep3 node ../common/tcp_server.js server3 &
+track_helper
 
 sleep 5
 code=0
@@ -157,7 +160,7 @@ else
     code=1
 fi
 
-sudo killall -9 node 2>&1 > /dev/null
+stop_helpers
 
 # REST API validation — verify LB rule fields and path-prefix lifecycle
 if [[ -f ./validate_api.sh ]]; then

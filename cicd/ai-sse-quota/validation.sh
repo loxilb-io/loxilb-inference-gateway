@@ -224,7 +224,7 @@ else
 fi
 
 # ── Cleanup ────────────────────────────────────────────────────────────────────
-sudo killall -9 node 2>/dev/null
+stop_helpers
 
 # ── CLI Validation (T-CLI-1 through T-CLI-8) ─────────────────────────────────
 echo ""

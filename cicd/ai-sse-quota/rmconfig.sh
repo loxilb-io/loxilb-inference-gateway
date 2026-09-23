@@ -3,8 +3,7 @@ source ../common.sh
 echo SCENARIO-ai-sse-quota-cleanup
 
 # Stop backend processes
-sudo pkill -f mock_sse_server 2>/dev/null || true
-sudo killall -9 node 2>/dev/null || true
+stop_helpers
 sleep 1
 
 ## Disconnect and delete virtual hosts
