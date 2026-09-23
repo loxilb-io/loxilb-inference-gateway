@@ -27,6 +27,9 @@ on OK.
                                     expects the whole body
   halfinflight <host> <port>        half-closes while the rest of a 256KB answer is
                                     still in the pipeline; expects the whole body
+  halfprefix <host> <port>          the same, but passes on ANY length as long as
+                                    what arrived is a correct prefix of the pattern:
+                                    a hole or reordering fails, a clean cut does not
   halfpartial <host> <port>         half a request, then shutdown(SHUT_WR); the
                                     connection goes away and the service keeps
                                     serving a fresh one
@@ -72,6 +75,7 @@ class Reader:
     def __init__(self, sock):
         self.sock = sock
         self.buf = b''
+        self.head = None   # the last response head split off; None until then
 
     def _fill(self):
         chunk = self.sock.recv(65536)
@@ -82,9 +86,11 @@ class Reader:
     def response_full(self, no_body=False):
         """Returns (status, headers dict, body). no_body is for HEAD, where
         Content-Length describes the body a GET would have carried."""
+        self.head = None
         while b'\r\n\r\n' not in self.buf:
             self._fill()
         head, self.buf = self.buf.split(b'\r\n\r\n', 1)
+        self.head = head
         lines = head.decode('latin-1').split('\r\n')
         status = int(lines[0].split()[1])
         headers = {}
@@ -314,7 +320,36 @@ def mode_halfinflight(host, port):
                        total=262144)
 
 
-def _split_case(host, port, ms, path_base, wait_for_opening, total=65536):
+def mode_halfprefix(host, port):
+    """halfinflight's shape with a different question.
+
+    halfinflight asked for the whole body, and its answer turned on whether
+    256KB beat the proxy's deferred-close bound - which depends on the load in
+    front of it, so it was withdrawn. This asks only that whatever DID arrive is
+    the pattern's correct prefix: bytes 0..N-1, contiguous. A response cut short
+    by the bound still passes, because it is only late. A response with a hole,
+    or with a later chunk delivered before an earlier one, fails at the offset.
+
+    That is exactly the split the withdrawn case could not make, and it is the
+    failure a fix that drops the connection's acceleration on the FIN could
+    introduce: the kernel may still hold response bytes taken for redirect at
+    that moment, and if userspace then relays bytes that arrive after them, the
+    two orders race to the client. Passes on all four arms today, on purpose -
+    it is a guard, and it is registered as nothing."""
+    return _split_case(host, port, 0, '/halfprefix', wait_for_opening=True,
+                       total=262144, prefix_only=True)
+
+
+def _prefix_verdict(body, total):
+    """None if body is the pattern's correct prefix, else the failing offset."""
+    want = pattern(min(len(body), total))
+    if body[:len(want)] == want:
+        return None
+    return first_diff(body, want)
+
+
+def _split_case(host, port, ms, path_base, wait_for_opening, total=65536,
+                prefix_only=False):
     first = 4096
     s = connect(host, port)
     r = Reader(s)
@@ -332,7 +367,15 @@ def _split_case(host, port, ms, path_base, wait_for_opening, total=65536):
     try:
         status, headers, body = r.response_full()
     except (OSError, EOFError) as e:
-        return 'FAIL cut after %d bytes (%s)' % (len(r.buf), e)
+        if r.head is None:
+            return 'FAIL cut before the headers completed (%s)' % e
+        got = r.buf
+        bad = _prefix_verdict(got, total)
+        if bad is not None:
+            return 'FAIL body differs at offset %d of %d received (%s)' % (bad, len(got), e)
+        if prefix_only:
+            return 'OK %d of %d bytes, a correct prefix (cut: %s)' % (len(got), total, e)
+        return 'FAIL cut after %d bytes, a correct prefix (%s)' % (len(got), e)
     if status != 200:
         return 'FAIL status %d' % status
     if headers.get('content-length') != str(total):
@@ -342,6 +385,8 @@ def _split_case(host, port, ms, path_base, wait_for_opening, total=65536):
     want = pattern(total)
     if body != want:
         return 'FAIL body differs at offset %d' % first_diff(body, want)
+    if prefix_only:
+        return 'OK %d bytes, the whole body' % total
     return 'OK %d bytes, opening %d then the rest after %dms' % (total, first, ms)
 
 
@@ -588,7 +633,8 @@ RECORD_MODES = {'echo'}
 MODES = {'split': mode_split, 'stream': mode_stream, 'pipeline': mode_pipeline,
          'halfclose': mode_halfclose, 'halfslow': mode_halfslow,
          'halfsplit': mode_halfsplit, 'halfmid': mode_halfmid,
-         'halfinflight': mode_halfinflight, 'halfpartial': mode_halfpartial,
+         'halfinflight': mode_halfinflight, 'halfprefix': mode_halfprefix,
+         'halfpartial': mode_halfpartial,
          'keepalive': mode_keepalive, 'echo': mode_echo, 'chunked': mode_chunked,
          'sizes': mode_sizes, 'special': mode_special, 'abort': mode_abort,
          'idle': mode_idle, 'volume': mode_volume}
