@@ -66,6 +66,9 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	if err := pres.validateCHWBLArguments(params.Attr.ServiceArguments); err != nil {
 		return errorResponseWithCode(http.StatusBadRequest, err.Error())
 	}
+	if err := pres.validateConnectionLimit(); err != nil {
+		return errorResponseWithCode(http.StatusBadRequest, err.Error())
+	}
 
 	var lbRules cmn.LbRuleMod
 
@@ -98,6 +101,11 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	lbRules.Serv.TimeoutMemberConnect = params.Attr.ServiceArguments.TimeoutMemberConnect
 	lbRules.Serv.TimeoutMemberData = params.Attr.ServiceArguments.TimeoutMemberData
 	lbRules.Serv.TimeoutTcpInspect = params.Attr.ServiceArguments.TimeoutTCPInspect
+	// Per-service concurrent-connection ceiling, copied as declared; zero or
+	// absent is unlimited. The rule stores it, every dataplane push carries it
+	// and the conntrack selector refuses the (N+1)th SYN of a DNAT-mode rule.
+	// Without this copy the field was accepted on the wire and went no further.
+	lbRules.Serv.ConnectionLimit = params.Attr.ServiceArguments.ConnectionLimit
 	lbRules.Serv.Name = params.Attr.ServiceArguments.Name
 	lbRules.Serv.Oper = cmn.LBOp(params.Attr.ServiceArguments.Oper)
 	lbRules.Serv.HostUrl = params.Attr.ServiceArguments.Host
@@ -561,6 +569,9 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	tmpSvc.Mode = int32(lb.Serv.Mode)
 	tmpSvc.Security = int32(lb.Serv.Security)
 	tmpSvc.InactiveTimeOut = int32(lb.Serv.InactiveTimeout)
+	// The stored ceiling, so a client reads back what it set; zero (unlimited)
+	// stays absent on the wire through omitempty.
+	tmpSvc.ConnectionLimit = lb.Serv.ConnectionLimit
 	tmpSvc.Monitor = lb.Serv.Monitor
 	tmpSvc.Managed = lb.Serv.Managed
 	tmpSvc.Probetype = lb.Serv.ProbeType

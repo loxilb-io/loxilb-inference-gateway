@@ -170,6 +170,17 @@ func (p *loadbalancerRequestPresence) validateKVNumericArguments(
 	return nil
 }
 
+// validateConnectionLimit rejects an explicit null. The generated model
+// declares connectionLimit as uint32, so a negative or oversized number never
+// reaches the handler; null is the one value the binding decodes to the zero
+// sentinel, and zero means unlimited, so the raw presence map has to refuse it.
+func (p *loadbalancerRequestPresence) validateConnectionLimit() error {
+	if p.svcIsNull("connectionLimit") {
+		return fmt.Errorf("connectionLimit must not be null")
+	}
+	return nil
+}
+
 var chwblRequestKeys = []string{
 	"chwbl_prefix_hash_level",
 	"chwbl_prefix_hash_flags",
