@@ -81,6 +81,9 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 	if err := pres.validateUnsupportedCHWBLPatch(); err != nil {
 		return patchErr(err.Error())
 	}
+	if err := pres.validateConnectionLimit(); err != nil {
+		return patchErr(err.Error())
+	}
 
 	pb := params.Attr // the parsed patch body (may be nil for an empty body)
 
@@ -147,6 +150,11 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 		}
 		if pres.svcPresent("inactiveTimeOut") {
 			merged.Serv.InactiveTimeout = uint32(sa.InactiveTimeOut)
+		}
+		// The concurrent-connection ceiling. An explicit zero clears it; the
+		// rule layer detects the change and re-pushes the dataplane gate.
+		if pres.svcPresent("connectionLimit") {
+			merged.Serv.ConnectionLimit = sa.ConnectionLimit
 		}
 		if pres.svcPresent("monitor") {
 			merged.Serv.Monitor = sa.Monitor
