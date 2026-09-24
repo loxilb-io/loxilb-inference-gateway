@@ -2861,6 +2861,38 @@ gw_vmdata_kb() {
     tr -dc '0-9'
 }
 
+# gw_threads -- the process's OS thread count, straight from the kernel. The Go
+# runtime starts a thread whenever a P is handed off during a blocking cgo
+# call or syscall, and never retires one, so the count only ever steps up --
+# and each step costs the DATA segment one thread stack (sized from the
+# container's soft stack limit) plus the 128 KiB top-pad arena glibc opens on
+# that thread's first malloc. That is not per-stream state. It is observed
+# here directly rather than inferred from the size of a jump.
+gw_threads() {
+  local pid; pid=$(gw_pid)
+  [ -n "$pid" ] || { echo unreadable; return; }
+  docker exec llb1 sh -c "awk '/^Threads:/{print \$2}' /proc/$pid/status" 2>/dev/null |
+    tr -dc '0-9'
+}
+
+# gw_stack_limit_kb -- the soft stack limit a new thread's stack is sized from,
+# printed beside a thread event so the arithmetic of its VmData step is visible.
+gw_stack_limit_kb() {
+  local pid; pid=$(gw_pid)
+  [ -n "$pid" ] || { echo unreadable; return; }
+  docker exec llb1 sh -c "awk '/^Max stack size/{ if (\$4 == \"unlimited\") print \$4; else print int(\$4 / 1024) }' /proc/$pid/limits" 2>/dev/null |
+    tr -dc '0-9a-z'
+}
+
+# gw_tasks -- "tid comm" per thread, sorted, so a thread event can name what
+# arrived: the Go runtime's threads carry the process name, a thread the C side
+# started carries whatever it was given.
+gw_tasks() {
+  local pid; pid=$(gw_pid)
+  [ -n "$pid" ] || return
+  docker exec llb1 sh -c 'for t in /proc/'"$pid"'/task/*; do printf "%s %s\n" "${t##*/}" "$(cat $t/comm 2>/dev/null)"; done' 2>/dev/null | sort
+}
+
 # gw_maps_snapshot -- one line per private writable mapping of the gateway
 # process, "start-end size_kB name", so two snapshots can say WHICH mapping a
 # data-segment jump landed in: the brk heap ([heap]), the Go arenas (the
@@ -2872,16 +2904,24 @@ gw_maps_snapshot() { # gw_maps_snapshot <file>
   [ -n "$pid" ] || { : > "$1"; return; }
   docker exec llb1 sh -c "cat /proc/$pid/maps" 2>/dev/null | python3 -c '
 import sys
+prev_end, prev_guard = None, False
 for line in sys.stdin:
     f = line.split()
-    if len(f) < 5 or not f[1].startswith("rw"):
+    if len(f) < 5:
         continue
-    name = f[5] if len(f) > 5 else "[anon]"
-    if not name.startswith("["):
-        continue                      # file-backed data: not the heap
     lo, hi = f[0].split("-")
-    print(f[0], (int(hi, 16) - int(lo, 16)) // 1024, name)' > "$1"
+    name = f[5] if len(f) > 5 else "[anon]"
+    # an inaccessible anonymous page directly below a writable mapping is the
+    # guard glibc puts under every thread stack; remember it for the next line
+    guarded = prev_guard and prev_end == lo
+    prev_end, prev_guard = hi, (f[1] == "---p" and name == "[anon]")
+    if not f[1].startswith("rw") or not name.startswith("["):
+        continue                      # file-backed data: not the heap
+    print(lo, hi, (int(hi, 16) - int(lo, 16)) // 1024, name,
+          "guarded" if guarded else "-")' > "$1"
 }
+# Keyed by START address: a glibc arena or the brk heap grows at its end, so a
+# grown mapping must read as "grew from", not as a brand-new one of its full size.
 gw_maps_growth() { # gw_maps_growth <before> <after>  -- mappings that grew or appeared
   python3 -c '
 import sys
@@ -2889,17 +2929,19 @@ def load(path):
     d = {}
     for line in open(path):
         f = line.split()
-        if len(f) == 3:
-            d[f[0]] = (int(f[1]), f[2])
+        if len(f) == 5:
+            d[f[0]] = (f[1], int(f[2]), f[3], f[4])
     return d
 before, after = load(sys.argv[1]), load(sys.argv[2])
 grown = []
-for rng, (kb, name) in after.items():
-    was = before.get(rng, (0, name))[0]
+for lo, (hi, kb, name, guard) in after.items():
+    was = before[lo][1] if lo in before else 0
     if kb > was:
-        grown.append((kb - was, rng, name, rng not in before))
-for d, rng, name, new in sorted(grown, reverse=True)[:6]:
-    print("%s +%d kB %s%s" % (rng, d, name, " (new)" if new else ""))' "$1" "$2"
+        grown.append((kb - was, lo, hi, name, was, guard))
+for d, lo, hi, name, was, guard in sorted(grown, reverse=True)[:6]:
+    how = "new" if was == 0 else "grew from %d kB" % was
+    shape = ", above a guard page: thread-stack shape" if guard == "guarded" else ""
+    print("%s-%s +%d kB %s (%s%s)" % (lo, hi, d, name, how, shape))' "$1" "$2"
 }
 
 # h2l_sample -- the two families every case here reads, sampled together so
@@ -3095,15 +3137,53 @@ echo "             climbing with the stream count."
 # covered by the drive-shape assertion -- every stream really was refused and
 # reset with its body still queued -- and by the gateway still serving after.
 #
+# 🚨 A THREAD IS NOT A LEAK, AND IT IS COUNTED, NOT GUESSED AT.
+#
+# On main this case went red four times in five runs with the same signature:
+# ONE scored round moved the data segment by exactly 16516 kB (twice by
+# 33032 = 2 x 16516), the other five rounds by 0-4 kB, and the growth landed
+# in one new 16384 kB anonymous mapping in the mmap area -- not the Go arenas
+# at 0xc000000000, not [heap] -- plus one new 132 kB mapping at a 64 MiB
+# aligned address. That is the cost of one new OS thread: a stack sized from
+# the container's soft stack limit, and the 128 KiB top-pad arena glibc opens
+# on the thread's first malloc. No C request of that size exists (a malloc
+# interposer on the bed saw none outside start-up), every C-side thread is
+# started at initialisation (the proxy's workers, the notifier pool, the
+# datapath rings and monitor), and the deny decision itself crosses into Go:
+# the bearer arm is a cgo export called from the proxy thread, so the Go
+# runtime is on this path with every stream. It starts a thread whenever a P
+# is handed off during a blocking cgo call or syscall, never retires it, and
+# does so at a moment of its own choosing -- which is why the lump fell in a
+# random round and never twice in the same one.
+#
+# So the thread count (/proc/<pid>/status Threads:) is now part of what
+# "settled" means: warm-up needs two quiet rounds on a constant count, and the
+# scored window must run on a constant count too. A thread arriving inside the
+# window is PRINTED with its VmData step and the window restarts from warm-up;
+# nothing is subtracted, estimated, or silently dropped. The oracle over the
+# window is unchanged. A build that starts a thread every round never settles
+# and fails on that, and a per-stream leak moves the data segment every round
+# exactly as before.
+#
+# Measured on the bed (container soft stack limit 8192 kB). The stock build
+# did it on its own during warm-up: threads 32 -> 35, three new tids carrying
+# the process name, VmData +24976 kB = 3 x (8192 + 132) + 4. A build that
+# starts one thread on the 750th denial: the old loop read 0 0 8324 0 4 0 and
+# failed on +8328 kB; this loop printed "round 5: threads 35 -> 36, VmData
+# +8324 kB", restarted the window and passed on +4 kB over 900 streams. A
+# build that keeps 64 KiB per denial, and one that starts a thread every 150
+# denials, both never settle under this loop and fail.
+#
 # An UNSETTLED run is a failed MEASUREMENT, not a detected leak, and says so.
 # So is a round that could not be read, and a series shorter than the rounds
 # actually driven: an oracle that cannot obtain its reading has shown nothing.
 h2l_tokens "H2-LIFE-003"
 H2L_SETTLE_KB=64        # a round this quiet counts as settled
 H2L_SETTLE_NEED=2       # consecutive quiet rounds required
-H2L_WARM_CAP=30         # give up after this many (cold bed needed 13)
+H2L_WARM_CAP=30         # warm-up budget in rounds (cold bed needed 13)
 H2L_MEAS_ROUNDS=6       # scored rounds = 900 streams
 H2L_DATA_KB=128         # ceiling on VmData growth over those 900 streams
+H2L_ROUND_CAP=$(( H2L_WARM_CAP + 2 * H2L_MEAS_ROUNDS ))  # every round, restarts included
 H2L_DENY_OK=1
 H2L_DENY_WHY=""
 H2L_ROUNDS=0
@@ -3121,54 +3201,94 @@ h2l_round_drive() {
   done
 }
 
-# Warm-up -- drive until the resident set goes quiet. Growth here is NOT
-# scored; the point is only to reach a state where growth means something.
+# One loop, two phases. Warm-up drives until the process is quiet: two
+# consecutive rounds that moved the data segment by at most 64 kB and left the
+# thread count where it was. Growth there is NOT scored; the point is only to
+# reach a state where growth means something. The scored rounds then run on
+# that constant thread count. A thread that comes up inside the window is
+# reported with its VmData step and the window restarts from warm-up: that
+# jump is the thread's stack and first arena, not stream state. Every thread
+# event is printed with the verdict, and a process that keeps starting threads
+# never settles and fails on exactly that.
+H2L_PHASE=warm
 H2L_STREAK=0
+H2L_WINDOW=0            # scored rounds completed in the current window
+H2L_RESTARTS=0
+H2L_DONE=0
+H2L_READ_OK=1
+H2L_DELTAS=""           # the scored window's per-round VmData steps
+H2L_ALL_DELTAS=""       # every round's, for an unsettled verdict
+H2L_THREADS_SERIES=""
+H2L_THREAD_EVENTS=""
+H2L_SETTLED_AT=0
 H2L_PREV=$(gw_vmdata_kb)
-while [ "$H2L_ROUNDS" -lt "$H2L_WARM_CAP" ]; do
+H2L_THR_PREV=$(gw_threads)
+H2L_TASKS_PREV=$(gw_tasks)
+while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
   h2l_round_drive
   H2L_NOW=$(gw_vmdata_kb)
-  if [ "$H2L_PREV" = unreadable ] || [ -z "$H2L_NOW" ]; then break; fi
+  H2L_THR=$(gw_threads)
+  H2L_TASKS_NOW=$(gw_tasks)
+  if [ "$H2L_PREV" = unreadable ] || [ -z "$H2L_NOW" ] || [ -z "$H2L_THR" ] ||
+     [ "$H2L_THR_PREV" = unreadable ] || [ "$H2L_THR" = unreadable ]; then
+    # an oracle that cannot obtain its reading has shown nothing
+    H2L_READ_OK=0
+    break
+  fi
   H2L_D=$(( H2L_NOW - H2L_PREV ))
   H2L_PREV=$H2L_NOW
-  if [ "$H2L_D" -le "$H2L_SETTLE_KB" ]; then
-    H2L_STREAK=$((H2L_STREAK + 1))
-    [ "$H2L_STREAK" -ge "$H2L_SETTLE_NEED" ] && break
-  else
+  H2L_ALL_DELTAS="$H2L_ALL_DELTAS $H2L_D"
+  H2L_THREADS_SERIES="$H2L_THREADS_SERIES $H2L_THR"
+  if [ "$H2L_THR" != "$H2L_THR_PREV" ]; then
+    h2l_new=$(comm -13 <(printf '%s\n' "$H2L_TASKS_PREV") <(printf '%s\n' "$H2L_TASKS_NOW") | tr '\n' ',' | sed 's/,$//')
+    h2l_gone=$(comm -23 <(printf '%s\n' "$H2L_TASKS_PREV") <(printf '%s\n' "$H2L_TASKS_NOW") | tr '\n' ',' | sed 's/,$//')
+    H2L_THREAD_EVENTS="$H2L_THREAD_EVENTS round $H2L_ROUNDS: threads $H2L_THR_PREV -> $H2L_THR (new tid/comm: ${h2l_new:-none}; gone: ${h2l_gone:-none}), VmData +$H2L_D kB;"
+    H2L_THR_PREV=$H2L_THR
+    H2L_TASKS_PREV=$H2L_TASKS_NOW
+    if [ "$H2L_PHASE" = measure ]; then
+      H2L_RESTARTS=$((H2L_RESTARTS + 1))
+      H2L_PHASE=warm
+      H2L_DELTAS=""
+      H2L_WINDOW=0
+    fi
     H2L_STREAK=0
-  fi
-done
-
-# Measurement -- the scored rounds, on a process that has proven it is quiet.
-H2L_DATA0=$(gw_vmdata_kb)
-H2L_RSS0=$(gw_rss_kb)
-gw_maps_snapshot .h2l_maps_before
-H2L_DELTAS=""
-H2L_READ_OK=1
-h2l_prev=$H2L_DATA0
-if [ "$H2L_DATA0" = unreadable ] || [ -z "$H2L_DATA0" ]; then H2L_READ_OK=0; fi
-for h2l_m in $(seq 1 "$H2L_MEAS_ROUNDS"); do
-  H2L_ROUNDS=$((H2L_ROUNDS + 1))
-  h2l_round_drive
-  h2l_now=$(gw_vmdata_kb)
-  if [ "$h2l_now" = unreadable ] || [ -z "$h2l_now" ]; then
-    H2L_READ_OK=0
     continue
   fi
-  if [ "$H2L_READ_OK" = 1 ]; then
-    H2L_DELTAS="$H2L_DELTAS $(( h2l_now - h2l_prev ))"
+  H2L_TASKS_PREV=$H2L_TASKS_NOW
+  if [ "$H2L_PHASE" = warm ]; then
+    if [ "$H2L_D" -le "$H2L_SETTLE_KB" ]; then
+      H2L_STREAK=$((H2L_STREAK + 1))
+    else
+      H2L_STREAK=0
+    fi
+    if [ "$H2L_STREAK" -ge "$H2L_SETTLE_NEED" ]; then
+      # settled: the scored window opens on this reading
+      H2L_PHASE=measure
+      H2L_SETTLED_AT=$H2L_ROUNDS
+      H2L_DATA0=$H2L_NOW
+      H2L_RSS0=$(gw_rss_kb)
+      H2L_THR0=$H2L_THR
+      gw_maps_snapshot .h2l_maps_before
+    fi
+    continue
   fi
-  h2l_prev=$h2l_now
+  H2L_DELTAS="$H2L_DELTAS $H2L_D"
+  H2L_WINDOW=$((H2L_WINDOW + 1))
+  if [ "$H2L_WINDOW" -ge "$H2L_MEAS_ROUNDS" ]; then
+    H2L_DONE=1
+    H2L_DATA3=$H2L_NOW
+    H2L_THR3=$H2L_THR
+    break
+  fi
 done
-H2L_DATA3=$h2l_prev
 H2L_RSS3=$(gw_rss_kb)
 gw_maps_snapshot .h2l_maps_after
 
-# A series shorter than the rounds actually driven is a different claim --
+# A series shorter than the rounds actually scored is a different claim --
 # silently a weaker one -- and an empty one sums to zero and reads as flat.
 H2L_NDELTA=$(printf '%s\n' $H2L_DELTAS | awk '$0 != "" { n++ } END { printf "%d", n + 0 }')
-if [ "$H2L_NDELTA" -ne "$H2L_MEAS_ROUNDS" ]; then H2L_READ_OK=0; fi
+if [ "$H2L_DONE" = 1 ] && [ "$H2L_NDELTA" -ne "$H2L_MEAS_ROUNDS" ]; then H2L_READ_OK=0; fi
 H2L_STREAMS=$(( H2L_ROUNDS * 150 ))
 note_case "H2-LIFE-003"
 if [ "$H2L_DENY_OK" = 1 ]; then
@@ -3180,43 +3300,57 @@ else
   echo "         ($H2L_DENY_WHY)"
   FAIL=$((FAIL + 1))
 fi
+echo "         per-round gateway threads:$H2L_THREADS_SERIES"
+if [ -n "$H2L_THREAD_EVENTS" ]; then
+  echo "         thread events (soft stack limit $(gw_stack_limit_kb) kB):$H2L_THREAD_EVENTS"
+  echo "         a new thread's stack and first malloc arena land in VmData and are not"
+  echo "         per-stream state; the scored window was restarted $H2L_RESTARTS time(s) on it"
+fi
+note_case "H2-LIFE-003"
 if [ "$H2L_READ_OK" != 1 ]; then
-  note_case "H2-LIFE-003"
-  echo "  [FAIL] H2-LIFE-003 - the data segment was readable for only $H2L_NDELTA of the $H2L_MEAS_ROUNDS"
-  echo "         scored rounds, so growth was never measured over the traffic this case"
-  echo "         claims to have driven. That is not evidence of a flat one"
+  echo "  [FAIL] H2-LIFE-003 - the data segment or thread count could not be read in round"
+  echo "         $H2L_ROUNDS, so growth was never measured over the traffic this case claims"
+  echo "         to have driven. That is not evidence of a flat one"
+  FAIL=$((FAIL + 1))
+elif [ "$H2L_DONE" != 1 ]; then
+  # Not a leak verdict. The oracle never reached the state in which its
+  # reading means anything, so it has nothing to report about flatness.
+  echo "         per-round VmData growth (kB, 150 streams each):$H2L_ALL_DELTAS"
+  echo "  [FAIL] H2-LIFE-003 - the data segment never settled: $H2L_ROUNDS rounds"
+  echo "         ($H2L_STREAMS streams) without $H2L_SETTLE_NEED consecutive rounds under ${H2L_SETTLE_KB} kB on a"
+  echo "         constant thread count followed by $H2L_MEAS_ROUNDS scored rounds on that count."
+  echo "         That is a failed MEASUREMENT, not a detected leak -- the growth above was"
+  echo "         never measured on a quiet process"
   FAIL=$((FAIL + 1))
 else
   H2L_GROW=$(( H2L_DATA3 - H2L_DATA0 ))
   H2L_RSSGROW=$(( ${H2L_RSS3:-0} - ${H2L_RSS0:-0} ))
   H2L_MEAS_STREAMS=$(( H2L_MEAS_ROUNDS * 150 ))
-  note_case "H2-LIFE-003"
   echo "         per-round VmData growth (kB, 150 streams each):$H2L_DELTAS"
   echo "         VmData +${H2L_GROW} kB over $H2L_MEAS_STREAMS streams; VmRSS moved ${H2L_RSSGROW} kB (diagnostic, not scored)"
-  if [ "$H2L_STREAK" -lt "$H2L_SETTLE_NEED" ]; then
-    # Not a leak verdict. The oracle never reached the state in which its
-    # reading means anything, so it has nothing to report about flatness.
-    echo "  [FAIL] H2-LIFE-003 - the data segment never settled: $H2L_WARM_CAP warm-up"
-    echo "         rounds ($(( H2L_WARM_CAP * 150 )) streams) without $H2L_SETTLE_NEED consecutive rounds"
-    echo "         under ${H2L_SETTLE_KB} kB. That is a failed MEASUREMENT, not a detected leak --"
-    echo "         the growth below was never measured on a quiet process"
-    FAIL=$((FAIL + 1))
-  elif [ "$H2L_GROW" -le "$H2L_DATA_KB" ]; then
+  if [ "$H2L_GROW" -le "$H2L_DATA_KB" ]; then
     echo "  [PASS] H2-LIFE-003 data segment flat across $H2L_MEAS_STREAMS reset streams on a settled"
-    echo "         process (+${H2L_GROW} kB, ceiling ${H2L_DATA_KB} kB; settled after $(( H2L_ROUNDS - H2L_MEAS_ROUNDS )) warm-up rounds)."
+    echo "         process (+${H2L_GROW} kB, ceiling ${H2L_DATA_KB} kB; settled after $H2L_SETTLED_AT rounds, $H2L_THR0 threads throughout)."
     echo "         NOTE: bounds MEGABYTE-scale growth only -- the allocator free pool this"
     echo "         late in the suite absorbs a kilobyte-per-stream leak; see the header"
     PASS=$((PASS + 1))
   else
     echo "  [FAIL] H2-LIFE-003 - the data segment grew +${H2L_GROW} kB over $H2L_MEAS_STREAMS reset"
-    echo "         streams on a process that had already settled (ceiling ${H2L_DATA_KB} kB; about"
-    echo "         $(( H2L_GROW * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never scavenged back, so this is"
-    echo "         memory allocated and not returned, not resident-page noise"
+    echo "         streams on a settled process with a constant thread count ($H2L_THR0 -> $H2L_THR3;"
+    echo "         ceiling ${H2L_DATA_KB} kB; about $(( H2L_GROW * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never"
+    echo "         scavenged back, so this is memory allocated and not returned, not"
+    echo "         resident-page noise"
     FAIL=$((FAIL + 1))
     echo "         where the growth landed (mappings that grew or appeared, largest first):"
     gw_maps_growth .h2l_maps_before .h2l_maps_after | sed 's/^/           /'
   fi
 fi
+# The drive above sends no credential at all (that is what it denies), so it
+# does not care about token age; this one request does. At the round cap the
+# loop runs close to the realm's 300 s access-token lifespan, and a credential
+# that expired during it would read as the gateway no longer serving. Mint
+# again so the check below sees the product, not the clock.
+h2l_tokens "H2-LIFE-003"
 r=$(bearer_req 2048 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
 chk_code "H2-LIFE-003 the gateway still serves HTTP/2 after $H2L_STREAMS reset streams" 200 "$r"
 h2_receipt_at l3ep1 "H2-LIFE-003 and that request reached the backend" 1 "$(last_nonce)"
