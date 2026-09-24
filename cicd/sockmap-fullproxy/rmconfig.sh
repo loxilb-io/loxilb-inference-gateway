@@ -21,6 +21,10 @@ delete_docker_host l3h1
 delete_docker_host l3ep1
 delete_docker_host l3ep2
 
+# The API-key store config.sh spawns under SOCKMAP_AI_KEY_STORE=1, and the
+# config directory it mounted. Both are no-ops when the store was not started.
+sockmap_key_store_down llb1_config
+
 sockmap_clear_artifacts
 
 echo "#########################################"
