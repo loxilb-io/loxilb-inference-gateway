@@ -189,6 +189,15 @@ jobs:
       # on demand and reuses it afterwards). Keycloak and PostgreSQL are
       # locally built/pulled containers, so the job stays within this
       # workflow's no-external-service charter.
+      - name: connectionLimit round trip (REST-declared ceiling enforced at SYN time)
+        # Built from source above, so the handler copy under test is this
+        # change's, not the published image's.
+        run: |
+          cd cicd/tcplbconnlimit/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - name: JWT bearer admission against a live Keycloak realm
         run: |
           cd cicd/ai-jwtauth/
