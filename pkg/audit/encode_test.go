@@ -313,3 +313,39 @@ func BenchmarkEncodeMgmt(b *testing.B) {
 		}
 	}
 }
+
+// The settle record's reservation fields are add-only: they appear when a
+// reservation was involved and are absent otherwise, so a record that
+// never had one is byte-for-byte what it was before the fields existed.
+func TestEncodeReservationFieldsAreAddOnly(t *testing.T) {
+	e := newEncoder()
+
+	// Absent when unset: this is the golden line above, unchanged.
+	got, err := e.encode(goldenData(), goldenStamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"reserved", "res_epoch"} {
+		if strings.Contains(string(got), `"`+key+`"`) {
+			t.Errorf("record with no reservation carries %q", key)
+		}
+	}
+
+	// Present when set, and distinguishable from a charge of nothing.
+	r := goldenData()
+	r.Data.Reserved = 500
+	r.Data.ResEpoch = 7
+	got, err = e.encode(r, goldenStamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"reserved":500`) {
+		t.Errorf("reserved not encoded: %s", got)
+	}
+	if !strings.Contains(string(got), `"res_epoch":7`) {
+		t.Errorf("res_epoch not encoded: %s", got)
+	}
+	if !json.Valid(got) {
+		t.Errorf("not valid JSON: %s", got)
+	}
+}

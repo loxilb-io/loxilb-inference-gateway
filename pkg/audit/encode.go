@@ -158,7 +158,23 @@ func appendDataDetail(b []byte, d *DataDetail) []byte {
 	b = appendOptField(b, "stage", d.Stage)
 	b = appendOptField(b, "scanner", d.Scanner)
 	b = appendOptField(b, "decision", d.Decision)
+	b = appendOptInt(b, "reserved", d.Reserved)
+	b = appendOptInt(b, "res_epoch", d.ResEpoch)
 	return append(b, '}')
+}
+
+// appendOptInt writes an integer field only when it is non-zero. A
+// reservation field is absent on the records that have no reservation
+// rather than present and zero, so "no reservation" and "a reservation of
+// nothing" stay distinguishable.
+func appendOptInt(b []byte, key string, v int64) []byte {
+	if v == 0 {
+		return b
+	}
+	b = append(b, ',', '"')
+	b = append(b, key...)
+	b = append(b, '"', ':')
+	return strconv.AppendInt(b, v, 10)
 }
 
 // mgmtJSON is the wire shape of MgmtDetail. Keeping the tags on a

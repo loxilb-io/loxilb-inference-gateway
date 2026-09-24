@@ -152,7 +152,15 @@ type auditRouteLookup struct {
 // SetAuditWriter installs the writer the gate records through. A nil
 // writer means every gated request is refused: a gateway that cannot
 // audit does not change configuration.
-func SetAuditWriter(w *audit.Writer) { auditWriter.Store(w) }
+//
+// The same writer is published package-wide in pkg/audit so the datapath
+// bridge can reach it without importing this package. The two handles are
+// set and cleared together so a caller can never find one alive and the
+// other empty.
+func SetAuditWriter(w *audit.Writer) {
+	auditWriter.Store(w)
+	audit.SetGlobal(w)
+}
 
 // AuditWriter returns the installed writer, or nil.
 func AuditWriter() *audit.Writer { return auditWriter.Load() }
@@ -160,6 +168,7 @@ func AuditWriter() *audit.Writer { return auditWriter.Load() }
 // CloseAuditWriter stops the installed writer, draining what is queued.
 func CloseAuditWriter(ctx context.Context) error {
 	w := auditWriter.Swap(nil)
+	audit.SetGlobal(nil)
 	if w == nil {
 		return nil
 	}

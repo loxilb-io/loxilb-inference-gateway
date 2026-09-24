@@ -229,6 +229,12 @@ type DataDetail struct {
 	Stage          string
 	Scanner        string
 	Decision       string
+	// Reserved and ResEpoch identify the admission reservation a settle
+	// record closes. They are what lets a reader tell a charge from a pure
+	// release, and lets two settles for one reservation be told apart from
+	// two reservations, without joining on time.
+	Reserved int64
+	ResEpoch int64
 }
 
 // SysDetail is the detail object of an audit_system record. Fields are

@@ -645,7 +645,7 @@
     { "symbol": "SockproxySessionMod", "kind": "method", "receiver": "XSync", "file": "pkg/loxinet/xsync_server.go", "def_line": 235, "call_line": 245, "calls": "ApplyOne", "entry_point": "http-handler", "note": "XSync gRPC service method -- an inbound request path from a peer Gateway, not a REST route; PullSnapshot (pkg/loxinet/sockproxy_sync.go:970) reaches the same writer on rejoin" }
    ],
    "ai-pd-record-cgo": [
-    {"symbol": "llb_ai_pd_record", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1582, "call_line": 1585, "calls": "RecordPDRequest", "entry_point": "cgo-export", "note": "called by the C fullproxy datapath once per P/D lifecycle event"}
+    {"symbol": "llb_ai_pd_record", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1667, "call_line": 1670, "calls": "RecordPDRequest", "entry_point": "cgo-export", "note": "called by the C fullproxy datapath once per P/D lifecycle event"}
    ],
    "ai-jwks-collector": [
    { "symbol": "RegisterJWKSSource", "kind": "func", "file": "api/prometheus/jwt_metrics.go", "def_line": 171, "call_line": 173, "calls": "jwksCollector", "note": "sync.Once; the collector reads the manager at scrape time rather than being set on the refresh path -- a gauge set on refresh would freeze at the last successful value exactly when the endpoint stops answering" },
@@ -812,7 +812,7 @@
     "activation_precondition": "a tenant with --tokens-per-min set on an API-key-enabled rule, and a completed response the quota path charges. The writer returns early when prompt+completion is zero, so a charge of nothing leaves the family absent.",
     "writer_sources": [
      { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 484, "writes": "aiTokensConsumedTotal" },
-     {"symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1361, "call_line": 1387, "calls": "RecordTokenUsage", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1367, "call_line": 1393, "calls": "RecordTokenUsage", "entry_point": "cgo-export"}
     ],
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:1716",
@@ -829,7 +829,7 @@
     "activation_precondition": "the same quota path as loxilb_ai_tokens_consumed_total, additionally on the estimated branch -- the response carried no usage object, so the data plane priced the charge from its own estimate.",
     "writer_sources": [
      { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 484, "writes": "aiTokensEstimatedTotal" },
-     {"symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1361, "call_line": 1387, "calls": "RecordTokenUsage", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1367, "call_line": 1393, "calls": "RecordTokenUsage", "entry_point": "cgo-export"}
     ],
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:1716",
@@ -846,7 +846,7 @@
     "activation_precondition": "AI traffic whose responses carry no usage object. The family partitions on how the response was charged, not on a single branch: a STREAMED response falls back to the estimate net (RecordTokenUsage estimated arm, which also feeds loxilb_ai_tokens_estimated_total), while a NON-STREAMED one is reported by RecordTokenUsageMissing and charged nothing. This family is therefore a superset of the estimated one, and the gap between them is the uncharged non-streamed half. Restricted to SUCCESSFUL (2xx) responses: an error body carries no usage object either, but it completed no work, so it is not an accounting hole and the data plane does not report it. Without that test a backend outage would drive the family harder than the condition it reports. The reason label splits the uncharged half by the BOUNDARY the report fired at, because that half was covering two opposite policy cases in one number: response_complete is the H1 keep-alive reset, where the client sent the next request on the same connection and the exchange demonstrably finished, so a 2xx without usage is the backend omitting it; connection_close is the H1/H2 teardown sweep, where the status was seen and the connection ended before any usage was read, which a client taking the 2xx and cutting reaches identically; h2_stream_close is an HTTP/2 stream close, which nghttp2 runs for a finished response and for one aborted after its headers with no error code plumbed through, so it establishes neither. stream_estimated is the charged arm. Only response_complete proves completion, and the names say so rather than guessing. Driving one reason does NOT activate the others: a single-request-per-connection arm produces connection_close only, and response_complete needs two requests on one kept-alive connection.",
     "writer_sources": [
      { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 484, "writes": "aiTokensMissingTotal", "note": "the streamed half only, charged from the estimate net, and the sole writer of reason=stream_estimated. The non-streamed half is RecordTokenUsageMissing (api/prometheus/ai_metrics.go:561), reached from the cgo export llb_ai_record_usage_missing (pkg/loxinet/ai_gateway_dp.go:1498), which charges nothing and writes the other three reasons -- so this family must never be read as a subset of loxilb_ai_tokens_estimated_total. It is a second writer chain rather than a hop on this one, and writer_sources holds a single ordered chain, which is why it is recorded here in prose. The reason vocabulary is closed on the Go side by boundTokenMissingReason (api/prometheus/ai_metrics.go:513), which collapses anything it does not know onto \"unknown\": the value crosses cgo from a separately versioned repo, so pin skew is a real way to reach an unlisted value and an allow-list is what keeps the label bounded. The data-plane spellings live in loxilb-ebpf/common/sockproxy_ai_gw.h (LLB_AI_UMISS_*) and must be changed on both sides together. Both writers are attributed-only: a keyless response has no tenant and is counted per VIP in loxilb_ai_unmetered_requests_total instead" },
-     {"symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1361, "call_line": 1387, "calls": "RecordTokenUsage", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1367, "call_line": 1393, "calls": "RecordTokenUsage", "entry_point": "cgo-export"}
     ],
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:1900",
@@ -1358,7 +1358,7 @@
     "activation_precondition": "Tier-0 session stickiness: a request must reuse a session key (client X-Conversation-Id header, else JSON user field) already bound to a P/D endpoint pair. Every request opening a new session leaves this counter at zero.",
     "writer_sources": [
      { "symbol": "RecordPDSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 994, "writes": "aiPDSessionHitsTotal" },
-     {"symbol": "llb_ai_pd_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1594, "call_line": 1597, "calls": "RecordPDSessionHit", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_pd_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1679, "call_line": 1682, "calls": "RecordPDSessionHit", "entry_point": "cgo-export"}
     ],
     "evidence": "runtime verification 2026-09-11 (plan Part E, E.5 row 'WP-4 session stickiness'): live P/D KV-exact rule, 30 requests over 5 reused X-Conversation-Id keys -> delta exactly 25 (N-K); 5 establishes all fell through Tier-1.5 (pd_kv_tier15_fallthrough_total +5, miss_reason=tokenize). Red twin: 10 all-unique keys -> delta exactly 0, fallthrough +10. Conservation: 40 accepted requests = 25 Tier-0 hits + 15 Tier-1.5 fallthroughs."
    },
@@ -1367,7 +1367,7 @@
     "activation_precondition": "a P/D disaggregation rule accepting AI traffic: every successful prefill selection increments exactly one of the four tier children (tier0 session, tier1 trie, tier15 KV-exact, tier2 min-load). Admission outcomes (parked, no-capacity) and pre-routing failures increment nothing, so per window accepted selections == sum over tiers (WP-8 conservation identity).",
     "writer_sources": [
      { "symbol": "RecordPDTierSelected", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1004, "writes": "aiPDTierSelectedTotal" },
-     {"symbol": "llb_ai_pd_tier_selected", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1607, "call_line": 1610, "calls": "RecordPDTierSelected", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_pd_tier_selected", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1692, "call_line": 1695, "calls": "RecordPDTierSelected", "entry_point": "cgo-export"}
     ],
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_pd.c:1766",
@@ -1383,7 +1383,7 @@
     "activation_precondition": "a fullproxy (L7) rule carrying session_header_name, and at least one session key REUSED within its binding lifetime: the first request per key is a miss that installs the pin, so N requests over K distinct keys record exactly N-K hits. Recorded ONLY from the PROXY_MODE_DFL learned-binding path. The PROXY_MODE_ALL branch holds a second, UNREACHABLE call site: proxy_mode=PROXY_MODE_ALL is written by exactly one sel-type case (NAT_LB_SEL_N2) and session_header_enabled=1 by exactly two others (NAT_LB_SEL_RR, NAT_LB_SEL_RR_PERSIST), both of which force proxy_mode=PROXY_MODE_DFL; the proxy_arg is zero-initialised by both callers of llb_conv_nat2proxy, so an N2 rule leaves the flag 0 rather than stale. session_header_enabled==1 therefore implies proxy_mode==DFL, and the ALL-branch guard can never be true. The in-tree comment argues this from header PARSING; the invariant that actually holds is the config mapping. Filed as D-3.",
     "writer_sources": [
      { "symbol": "RecordNormalSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1024, "writes": "aiNormalSessionHitsTotal" },
-     {"symbol": "llb_ai_normal_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1619, "call_line": 1622, "calls": "RecordNormalSessionHit", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_normal_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1704, "call_line": 1707, "calls": "RecordNormalSessionHit", "entry_point": "cgo-export"}
     ],
     "evidence": "COMMITTED GATE since 2026-09-21: cicd/vllm-pd-disagg validation.sh phase J, case TN0, on port 2024 -- a fullproxy rule with session_header_name=X-Conversation-Id and NO pd_disagg, already created on the default CI path. The scenario runs in ai-gateway-sanity.yml against mock vLLM, so this is scored every PR. Supersedes the 2026-09-14 hand-run (E.5 row 'wp4-ns-20260914'), a one-off runtime observation with no standing gate. GREEN: 100P/0F on ns-u24 (32adf700ee59) -- twice back to back WITH reconfiguration (green2/green3) and twice more against the SAME gateway with NO reconfiguration (rerunA/rerunB); across those the family's running total climbed 4 -> 12 -> 20, proving the binding table persisted while every delta still held at N-K, which is the per-run nonce doing its job. Readings identical on all four: reuse delta 4, distinct-key delta 0, DFL log-line delta 4, ALL log-line delta 0, series 1. RED TWINS 96P/4F each, every red predicted in advance: twin H (twinh-u24, DFL-site increment removed, mutation diff 11 lines) reddens the reuse delta (4->0), family-alive (total=0) and series (0) while the DFL LOG arm stays GREEN at delta=4, showing the log evidence and the metric are independent measurements; twin I (twini-u24, increment made unconditional, diff 10 lines) reddens the distinct-key control (0->5), the reuse delta (4->9), the K-varied arm (4->10) and the cross-family flat arm (0->5) while family-alive and series stay GREEN, so those two fire on a MISSING family and not on a miscounted one."
    },
@@ -1392,7 +1392,7 @@
     "activation_precondition": "an in-flight streaming (SSE) AI response: the datapath increments on stream start and decrements on stream end, so the gauge only has children while streaming traffic exists or has existed for that model.",
     "writer_sources": [
      { "symbol": "AdjustActiveStreams", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 455, "writes": "aiActiveStreams", "note": "one Add(delta) for both directions; the decrement site is llb_ai_stream_end (pkg/loxinet/ai_gateway_dp.go:958)" },
-     {"symbol": "llb_ai_stream_start", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1485, "call_line": 1493, "calls": "AdjustActiveStreams", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_stream_start", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1511, "call_line": 1519, "calls": "AdjustActiveStreams", "entry_point": "cgo-export"}
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestAdjustActiveStreams asserts the paired add/subtract, but drives the helper directly; scenario M02 owns the runtime proof, where the gauge must return to 0 after the last stream closes."
    },
@@ -1401,7 +1401,7 @@
     "activation_precondition": "AI traffic through an AI-mode service rule. The family partitions on outcome: completed requests are counted by RecordAIRequest, denials by RecordAIRequestDenied, so a Gateway with no AI rule exposes no children at all.",
     "writer_sources": [
      { "symbol": "RecordAIRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1110, "writes": "aiRequestsTotal", "note": "outcome=completed here; the denial half is RecordAIRequestDenied (:670), reached from recordGateDenial (pkg/loxinet/ai_gateway_dp.go:284). Summing the family without selecting an outcome double-counts denials as served requests" },
-     {"symbol": "llb_ai_record_request", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1557, "call_line": 1562, "calls": "RecordAIRequest", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_record_request", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1597, "call_line": 1602, "calls": "RecordAIRequest", "entry_point": "cgo-export"}
     ],
     "evidence": "api/prometheus/ai_denominator_test.go TestRecordAIRequestDeniedIsADenominator and TestEveryGateDenialArmIsCounted pin the outcome partition; both drive the helpers directly. Observed live with the outcome label on the testbed exposition captured 2026-09-10 (UI repo src/observability/__live-metrics.txt), which proves the partition exists but checks no value -- scenario M02 owns the exact ledger."
    },
@@ -1410,7 +1410,7 @@
     "activation_precondition": "a completed AI request through an AI-mode rule; denials deliberately do NOT observe this histogram, so a Gateway serving only rejected requests exposes no samples.",
     "writer_sources": [
      { "symbol": "RecordAIRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1110, "writes": "aiRequestDurationSeconds" },
-     {"symbol": "llb_ai_record_request", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1557, "call_line": 1562, "calls": "RecordAIRequest", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_record_request", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1597, "call_line": 1602, "calls": "RecordAIRequest", "entry_point": "cgo-export"}
     ],
     "evidence": "api/prometheus/ai_denominator_test.go TestRecordAIRequestDeniedLeavesLatencyAlone is the red twin -- a denial must leave the histogram count unchanged. Helper-level only; scenario M02 owns the runtime proof."
    },
@@ -1419,7 +1419,7 @@
     "activation_precondition": "an AI request that reached a VIP with no tenant attribution (no API key, or a key store that could not answer), so it could not be metered; with API-key auth required on every AI rule this counter stays at zero by design.",
     "writer_sources": [
      { "symbol": "RecordUnmeteredRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1032, "writes": "aiUnmeteredRequestsTotal", "note": "labelled by vip, not tenant -- an unmetered request is precisely one with no tenant" },
-     {"symbol": "llb_ai_record_unmetered", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1636, "call_line": 1638, "calls": "RecordUnmeteredRequest", "entry_point": "cgo-export"}
+     {"symbol": "llb_ai_record_unmetered", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1721, "call_line": 1723, "calls": "RecordUnmeteredRequest", "entry_point": "cgo-export"}
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_gateway_dp.go:1050 is the only call site. Scenario M03 owns the runtime proof."
    },
