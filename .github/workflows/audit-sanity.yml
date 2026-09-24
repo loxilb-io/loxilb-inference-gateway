@@ -90,9 +90,9 @@ jobs:
         # (restart record, retroactive write-failure record, kept plain
         # segment) fire from the environment knob as well as from the hook.
         run: |
-          go vet ./pkg/audit ./pkg/logrotate
-          go test -count=1 -race ./pkg/audit ./pkg/logrotate
-          go test -count=1 -tags audit_faults ./pkg/audit
+          sudo -E env "PATH=$PATH" go vet ./pkg/audit ./pkg/logrotate
+          sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/audit ./pkg/logrotate
+          sudo -E env "PATH=$PATH" go test -count=1 -tags audit_faults ./pkg/audit
 
       - name: Disposable PostgreSQL for the store-backed suites
         run: |
@@ -125,8 +125,8 @@ jobs:
       - name: MCP bridge module (originator header)
         run: |
           cd mcp
-          go vet ./...
-          go test -count=1 ./...
+          sudo -E env "PATH=$PATH" go vet ./...
+          sudo -E env "PATH=$PATH" go test -count=1 ./...
 
   audit-scenario:
     name: audit-scenario
