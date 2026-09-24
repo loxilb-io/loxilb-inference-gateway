@@ -9813,8 +9813,8 @@ definitions:
         type: object
         description: >-
           Service configuration. Implementation warnings for this REST representation:
-          POST does not copy adminStateUp, connectionLimit or snat into the domain.
-          GET omits privateIP, connectionLimit, timeoutMemberConnect, timeoutMemberData,
+          POST does not copy adminStateUp or snat into the domain.
+          GET omits privateIP, timeoutMemberConnect, timeoutMemberData,
           timeoutTcpInspect, vip_qos_policy_id, alpn_protocols, tls_ciphers, tls_versions,
           hsts_max_age, hsts_include_subdomains, hsts_preload, backend_ca_cert_id,
           backend_client_cert_id and mtls_frontend.client_crl_path. GET/edit/POST is
@@ -9853,12 +9853,15 @@ definitions:
             type: integer
             format: uint32
             description: >-
-              Requested concurrent-connection ceiling across the service's endpoints;
-              zero represents unlimited. Distinct from a per-source-IP security limit.
-              The domain and eBPF conntrack selector contain a per-rule limit gate,
-              but this REST POST does not copy the value, PATCH does not overlay it,
-              and normal GET omits it. This field cannot currently establish an
-              enforced connection limit through these REST operations.
+              Concurrent-connection ceiling for the rule, counted across all of its
+              endpoints; zero or absent means unlimited. Distinct from the per-source-IP
+              security limits. POST stores it, PATCH overlays it when present (an
+              explicit zero clears it) and GET reports it (omitted when zero); null is
+              rejected. Enforced by the conntrack selector on DNAT-mode rules: once the
+              rule's live connection count has reached the ceiling, further SYNs are
+              dropped without a reset and without a conntrack entry, and a slot frees
+              when a connection is torn down. A FullProxy rule is not gated by this
+              field, and HTTP/2 streams are not counted as connections.
           annotations:
             type: object
             additionalProperties:

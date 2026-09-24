@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "5e36fc44f7bcae7588611893ef158e68e0f26c2a0e67d0a9fc719ab3c026c3bc",
-    "swagger.yml": "8d752c267f833a0a14b0243354daf121441d0df1d86d448b1a49cb2124fc8549"
+    "swagger.yml": "2e8b7d643f54f68724f910ef4d3c08ab01ddf011b4c44a62ab632e70715acbdf"
   },
   "fields": [
     {
@@ -301,7 +301,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments",
       "required": false,
       "contract": {
-        "description": "Service configuration. Implementation warnings for this REST representation: POST does not copy adminStateUp, connectionLimit or snat into the domain. GET omits privateIP, connectionLimit, timeoutMemberConnect, timeoutMemberData, timeoutTcpInspect, vip_qos_policy_id, alpn_protocols, tls_ciphers, tls_versions, hsts_max_age, hsts_include_subdomains, hsts_preload, backend_ca_cert_id, backend_client_cert_id and mtls_frontend.client_crl_path. GET/edit/POST is therefore not a lossless configuration round trip. PATCH has a limited overlay and does not update arbitrary properties. Metadata-only POSTs can return an unchanged-rule error before applying metadata; managed is not assigned on the existing-rule update path. FullProxy replacement removes its pool but C retains the listener; reuse does not reliably restore listener arguments or rebuild TLS contexts, so updated TLS/HSTS/timeout settings are not established by stored state. Requested-security fail-closed behavior and LB-resource/listener policy ownership remain unresolved; these defects are not supported fallback or update semantics.",
+        "description": "Service configuration. Implementation warnings for this REST representation: POST does not copy adminStateUp or snat into the domain. GET omits privateIP, timeoutMemberConnect, timeoutMemberData, timeoutTcpInspect, vip_qos_policy_id, alpn_protocols, tls_ciphers, tls_versions, hsts_max_age, hsts_include_subdomains, hsts_preload, backend_ca_cert_id, backend_client_cert_id and mtls_frontend.client_crl_path. GET/edit/POST is therefore not a lossless configuration round trip. PATCH has a limited overlay and does not update arbitrary properties. Metadata-only POSTs can return an unchanged-rule error before applying metadata; managed is not assigned on the existing-rule update path. FullProxy replacement removes its pool but C retains the listener; reuse does not reliably restore listener arguments or rebuild TLS contexts, so updated TLS/HSTS/timeout settings are not established by stored state. Requested-security fail-closed behavior and LB-resource/listener policy ownership remain unresolved; these defects are not supported fallback or update semantics.",
         "type": "object"
       }
     },
@@ -481,7 +481,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/connectionLimit",
       "required": false,
       "contract": {
-        "description": "Requested concurrent-connection ceiling across the service's endpoints; zero represents unlimited. Distinct from a per-source-IP security limit. The domain and eBPF conntrack selector contain a per-rule limit gate, but this REST POST does not copy the value, PATCH does not overlay it, and normal GET omits it. This field cannot currently establish an enforced connection limit through these REST operations.",
+        "description": "Concurrent-connection ceiling for the rule, counted across all of its endpoints; zero or absent means unlimited. Distinct from the per-source-IP security limits. POST stores it, PATCH overlays it when present (an explicit zero clears it) and GET reports it (omitted when zero); null is rejected. Enforced by the conntrack selector on DNAT-mode rules: once the rule's live connection count has reached the ceiling, further SYNs are dropped without a reset and without a conntrack entry, and a slot frees when a connection is torn down. A FullProxy rule is not gated by this field, and HTTP/2 streams are not counted as connections.",
         "format": "uint32",
         "type": "integer"
       }
