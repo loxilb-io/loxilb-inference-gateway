@@ -219,6 +219,7 @@ type Writer struct {
 
 	seq       atomic.Uint64
 	lastWrite atomic.Int64
+	lastBeat  atomic.Int64 // when the writer goroutine last proved itself alive
 	written   atomic.Int64 // record bytes appended by this process
 	startedAt time.Time
 	seg       *segmenter
@@ -541,6 +542,8 @@ func (w *Writer) runGuarded() (info panicInfo, panicked bool) {
 }
 
 func (w *Writer) run() {
+	// Starting is the first proof of life; the heartbeat keeps it current.
+	w.lastBeat.Store(w.now().Unix())
 	w.running.Store(true)
 	w.startRecords()
 
@@ -854,6 +857,7 @@ func (w *Writer) noteArrival(r *Record) {
 // drains the producers' drop rings into gap records.
 func (w *Writer) heartbeat() {
 	w.stats.heartbeats.Add(1)
+	w.lastBeat.Store(w.now().Unix())
 	w.emitProducerGaps()
 	w.writeSystem(sysRecord("sys.heartbeat", "writer", &SysDetail{Heartbeat: w.heartbeatPayload()}))
 }
@@ -936,6 +940,10 @@ type Stats struct {
 	Running       bool
 	SeqHigh       uint64
 	LastWriteUnix int64
+	// LastHeartbeatUnix is when the writer goroutine last wrote its
+	// liveness record; a value that stops advancing is a writer that is
+	// not running, whatever the counters say.
+	LastHeartbeatUnix int64
 
 	Accepted map[Stream]uint64
 	Dropped  []DropCount
@@ -983,38 +991,48 @@ type Stats struct {
 	Producers []ProducerStats
 }
 
+// Streams lists the record streams in a fixed order, for a consumer that
+// reports every stream whether or not it has seen a record.
+func Streams() []Stream { return append([]Stream(nil), streamByIdx[:]...) }
+
+// DropReasons lists the drop reasons in a fixed order, for the same
+// consumer: a reason reported at zero is distinguishable from one nobody
+// asked about.
+func DropReasons() []string { return append([]string(nil), dropReasons[:]...) }
+
 // Stats returns a snapshot. It is safe from any goroutine.
 func (w *Writer) Stats() Stats {
 	s := Stats{
-		BootID:          w.bootID,
-		Running:         w.running.Load(),
-		SeqHigh:         w.seq.Load(),
-		LastWriteUnix:   w.lastWrite.Load(),
-		Accepted:        make(map[Stream]uint64, numStreams),
-		QueueDepth:      make(map[string]int, numQueues),
-		QueueHWM:        make(map[string]int, numQueues),
-		WriteFailures:   w.stats.writeFailures.Load(),
-		SyncFailures:    w.stats.syncFailures.Load(),
-		MgmtTimeouts:    w.stats.mgmtTimeouts.Load(),
-		Panics:          w.stats.panics.Load(),
-		Restarts:        w.stats.restarts.Load(),
-		Heartbeats:      w.stats.heartbeats.Load(),
-		Rotations:       w.stats.rotations.Load(),
-		PathSanitized:   w.stats.pathSanitized.Load(),
-		Unattributed:    w.stats.unattributed.Load(),
-		PermRepaired:    w.seg.stats.permRepaired.Load(),
-		RotationFailed:  w.seg.stats.rotationFailed.Load(),
-		CompressFailed:  w.seg.stats.compressFailed.Load(),
-		CompressSkipped: w.seg.stats.compressSkipped.Load(),
-		Pruned:          w.stats.pruned.Load(),
-		ReserveBreaches: w.stats.reserveBreaches.Load(),
-		ReserveBreached: w.reserveBreached.Load(),
-		SealedBytes:     w.sealedBytes.Load(),
-		SegmentUUID:     w.seg.currentUUID(),
-		OrphanedIntents: w.stats.orphanedIntents.Load(),
-		StartedUnix:     w.startedAt.Unix(),
-		BytesWritten:    w.written.Load(),
-		Retention:       *w.retention.Load(),
+		BootID:            w.bootID,
+		Running:           w.running.Load(),
+		SeqHigh:           w.seq.Load(),
+		LastWriteUnix:     w.lastWrite.Load(),
+		LastHeartbeatUnix: w.lastBeat.Load(),
+		Accepted:          make(map[Stream]uint64, numStreams),
+		QueueDepth:        make(map[string]int, numQueues),
+		QueueHWM:          make(map[string]int, numQueues),
+		WriteFailures:     w.stats.writeFailures.Load(),
+		SyncFailures:      w.stats.syncFailures.Load(),
+		MgmtTimeouts:      w.stats.mgmtTimeouts.Load(),
+		Panics:            w.stats.panics.Load(),
+		Restarts:          w.stats.restarts.Load(),
+		Heartbeats:        w.stats.heartbeats.Load(),
+		Rotations:         w.stats.rotations.Load(),
+		PathSanitized:     w.stats.pathSanitized.Load(),
+		Unattributed:      w.stats.unattributed.Load(),
+		PermRepaired:      w.seg.stats.permRepaired.Load(),
+		RotationFailed:    w.seg.stats.rotationFailed.Load(),
+		CompressFailed:    w.seg.stats.compressFailed.Load(),
+		CompressSkipped:   w.seg.stats.compressSkipped.Load(),
+		Pruned:            w.stats.pruned.Load(),
+		ReserveBreaches:   w.stats.reserveBreaches.Load(),
+		ReserveBreached:   w.reserveBreached.Load(),
+		SealedBytes:       w.sealedBytes.Load(),
+		SegmentUUID:       w.seg.currentUUID(),
+		OrphanedIntents:   w.stats.orphanedIntents.Load(),
+		StartedUnix:       w.startedAt.Unix(),
+		BytesWritten:      w.written.Load(),
+		Retention:         *w.retention.Load(),
 	}
 	s.SegmentOpenedUnix, s.SegmentRecords, s.SegmentBytes = w.seg.current()
 	if id := w.lastOrphan.Load(); id != nil {
