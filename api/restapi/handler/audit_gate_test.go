@@ -325,6 +325,9 @@ func TestAuditGateLoginCarriesClaimedNameNeverPassword(t *testing.T) {
 	if result["event_type"] != "sec.mgmt.authn_failed" || result["class"] != "security" || result["result_of"] != "mgmt.auth.login" {
 		t.Fatalf("result %v", result)
 	}
+	if a := actorOf(result); a["username_claimed"] != "bob" || a["user"] != nil || a["provisional"] != true {
+		t.Fatalf("refused login result actor %v: must keep the claimed name, never promote it", a)
+	}
 	if o := result["outcome"].(map[string]any); o["reason"] != "login_failed" {
 		t.Fatalf("result reason %v", o["reason"])
 	}

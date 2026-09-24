@@ -242,8 +242,11 @@ type Writer struct {
 	stats writerStats
 
 	// Writer-goroutine state.
-	pending   []syncReq
-	failing   *failInterval
+	pending []syncReq
+	failing *failInterval
+	// appended is set by a successful append and cleared by the flush that
+	// synced it; it is what lets last_write mean what it says.
+	appended  bool
 	recovered *recovery
 	pendingP  *panicInfo
 	sysDepth  int
@@ -708,7 +711,14 @@ func (w *Writer) flush() {
 		w.failPending(fmt.Errorf("%w: %v", ErrWriteFailed, err))
 		return
 	}
-	w.lastWrite.Store(w.now().Unix())
+	// last_write means a record reached the disk. A flush that had nothing
+	// to sync (every append since the last one failed) must not move it, or
+	// the staleness the metric exists to show would be hidden by the very
+	// ticker that fires while the disk is unwritable.
+	if w.appended {
+		w.lastWrite.Store(w.now().Unix())
+		w.appended = false
+	}
 	for _, sr := range w.pending {
 		sr.done <- nil
 	}
@@ -763,6 +773,7 @@ func (w *Writer) write(r *Record) error {
 		return err
 	}
 	w.seq.Store(seq)
+	w.appended = true
 	w.written.Add(int64(len(line)))
 	w.stats.accepted[idxOf(r.Stream)].Add(1)
 	if w.failing != nil && w.sysDepth == 0 {

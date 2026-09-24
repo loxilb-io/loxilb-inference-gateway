@@ -433,6 +433,10 @@ type auditTrail struct {
 	// of the request; trusted caches the one lookup that decides it.
 	originator string
 	trusted    *bool
+	// claimed is the login name the request asserted, carried from the
+	// intent to a result that never got a principal: a refused login is
+	// recorded against the name that was tried.
+	claimed string
 }
 
 // newAuditTrail starts the request-scoped state, reading the originator
@@ -532,6 +536,7 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), auditTrailKey{}, trail))
 
 		fields, claimed := auditReadBody(r, route)
+		trail.claimed = claimed
 		eventID := audit.NewEventID()
 		intent := wr.AcquireRecord()
 		intent.EventID = eventID
@@ -720,6 +725,7 @@ func auditPrincipalActor(r *http.Request, t *auditTrail, route auditRoute) audit
 	}
 	if !t.hasPrinc {
 		a.Provisional = true
+		a.UsernameClaimed = t.claimed
 		return a
 	}
 	switch p := t.principal.(type) {

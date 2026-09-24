@@ -352,7 +352,13 @@ func (s *segmenter) openActive(firstSeq uint64) error {
 	u := s.uuid
 	s.curUUID.Store(&u)
 	s.opened = s.now()
+	// The size is what a short write is cut back to, so it is the file's
+	// real length: zero for the segment just created, whatever a taken-over
+	// path already held.
 	s.size = 0
+	if st, err := f.Stat(); err == nil {
+		s.size = st.Size()
+	}
 	s.count = 0
 	s.curOpened.Store(s.opened.Unix())
 	s.curRecords.Store(0)
@@ -417,12 +423,24 @@ func (s *segmenter) append(line []byte, seq uint64, ts time.Time) error {
 	if s.fault(FaultWriterWriteFailed) {
 		return syscall.EIO
 	}
-	n, err := s.f.Write(line)
-	s.size += int64(n)
-	s.curBytes.Store(s.size)
+	n, err := fileWrite(s.f, line)
 	if err != nil {
+		if n > 0 {
+			// A short write (a filesystem that filled mid-line) leaves the
+			// head of this record on disk, and the next successful append
+			// would continue it: two records on one line, neither readable.
+			// Cut the file back to the last complete line; O_APPEND puts
+			// the next write at the new end.
+			if terr := s.f.Truncate(s.size); terr == nil {
+				n = 0
+			}
+		}
+		s.size += int64(n)
+		s.curBytes.Store(s.size)
 		return err
 	}
+	s.size += int64(n)
+	s.curBytes.Store(s.size)
 	if s.count == 0 {
 		s.firstSeq = seq
 		s.firstTS = ts
@@ -433,6 +451,10 @@ func (s *segmenter) append(line []byte, seq uint64, ts time.Time) error {
 	s.lastTS = ts
 	return nil
 }
+
+// fileWrite is (*os.File).Write behind a name the tests can replace with a
+// short write.
+var fileWrite = func(f *os.File, b []byte) (int, error) { return f.Write(b) }
 
 // current describes the active segment for readers off the writer
 // goroutine: when it was opened, how many records it holds and its size

@@ -27,6 +27,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -862,5 +864,77 @@ func TestDurableWriteTimesOut(t *testing.T) {
 	w.faults.arm("")
 	if w.Stats().MgmtTimeouts != 1 {
 		t.Fatalf("timeouts %d", w.Stats().MgmtTimeouts)
+	}
+}
+
+// TestLastWriteMovesOnlyWhenARecordLanded: last_write is the time a record
+// reached the disk. While every append fails, the heartbeat ticker keeps
+// flushing an unchanged file, and that flush must not move the timestamp:
+// its staleness is the operator's signal that the writer is not writing.
+func TestLastWriteMovesOnlyWhenARecordLanded(t *testing.T) {
+	cfg := testConfig(t)
+	var clock atomic.Int64
+	clock.Store(1_700_000_000)
+	cfg.now = func() time.Time { return time.Unix(clock.Load(), 0) }
+	cfg.HeartbeatInterval = 20 * time.Millisecond
+	w := startWriter(t, cfg)
+	if err := w.Write(context.Background(), mgmtIntent("/first")); err != nil {
+		t.Fatal(err)
+	}
+	first := w.Stats().LastWriteUnix
+	if first != 1_700_000_000 {
+		t.Fatalf("last write %d after the first record", first)
+	}
+	w.faults.arm(FaultWriterWriteFailed)
+	clock.Store(1_700_000_100)
+	beats := w.Stats().Heartbeats
+	waitFor(t, "two heartbeats that could not be written", func() bool { return w.Stats().Heartbeats >= beats+2 })
+	if got := w.Stats().LastWriteUnix; got != first {
+		t.Fatalf("last_write moved to %d while nothing could be written", got)
+	}
+	if w.Stats().WriteFailures == 0 {
+		t.Fatal("the failing heartbeats were not counted")
+	}
+	w.faults.arm("")
+	if err := w.Write(context.Background(), mgmtIntent("/again")); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Stats().LastWriteUnix; got != 1_700_000_100 {
+		t.Fatalf("last_write %d after a record landed, want 1700000100", got)
+	}
+}
+
+// TestShortAppendLeavesNoTornLine: a filesystem that fills mid-line takes
+// the head of a record and refuses the rest. The next successful append
+// must start a fresh line, not continue the torn one, so every line of the
+// segment still parses and the refused record is not on disk at all.
+func TestShortAppendLeavesNoTornLine(t *testing.T) {
+	cfg := testConfig(t)
+	var short atomic.Bool
+	orig := fileWrite
+	fileWrite = func(f *os.File, b []byte) (int, error) {
+		if short.CompareAndSwap(true, false) {
+			n, _ := f.Write(b[:len(b)/2])
+			return n, syscall.ENOSPC
+		}
+		return f.Write(b)
+	}
+	t.Cleanup(func() { fileWrite = orig })
+	w := startWriter(t, cfg)
+	short.Store(true)
+	if err := w.Write(context.Background(), mgmtIntent("/short")); !errors.Is(err, ErrWriteFailed) {
+		t.Fatalf("got %v, want ErrWriteFailed", err)
+	}
+	if err := w.Write(context.Background(), mgmtIntent("/whole")); err != nil {
+		t.Fatal(err)
+	}
+	closeWriter(t, w)
+	ls := readDir(t, cfg.Dir) // fails the test on any line that does not parse
+	if n := len(ofType(ls, "mgmt.config.mutate")); n != 1 {
+		t.Fatalf("mutate records on disk %d, want 1 (the refused record must not be there)", n)
+	}
+	wf := ofType(ls, "sys.writer.write_failed")
+	if len(wf) != 1 || wf[0].detail()["count"] != float64(1) || wf[0].detail()["errno_class"] == "" {
+		t.Fatalf("retroactive record %v", wf)
 	}
 }
