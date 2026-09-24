@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-22T17:42:26+00:00",
-  "source_revision": "881c222e10fb2885d78c893a92340f08a65968bf"
+  "generated_at": "2026-09-24T00:31:00+00:00",
+  "source_revision": "9a1b8b0ae652e8a180bc0dc3711198bbf35caf27"
  },
  "contract": {
   "total": 253,
@@ -3750,16 +3750,16 @@
      "symbol": "autoPersistFire",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 605,
-     "call_line": 623,
+     "def_line": 659,
+     "call_line": 677,
      "calls": "RecordAutoPersistFailure"
     },
     {
      "symbol": "InitAutoPersist",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 584,
-     "call_line": 589,
+     "def_line": 638,
+     "call_line": 643,
      "calls": "autoPersistFire",
      "note": "registration, not a call: autoPersistFire is handed to NewAutoPersister as the debouncer callback. Returns early when --config-auto-persist=off, which is the one configuration that stops this writer entirely"
     },
@@ -4060,7 +4060,7 @@
      "symbol": "BootConfigConflictInc",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 181,
+     "def_line": 192,
      "writes": "bootConfigConflict"
     },
     {
@@ -4366,8 +4366,8 @@
      "symbol": "AutoPersistMiddleware",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 678,
-     "call_line": 687,
+     "def_line": 732,
+     "call_line": 741,
      "calls": "MarkConfigMutated",
      "entry_point": "http-handler",
      "note": "called on every 2xx eligible mutation, including when auto-persist is off -- there the gauge staying at 1 is the operational signal"
@@ -6135,7 +6135,7 @@
      "symbol": "observeRestore",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 170,
+     "def_line": 181,
      "writes": "lastRestoreTimestamp",
      "note": "advanced only when committed is true, so dry-runs deliberately leave it unchanged"
     },
@@ -6152,8 +6152,8 @@
      "symbol": "ConfigPostRestore",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 271,
-     "call_line": 320,
+     "def_line": 286,
+     "call_line": 335,
      "calls": "Restore",
      "entry_point": "http-handler"
     }
@@ -9116,8 +9116,8 @@
      "symbol": "writeThroughWithConfigWritesHeld",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 107,
-     "call_line": 110,
+     "def_line": 108,
+     "call_line": 111,
      "calls": "WriteThrough",
      "note": "holds configWrites exclusively around the write-through so mutating calls wait for the capture instead of racing it"
     },
@@ -9125,8 +9125,8 @@
      "symbol": "ConfigPostPersist",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 411,
-     "call_line": 417,
+     "def_line": 456,
+     "call_line": 462,
      "calls": "writeThroughWithConfigWritesHeld",
      "entry_point": "http-handler",
      "note": "also reached from the boot write-through (api/loxinlp/nlp.go:1941), from restore/import commits, and from the auto-persist debouncer (:615)"
@@ -11709,7 +11709,7 @@
      "symbol": "observeRestore",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 170,
+     "def_line": 181,
      "writes": "restoreDuration"
     },
     {
@@ -11725,8 +11725,8 @@
      "symbol": "ConfigPostRestore",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 271,
-     "call_line": 320,
+     "def_line": 286,
+     "call_line": 335,
      "calls": "Restore",
      "entry_point": "http-handler"
     }
@@ -11762,7 +11762,7 @@
      "symbol": "observeRestore",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 170,
+     "def_line": 181,
      "writes": "restoreTotal",
      "note": "result label comes from restoreResultLabel, which folds a nil result to \"rejected\" and an error to \"error\"; the mode/result children are pre-created in init at :139 so the series exist at 0 from the first scrape"
     },
@@ -11780,8 +11780,8 @@
      "symbol": "ConfigPostRestore",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 271,
-     "call_line": 320,
+     "def_line": 286,
+     "call_line": 335,
      "calls": "Restore",
      "entry_point": "http-handler",
      "note": "boot replay reaches the same writer through applySnapshotBoot (api/loxinlp/nlp.go:1821)"
@@ -12903,8 +12903,8 @@
      "symbol": "ConfigGetSnapshot",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 220,
-     "call_line": 236,
+     "def_line": 221,
+     "call_line": 237,
      "calls": "Capture",
      "entry_point": "http-handler",
      "note": "also reached from ConfigGetExport (api/restapi/handler/backup.go:100) and from WriteThrough (pkg/snapshot/persist.go:189) on the persist path"
