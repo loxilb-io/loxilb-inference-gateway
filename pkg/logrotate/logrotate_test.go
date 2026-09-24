@@ -258,3 +258,41 @@ func TestIsBackupOfRejectsForeignNames(t *testing.T) {
 		t.Errorf("isBackupOf rejected own backup %q", good)
 	}
 }
+
+func TestGzipFileKeepsRequestedMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit-20260924-070000.000.jsonl")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("{}\n"), 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := GzipFile(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("original still present: %v", err)
+	}
+	st, err := os.Stat(path + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("archive mode %04o, want 0600", st.Mode().Perm())
+	}
+	f, err := os.Open(path + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(zr)
+	if err != nil || len(got) != 3*1024 {
+		t.Fatalf("archive content %d bytes, err %v", len(got), err)
+	}
+	if BackupName("/var/log/loxilb/audit/audit.jsonl", time.Date(2026, 9, 24, 7, 0, 0, 0, time.UTC)) !=
+		"/var/log/loxilb/audit/audit-20260924-070000.000.jsonl" {
+		t.Fatal("BackupName shape changed")
+	}
+}

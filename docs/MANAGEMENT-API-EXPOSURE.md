@@ -16,6 +16,17 @@ surface.
 Every one of those refusals is fatal before any socket binds. A profile whose
 security precondition does not hold is not started in a degraded mode.
 
+## Audit attribution
+
+Every management change is recorded in the audit trail under `--audit-dir`
+before it is applied, and the record's actor is the principal the request
+authenticated as. That principal exists only when an authentication service
+is enabled. Without `--userservice`, `--oauth2` or `--manualtoken` the
+management API is open and every record carries `actor.auth=none` and
+`actor.mechanism=none`: the trail still proves what changed and when, but
+not who changed it. A deployment that needs attributable records must
+enable an authentication service; `remote-tls` already requires one.
+
 ## `GET /metrics`
 
 The Prometheus route is declared without a security requirement, because a

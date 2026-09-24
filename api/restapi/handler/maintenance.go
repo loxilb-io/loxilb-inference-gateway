@@ -22,6 +22,7 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/maintenance"
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -78,8 +79,8 @@ func ConfigPutMaintenance(params operations.PutMaintenanceParams, principal any)
 		})
 	}
 	var st maintenance.Status
+	before := maintenance.Get()
 	if *attr.Enabled {
-		before := maintenance.Get()
 		st = maintenance.Enter(time.Duration(attr.DrainTimeoutSeconds) * time.Second)
 		if before.State != maintenance.StateMaintenance {
 			tk.LogIt(tk.LogInfo, "[MAINT] operator maintenance entered: op=%s drain_timeout=%ds\n",
@@ -91,5 +92,11 @@ func ConfigPutMaintenance(params operations.PutMaintenanceParams, principal any)
 			tk.LogIt(tk.LogInfo, "[MAINT] operator maintenance left: op=%s\n", st.OperationID)
 		}
 	}
+	// The record carries the transition, so a repeated idempotent call
+	// reads as what it was: the same state on both sides.
+	after := maintenance.Get()
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) {
+		d.ActiveFrom, d.ActiveTo = string(before.State), string(after.State)
+	})
 	return operations.NewPutMaintenanceOK().WithPayload(maintenanceStatusModel(st))
 }

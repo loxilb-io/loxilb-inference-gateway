@@ -31,6 +31,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	aiops "github.com/loxilb-io/loxilb/api/restapi/operations/ai"
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/audit"
 )
 
 // keyStoreFailure gives a key-store condition the status and the wording it
@@ -144,6 +145,10 @@ func ConfigGetAIApikeys(params aiops.GetConfigAiApikeyParams, principal interfac
 		summary := apiKeySummaryToModel(k)
 		result = append(result, summary)
 	}
+	// A listing-class read records how many keys were listed and for which
+	// tenant, never a key.
+	count := len(keys)
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.Count, d.Tenant = count, tenantID })
 
 	return aiops.NewGetConfigAiApikeyOK().WithPayload(result)
 }
@@ -162,6 +167,8 @@ func ConfigGetAIApikeyByID(params aiops.GetConfigAiApikeyKeyIDParams, principal 
 		}
 		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
+	tenantID := key.TenantID
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.Count, d.Tenant = 1, tenantID })
 
 	return aiops.NewGetConfigAiApikeyKeyIDOK().WithPayload(apiKeySummaryToModel(*key))
 }

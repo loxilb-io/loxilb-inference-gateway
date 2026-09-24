@@ -585,19 +585,16 @@ var snapshotFreeze = handler.SnapshotFreezeMiddleware
 // shadowing reason.
 var autoPersistKick = handler.AutoPersistMiddleware
 
+// auditGate aliases handler.AuditGateMiddleware for the same shadowing
+// reason.
+var auditGate = handler.AuditGateMiddleware
+
 func setupGlobalMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CORS grant strictly from the configured allowlist -- see
-		// setCORSHeaders for the semantics (and the reflected-origin
-		// defect it replaces).
-		setCORSHeaders(w, r)
-
-		// Handle preflight OPTIONS requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return // Important: return here to prevent further processing
-		}
-
+	// The audit gate wraps everything a request can change: the raw
+	// dispatches below and the generated chain behind next. It sits inside
+	// the CORS handling so its refusal carries the same headers as any
+	// other answer, and preflight never reaches it.
+	dispatch := auditGate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Capture load-balancer POST/PATCH bodies so their handlers can perform
 		// presence detection after generated binding drains r.Body.
 		// (map[string]json.RawMessage) — distinguishing an absent field from a zero
@@ -663,5 +660,18 @@ func setupGlobalMiddleware(next http.Handler) http.Handler {
 
 		// Delegate to the main handler for all other requests
 		next.ServeHTTP(w, r)
+	}))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORS grant strictly from the configured allowlist -- see
+		// setCORSHeaders for the semantics (and the reflected-origin
+		// defect it replaces).
+		setCORSHeaders(w, r)
+
+		// Handle preflight OPTIONS requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return // Important: return here to prevent further processing
+		}
+		dispatch.ServeHTTP(w, r)
 	})
 }
