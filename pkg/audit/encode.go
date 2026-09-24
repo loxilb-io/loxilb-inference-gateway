@@ -190,7 +190,7 @@ type mgmtJSON struct {
 	Checksum              string   `json:"checksum,omitempty"`
 	ContentDisposition    string   `json:"content_disposition,omitempty"`
 	Format                string   `json:"format,omitempty"`
-	SecretsIncluded       bool     `json:"secrets_included,omitempty"`
+	SecretsIncluded       *bool    `json:"secrets_included,omitempty"`
 	Filename              string   `json:"filename,omitempty"`
 	Count                 int      `json:"count,omitempty"`
 	Tenant                string   `json:"tenant,omitempty"`

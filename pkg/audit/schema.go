@@ -195,14 +195,17 @@ type MgmtDetail struct {
 	Checksum           string
 	ContentDisposition string
 	Format             string
-	SecretsIncluded    bool
-	Filename           string
-	Count              int
-	Tenant             string
-	ConfigGeneration   uint64
-	AuthMode           string
-	Mechanism          string
-	X509Error          string
+	// SecretsIncluded is a pointer so that an export can state false
+	// explicitly: the field is a claim about the document served, and an
+	// omitted claim is not the same as a negative one.
+	SecretsIncluded  *bool
+	Filename         string
+	Count            int
+	Tenant           string
+	ConfigGeneration uint64
+	AuthMode         string
+	Mechanism        string
+	X509Error        string
 }
 
 // DataDetail is the detail object of a data record. It has no body field,

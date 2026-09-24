@@ -116,6 +116,7 @@ func ConfigGetExport(params operations.GetConfigExportParams, principal any) mid
 	}
 
 	filename := fmt.Sprintf("loxilb-config-%s.json", time.Now().UTC().Format("20060102-150405"))
+	auditExportServed(params.HTTPRequest, doc, data, filename)
 	return middleware.ResponderFunc(func(w http.ResponseWriter, _ runtime.Producer) {
 		setDeprecationHeaders(w, "/netlox/v1/config/snapshot")
 		w.Header().Set("Content-Type", "application/json")

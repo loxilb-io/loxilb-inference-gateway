@@ -50,6 +50,7 @@ type gateFixture struct {
 	reached int
 	status  int
 	body    []byte
+	remote  string
 	inside  func(r *http.Request)
 }
 
@@ -57,7 +58,7 @@ func newGateFixture(t *testing.T) *gateFixture {
 	t.Helper()
 	// The writer insists on a 0700 directory; a fresh subdirectory gets that
 	// mode from CreateDir, where the test harness's own directory does not.
-	f := &gateFixture{t: t, dir: filepath.Join(t.TempDir(), "audit"), status: http.StatusOK}
+	f := &gateFixture{t: t, dir: filepath.Join(t.TempDir(), "audit"), status: http.StatusOK, remote: "10.1.2.3:4444"}
 	w, err := audit.New(audit.Config{Dir: f.dir, CreateDir: true, InstanceID: "gw-test"})
 	if err != nil {
 		t.Fatal(err)
@@ -76,12 +77,16 @@ func newGateFixture(t *testing.T) *gateFixture {
 		switch {
 		case strings.HasPrefix(rel, "/oauth/") && strings.HasSuffix(rel, "/callback"):
 			return "/netlox/v1/oauth/{provider}/callback", true
+		case strings.HasPrefix(rel, "/oauth/") && strings.HasSuffix(rel, "/token"):
+			return "/netlox/v1/oauth/{provider}/token", true
 		case strings.HasPrefix(rel, "/oauth/"):
 			return "/netlox/v1/oauth/{provider}", true
 		case strings.HasPrefix(rel, "/auth/users/"):
 			return "/netlox/v1/auth/users/{id}", true
 		case strings.HasPrefix(rel, "/log-archives/"):
 			return "/netlox/v1/log-archives/{filename}", true
+		case strings.HasPrefix(rel, "/config/ai/apikey/"):
+			return "/netlox/v1/config/ai/apikey/{key_id}", true
 		}
 		return r.URL.Path, true
 	})
@@ -108,7 +113,7 @@ func (f *gateFixture) do(method, path, body string, hdr ...string) *httptest.Res
 		rd = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, rd)
-	req.RemoteAddr = "10.1.2.3:4444"
+	req.RemoteAddr = f.remote
 	for i := 0; i+1 < len(hdr); i += 2 {
 		req.Header.Set(hdr[i], hdr[i+1])
 	}
@@ -117,12 +122,15 @@ func (f *gateFixture) do(method, path, body string, hdr ...string) *httptest.Res
 	return rec
 }
 
-// records returns every management record on disk, in write order.
+// records returns every management record on disk, in write order. It
+// closes the writer first: Close seals the active segment and waits for
+// the compression worker, so the directory is stable while it is read.
+// Nothing may be requested through the fixture afterwards.
 func (f *gateFixture) records() []map[string]any {
 	f.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := f.w.SealNow(ctx); err != nil {
+	if err := f.w.Close(ctx); err != nil {
 		f.t.Fatal(err)
 	}
 	entries, err := os.ReadDir(f.dir)
@@ -159,6 +167,36 @@ func (f *gateFixture) records() []map[string]any {
 			}
 		}
 		fh.Close()
+	}
+	return out
+}
+
+// auditPair is one gated request as it appears on disk.
+type auditPair struct{ intent, result map[string]any }
+
+// pairs groups the management records into intent/result pairs by
+// event_id, in intent order. An intent is written durably before its
+// handler runs, but the result is appended asynchronously, so on disk a
+// result may follow the next request's intent; the pair, not the line
+// position, is what a test across several requests reasons about.
+func (f *gateFixture) pairs() []auditPair {
+	f.t.Helper()
+	idx := map[string]int{}
+	var out []auditPair
+	for _, r := range f.records() {
+		id, _ := r["event_id"].(string)
+		switch r["phase"] {
+		case "intent":
+			idx[id] = len(out)
+			out = append(out, auditPair{intent: r})
+		case "result":
+			if i, ok := idx[id]; ok {
+				out[i].result = r
+				continue
+			}
+			idx[id] = len(out)
+			out = append(out, auditPair{result: r})
+		}
 	}
 	return out
 }
@@ -368,15 +406,16 @@ func TestAuditGateExportReadsAreTwoPhase(t *testing.T) {
 	if rec := f.do(http.MethodGet, "/netlox/v1/config/export", ""); rec.Code != http.StatusOK {
 		t.Fatal(rec.Code)
 	}
-	recs := f.records()
-	if len(recs) != 4 {
-		t.Fatalf("got %d records, want two pairs", len(recs))
+	ps := f.pairs()
+	if len(ps) != 2 || ps[0].result == nil || ps[1].result == nil {
+		t.Fatalf("got %v, want two complete pairs", ps)
 	}
-	if recs[0]["event_type"] != "read.log_archive.download" || recs[0]["class"] != "read" || detailOf(recs[0])["filename"] != "loxilb.log.gz" || detailOf(recs[0])["resource"] != "log_archive:loxilb.log.gz" {
-		t.Fatalf("archive intent %v", recs[0])
+	archive := ps[0].intent
+	if archive["event_type"] != "read.log_archive.download" || archive["class"] != "read" || detailOf(archive)["filename"] != "loxilb.log.gz" || detailOf(archive)["resource"] != "log_archive:loxilb.log.gz" {
+		t.Fatalf("archive intent %v", archive)
 	}
-	if recs[2]["event_type"] != "read.config.export" || recs[2]["class"] != "read" || recs[3]["phase"] != "result" {
-		t.Fatalf("export pair %v %v", recs[2], recs[3])
+	if ps[1].intent["event_type"] != "read.config.export" || ps[1].intent["class"] != "read" || ps[1].result["phase"] != "result" {
+		t.Fatalf("export pair %v", ps[1])
 	}
 }
 
@@ -388,14 +427,14 @@ func TestAuditGateRawRoutesAreMarkedRaw(t *testing.T) {
 	if rec := f.do(http.MethodPost, "/netlox/v1/config/opa/watcher", `{"url":"x"}`); rec.Code != http.StatusOK {
 		t.Fatal(rec.Code)
 	}
-	recs := f.records()
-	if len(recs) != 4 {
-		t.Fatalf("got %d records", len(recs))
+	ps := f.pairs()
+	if len(ps) != 2 || ps[0].result == nil || ps[1].result == nil {
+		t.Fatalf("got %v, want two complete pairs", ps)
 	}
-	if d := detailOf(recs[0]); d["raw"] != true || d["route_class"] != "raw" || d["path"] != "/netlox/v1/config/ai/apikey/{key_id}" || d["resource"] != "ai" {
+	if d := detailOf(ps[0].intent); d["raw"] != true || d["route_class"] != "raw" || d["path"] != "/netlox/v1/config/ai/apikey/{key_id}" || d["resource"] != "ai" {
 		t.Fatalf("apikey intent %v", d)
 	}
-	if d := detailOf(recs[2]); d["raw"] != true || d["path"] != "/netlox/v1/config/opa/watcher" {
+	if d := detailOf(ps[1].intent); d["raw"] != true || d["path"] != "/netlox/v1/config/opa/watcher" {
 		t.Fatalf("opa intent %v", d)
 	}
 }
@@ -417,13 +456,13 @@ func TestAuditGateNamedRoutes(t *testing.T) {
 			t.Fatalf("%s %s: %d", c.method, c.path, rec.Code)
 		}
 	}
-	recs := f.records()
-	if len(recs) != 2*len(cases) {
-		t.Fatalf("got %d records", len(recs))
+	ps := f.pairs()
+	if len(ps) != len(cases) {
+		t.Fatalf("got %d pairs, want %d", len(ps), len(cases))
 	}
 	for i, c := range cases {
-		in := recs[2*i]
-		if in["event_type"] != c.event || detailOf(in)["resource"] != c.resource {
+		in := ps[i].intent
+		if in["event_type"] != c.event || detailOf(in)["resource"] != c.resource || ps[i].result == nil {
 			t.Errorf("%s %s: got %v/%v, want %s/%s", c.method, c.path, in["event_type"], detailOf(in)["resource"], c.event, c.resource)
 		}
 	}
@@ -523,20 +562,21 @@ func TestAuditGateWithRealLoginHandler(t *testing.T) {
 		t.Fatalf("accepted login answered %d", rec.Code)
 	}
 
-	recs := f.records()
-	if len(recs) != 4 {
-		t.Fatalf("got %d records, want two pairs", len(recs))
+	ps := f.pairs()
+	if len(ps) != 2 || ps[0].result == nil || ps[1].result == nil {
+		t.Fatalf("got %v, want two complete pairs", ps)
 	}
-	failed, ok := recs[1], recs[3]
+	failed, ok := ps[0].result, ps[1].result
 	if failed["event_type"] != "sec.mgmt.authn_failed" || failed["outcome"].(map[string]any)["reason"] != "login_failed" {
 		t.Fatalf("rejected login result %v", failed)
 	}
 	if a := actorOf(ok); a["user"] != "bob" || a["auth"] != "session" || a["provisional"] != nil {
 		t.Fatalf("accepted login result actor %v", a)
 	}
-	if a := actorOf(recs[2]); a["username_claimed"] != "bob" || a["provisional"] != true {
+	if a := actorOf(ps[1].intent); a["username_claimed"] != "bob" || a["provisional"] != true {
 		t.Fatalf("accepted login intent actor %v", a)
 	}
+	recs := []map[string]any{ps[0].intent, ps[0].result, ps[1].intent, ps[1].result}
 	for _, r := range recs {
 		raw, _ := json.Marshal(r)
 		if strings.Contains(string(raw), "hunter2") || strings.Contains(string(raw), "issued-token") {

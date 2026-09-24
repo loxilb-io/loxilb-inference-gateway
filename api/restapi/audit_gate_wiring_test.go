@@ -119,14 +119,24 @@ func TestGlobalMiddlewareRecordsRawRouteAsRaw(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	handler.SetAuditWriter(w)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	t.Cleanup(func() { _ = w.Close(ctx) })
+	// The cleanup gets its own context: the writer's Close waits for the
+	// compression worker, and a context already cancelled by the test's
+	// return would cut that wait short and leave the worker writing into
+	// a directory being removed.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = w.Close(ctx)
+	})
 
 	if rec := p.do(http.MethodPost, "/netlox/v1/config/opa/watcher"); rec.Code != http.StatusOK || p.rawReached != 1 {
 		t.Fatalf("status %d reached %d", rec.Code, p.rawReached)
 	}
-	if err := w.SealNow(ctx); err != nil {
+	// Close seals the segment and waits for the compression worker, so the
+	// directory is stable while it is read.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := w.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var mgmt []map[string]any
@@ -135,7 +145,7 @@ func TestGlobalMiddlewareRecordsRawRouteAsRaw(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if !strings.Contains(e.Name(), ".jsonl") {
+		if !strings.HasSuffix(e.Name(), ".jsonl") && !strings.HasSuffix(e.Name(), ".jsonl.gz") {
 			continue
 		}
 		fh, err := os.Open(filepath.Join(dir, e.Name()))

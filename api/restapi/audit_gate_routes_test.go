@@ -169,6 +169,58 @@ func TestAuditGateRawRoutesMatchDispatchSites(t *testing.T) {
 	}
 }
 
+// listingHooks are the calls that read credential or account metadata. A
+// GET handler reaching any of them, directly or through one helper, must
+// be on the gate's listing-read table.
+var listingHooks = map[string]bool{
+	"NetUserGet":    true,
+	"NetAPIKeyList": true,
+	"NetAPIKeyGet":  true,
+}
+
+// TestAuditGateListReadsMatchListingHandlers derives the GET operations
+// whose handler reaches a listing hook from the source and asserts they
+// are exactly the gate's listing-read table, each a declared route gated
+// as class read.
+func TestAuditGateListReadsMatchListingHandlers(t *testing.T) {
+	readers := handlerFuncsReaching(t, "handler", listingHooks)
+	getOps := generatedRoutes(t, http.MethodGet)
+	wired := wiredHandlers(t)
+
+	want := map[string]bool{}
+	for opName, fn := range wired {
+		if !readers[fn] {
+			continue
+		}
+		if route, ok := getOps[opName]; ok {
+			want[route] = true
+		}
+	}
+	got := map[string]bool{}
+	for _, tpl := range handler.AuditListReads() {
+		got[tpl] = true
+	}
+	for tpl := range want {
+		if !got[tpl] {
+			t.Errorf("GET %s reaches a listing hook but is not on the gate's listing-read table", tpl)
+		}
+	}
+	for tpl := range got {
+		if !want[tpl] {
+			t.Errorf("GET %s is on the listing-read table but no handler of it reaches a listing hook", tpl)
+		}
+		if !declaredPath(t, tpl) {
+			t.Errorf("listing read %s is not a declared route", tpl)
+		}
+		if gated, class := handler.AuditGated(http.MethodGet, tpl); !gated || class != "read" {
+			t.Errorf("listing read %s is not gated as class read", tpl)
+		}
+	}
+	if len(want) == 0 {
+		t.Fatal("no listing GET handler found; the hook list or the parser is stale")
+	}
+}
+
 // TestAuditGateExportReadsAreDeclared asserts every export-class read the
 // gate lists is a declared GET, and that the list is exactly the routes
 // that serve a configuration document or an archive.

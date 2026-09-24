@@ -19,6 +19,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -54,7 +56,10 @@ import (
 //
 // Scope is every request whose method is not GET, HEAD or OPTIONS, on every
 // path, plus the named GET routes that create or replace state, plus the
-// export-class reads. There is no exclusion list.
+// export-class reads. There is no exclusion list. The listing-class reads
+// of credential metadata are the one lighter contract: they are served
+// whatever the writer's state and leave a single result record behind
+// them, with a loss counted rather than refused.
 
 const (
 	// auditIntentTimeout bounds how long a gated request waits for its
@@ -118,11 +123,22 @@ func AuditResultDrops() uint64 { return auditResultDrops.Load() }
 
 // auditGETAllowlist is the named table of GET routes that create or
 // replace state. A GET handler that calls a state-writing hook must be
+// listed here; the route enumeration test enforces it. The action names
+// the step of the OAuth flow the route performs.
+var auditGETAllowlist = map[string]struct{ event, action string }{
+	"/oauth/{provider}":          {"mgmt.auth.oauth_start", "start"},
+	"/oauth/{provider}/callback": {"mgmt.auth.oauth_callback", "login"},
+	"/oauth/{provider}/token":    {"mgmt.auth.oauth_token_refresh", "refresh"},
+}
+
+// auditListReads are the reads that list credential or account metadata:
+// served whatever the writer's state, recorded as one result-only record
+// after the handler. A GET handler that reaches a listing hook must be
 // listed here; the route enumeration test enforces it.
-var auditGETAllowlist = map[string]string{
-	"/oauth/{provider}":          "mgmt.auth.oauth_start",
-	"/oauth/{provider}/callback": "mgmt.auth.oauth_callback",
-	"/oauth/{provider}/token":    "mgmt.auth.oauth_token_refresh",
+var auditListReads = map[string]struct{ event, resource string }{
+	"/auth/users":                {"read.credential.list", "user"},
+	"/config/ai/apikey":          {"read.credential.list", "apikey"},
+	"/config/ai/apikey/{key_id}": {"read.credential.list", "apikey"},
 }
 
 // auditExportReads are the reads that serve the configuration or an
@@ -165,6 +181,9 @@ func AuditGETAllowlist() []string { return auditSortedKeys(auditGETAllowlist) }
 // AuditExportReads lists the export-class read templates the gate covers.
 func AuditExportReads() []string { return auditSortedKeys(auditExportReads) }
 
+// AuditListReads lists the listing-class read templates the gate covers.
+func AuditListReads() []string { return auditSortedKeys(auditListReads) }
+
 // AuditRawRoutes lists the raw-dispatched templates the gate knows.
 func AuditRawRoutes() []string { return auditSortedKeys(auditRawRoutes) }
 
@@ -189,6 +208,9 @@ func AuditGated(method, template string) (gated bool, class audit.Class) {
 		if _, ok := auditExportReads[template]; ok {
 			return true, audit.ClassRead
 		}
+		if _, ok := auditListReads[template]; ok {
+			return true, audit.ClassRead
+		}
 		return false, ""
 	case http.MethodHead, http.MethodOptions:
 		return false, ""
@@ -208,6 +230,7 @@ type auditRoute struct {
 	provider  string
 	filename  string
 	login     bool
+	list      bool // listing-class read: one result record, never refused
 	mechanism string
 }
 
@@ -250,6 +273,16 @@ func auditRouteFor(r *http.Request) (auditRoute, bool) {
 	params := auditPathParams(route.template, rel)
 	switch {
 	case r.Method == http.MethodGet && class == audit.ClassRead:
+		if listed, ok := auditListReads[route.template]; ok {
+			route.list = true
+			route.event, route.resource = listed.event, listed.resource
+			route.action = "list"
+			if id := params["key_id"]; id != "" {
+				route.resource += ":" + id
+				route.action = "get"
+			}
+			break
+		}
 		route.event = auditExportReads[route.template]
 		route.resource = "config"
 		route.action = "export"
@@ -259,9 +292,10 @@ func auditRouteFor(r *http.Request) (auditRoute, bool) {
 			route.action = "download"
 		}
 	case r.Method == http.MethodGet:
-		route.event = auditGETAllowlist[route.template]
+		named := auditGETAllowlist[route.template]
+		route.event = named.event
+		route.action = named.action
 		route.resource = "session"
-		route.action = "login"
 		route.provider = params["provider"]
 	default:
 		if named, ok := auditNamedMutations[r.Method+" "+route.template]; ok {
@@ -394,6 +428,10 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if route.list {
+			auditListRead(w, r, next, route)
+			return
+		}
 		wr := AuditWriter()
 		if wr == nil {
 			auditRefuse(w, audit.ErrUnavailable)
@@ -416,6 +454,11 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 		}
 		intent.Outcome = audit.Outcome{Reason: audit.ReasonOK}
 		intent.Mgmt = auditDetailFor(r, route, fields)
+		if route.event == "mgmt.snapshot.restore" {
+			// The intent is the restore's begin; the handler names the
+			// phase the pipeline ended in on the result.
+			intent.Mgmt.RestorePhase = auditRestoreBegin
+		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), auditIntentTimeout)
 		err := wr.Write(ctx, intent)
@@ -428,35 +471,79 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
-		result := wr.AcquireRecord()
-		result.EventID = eventID
-		result.Stream = audit.StreamMgmt
-		result.Phase = audit.PhaseResult
-		result.EventType = route.event
-		result.Class = route.class
-		result.Outcome = auditOutcomeOf(rec.status, route)
-		result.Actor = auditResultActor(r, trail, route)
-		switch rec.status {
-		case http.StatusUnauthorized:
-			result.EventType, result.Class, result.ResultOf = "sec.mgmt.authn_failed", audit.ClassSecurity, route.event
-		case http.StatusForbidden:
-			result.EventType, result.Class, result.ResultOf = "sec.mgmt.authz_denied", audit.ClassSecurity, route.event
-		}
-		d := auditDetailFor(r, route, fields)
-		d.ConfigGeneration = snapshot.ConfigGeneration()
-		if rec.status == http.StatusForbidden {
-			d.Role = result.Actor.Role
-		}
-		trail.mu.Lock()
-		for _, fn := range trail.enrich {
-			fn(d)
-		}
-		trail.mu.Unlock()
-		result.Mgmt = d
-		if !wr.Append(result) {
+		if !wr.Append(auditResultRecord(wr, r, trail, route, eventID, rec.status, fields)) {
 			auditResultDrops.Add(1)
 		}
 	})
+}
+
+// auditListRead is the listing-read contract: the handler runs whatever
+// the writer's state and one result record follows it, best-effort. The
+// listing is metadata the caller was already authorized to see, so a
+// record the writer cannot take is counted, never a reason to refuse.
+func auditListRead(w http.ResponseWriter, r *http.Request, next http.Handler, route auditRoute) {
+	trail := &auditTrail{}
+	r = r.WithContext(context.WithValue(r.Context(), auditTrailKey{}, trail))
+	rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+	next.ServeHTTP(rec, r)
+	wr := AuditWriter()
+	if wr == nil {
+		auditResultDrops.Add(1)
+		return
+	}
+	if !wr.Append(auditResultRecord(wr, r, trail, route, audit.NewEventID(), rec.status, nil)) {
+		auditResultDrops.Add(1)
+	}
+}
+
+// auditResultRecord builds the result phase: the outcome the handler
+// answered with, the authoritative actor, the security re-typing of a
+// refusal, and the detail the handler added through AuditDetail.
+func auditResultRecord(wr *audit.Writer, r *http.Request, trail *auditTrail, route auditRoute, eventID string, status int, fields []string) *audit.Record {
+	result := wr.AcquireRecord()
+	result.EventID = eventID
+	result.Stream = audit.StreamMgmt
+	result.Phase = audit.PhaseResult
+	result.EventType = route.event
+	result.Class = route.class
+	result.Outcome = auditOutcomeOf(status, route)
+	result.Actor = auditResultActor(r, trail, route)
+	switch status {
+	case http.StatusUnauthorized:
+		result.EventType, result.Class, result.ResultOf = "sec.mgmt.authn_failed", audit.ClassSecurity, route.event
+	case http.StatusForbidden:
+		result.EventType, result.Class, result.ResultOf = "sec.mgmt.authz_denied", audit.ClassSecurity, route.event
+	}
+	d := auditDetailFor(r, route, fields)
+	d.ConfigGeneration = snapshot.ConfigGeneration()
+	if status == http.StatusForbidden {
+		d.Role = result.Actor.Role
+	}
+	trail.mu.Lock()
+	for _, fn := range trail.enrich {
+		fn(d)
+	}
+	trail.mu.Unlock()
+	result.Mgmt = d
+	return result
+}
+
+// Restore phases a record can name. The intent carries the begin; the
+// result carries where the pipeline stopped.
+const (
+	auditRestoreBegin          = "begin"
+	auditRestorePlan           = "plan"
+	auditRestoreCommit         = "commit"
+	auditRestoreRollback       = "rollback"
+	auditRestoreRollbackFailed = "rollback_failed"
+	auditRestoreRejected       = "rejected"
+)
+
+// auditFingerprint identifies a token or state value without carrying it:
+// the hex SHA-256 of the value. A record stores the fingerprint only.
+func auditFingerprint(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }
 
 func auditDetailFor(r *http.Request, route auditRoute, fields []string) *audit.MgmtDetail {
@@ -479,7 +566,9 @@ func auditDetailFor(r *http.Request, route auditRoute, fields []string) *audit.M
 }
 
 // auditOutcomeOf maps the status the handler answered with to the closed
-// reason vocabulary.
+// reason vocabulary. A 503 is the gateway declining to perform the request
+// (the boot and restore freezes, operator maintenance, a store that is not
+// up) and so is an admission decision, not an upstream failure.
 func auditOutcomeOf(status int, route auditRoute) audit.Outcome {
 	o := audit.Outcome{Status: status}
 	switch {
@@ -493,6 +582,8 @@ func auditOutcomeOf(status int, route auditRoute) audit.Outcome {
 		o.Reason = audit.ReasonAuthz
 	case status == http.StatusGatewayTimeout:
 		o.Reason = audit.ReasonTimeout
+	case status == http.StatusServiceUnavailable:
+		o.Reason = audit.ReasonAdmission
 	case status >= http.StatusInternalServerError:
 		o.Reason = audit.ReasonUpstreamError
 	default:

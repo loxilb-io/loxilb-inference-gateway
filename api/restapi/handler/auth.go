@@ -277,6 +277,10 @@ func AuthPostManualTokenUpdate(params auth.PostAuthTokenUpgradeParams, principal
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
+	// The record identifies the token now in force by its fingerprint and
+	// never carries the token.
+	fingerprint := auditFingerprint(*token)
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.TokenFingerprint = fingerprint })
 	return auth.NewPostAuthTokenUpgradeOK().WithPayload(params.Token)
 }
 

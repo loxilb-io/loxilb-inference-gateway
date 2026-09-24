@@ -35,6 +35,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/audit"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -176,6 +177,10 @@ func AuthGetOauthProvider(params auth.GetOauthProviderParams) middleware.Respond
 
 	state := GenerateStateToken() // Generate a secure state token
 	tk.LogIt(tk.LogTrace, "Generated state token for OAuth login:%v\n", state)
+	// The record ties the later callback to this start through the state
+	// token's fingerprint; the token itself is never recorded.
+	stateFingerprint := auditFingerprint(state)
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.StateTokenFingerprint = stateFingerprint })
 
 	// Can't extract the redirect URL from the OAuth config, so we set it here
 	authURL := oauthConfig.AuthCodeURL(state,
@@ -205,6 +210,8 @@ func AuthGetOauthProviderCallback(params auth.GetOauthProviderCallbackParams) mi
 	}
 
 	state := params.State
+	stateFingerprint := auditFingerprint(state)
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.StateTokenFingerprint = stateFingerprint })
 	if !ValidateStateToken(state) { // Validate the state token
 		return auth.NewGetOauthProviderCallbackBadRequest().WithPayload(&models.OauthErrorResponse{
 			Message: "Invalid state token",
@@ -275,7 +282,12 @@ func AuthGetOauthProviderCallback(params auth.GetOauthProviderCallbackParams) mi
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
+	// The subject is known only now, after the code exchange: the result
+	// phase carries it, the intent could not. Neither token is recorded,
+	// and the actor is a session only once one was issued.
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.Username = email })
 	if valid {
+		RecordAuditActor(params.HTTPRequest, audit.Actor{Auth: audit.AuthSession, User: email})
 		response.Token = loginToken
 		response.ID = oauthID
 		response.Expiresin = int64(token.Expiry.Sub(time.Now()).Seconds())
@@ -340,6 +352,10 @@ func RefreshTokenHandler(params auth.GetOauthProviderTokenParams) middleware.Res
 	}
 
 	userEmail := cacheValues[0]
+	// The route is unauthenticated and the subject is known only once the
+	// presented tokens validate, so the result phase carries it.
+	RecordAuditActor(params.HTTPRequest, audit.Actor{Auth: audit.AuthSession, User: userEmail})
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) { d.Username = userEmail })
 
 	// Refresh the access token using the refresh token
 	newToken, err := RefreshAccessToken(refreshToken, provider)
