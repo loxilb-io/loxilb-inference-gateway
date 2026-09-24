@@ -360,10 +360,12 @@ func (s *UserService) GetUsers() ([]cmn.User, error) {
 			// picked by hand is what made this endpoint fail for every
 			// database that returned a different one — the driver had already
 			// done the parsing correctly.
-			if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.Role); err != nil {
+			var delegation bool
+			if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.Role, &delegation); err != nil {
 				tk.LogIt(tk.LogError, "Failed to scan user: %v\n", err.Error())
 				return err
 			}
+			user.DelegationAllowed = &delegation
 			users = append(users, user)
 		}
 
@@ -456,7 +458,7 @@ func (s *UserService) UpdateUser(user cmn.User) error {
 		// sessions survived would keep the authority they were demoted out
 		// of — in this process's cache and in every peer's.
 		if err := s.revokeSessions(handle, existingUser.Username, func(tx *sql.Tx) error {
-			if _, err := tx.Exec(UpdateUserQuery, user.Username, hashedPassword, user.Role, user.ID); err != nil {
+			if _, err := tx.Exec(UpdateUserQuery, user.Username, hashedPassword, user.Role, user.ID, user.DelegationAllowed); err != nil {
 				tk.LogIt(tk.LogError, "Failed to update user: %v\n", err.Error())
 				return err
 			}

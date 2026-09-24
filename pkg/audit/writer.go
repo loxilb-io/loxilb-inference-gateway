@@ -219,6 +219,8 @@ type Writer struct {
 
 	seq       atomic.Uint64
 	lastWrite atomic.Int64
+	written   atomic.Int64 // record bytes appended by this process
+	startedAt time.Time
 	seg       *segmenter
 	enc       *encoder
 	pool      sync.Pool
@@ -269,6 +271,7 @@ func New(cfg Config) (*Writer, error) {
 		arrivals: make(map[string]uint64),
 		holds:    make(map[string]string),
 	}
+	w.startedAt = w.now()
 	for i := range w.queues {
 		w.queues[i] = make(chan *Record, cfg.QueueSize)
 	}
@@ -757,6 +760,7 @@ func (w *Writer) write(r *Record) error {
 		return err
 	}
 	w.seq.Store(seq)
+	w.written.Add(int64(len(line)))
 	w.stats.accepted[idxOf(r.Stream)].Add(1)
 	if w.failing != nil && w.sysDepth == 0 {
 		w.recordWriteFailureEnd()
@@ -963,8 +967,20 @@ type Stats struct {
 	OrphanedIntents   uint64
 	LastOrphanEventID string
 
-	SegmentUUID string
-	Producers   []ProducerStats
+	// The active segment: identity, when it was opened, and what it holds.
+	SegmentUUID       string
+	SegmentOpenedUnix int64
+	SegmentRecords    uint64
+	SegmentBytes      int64
+
+	// StartedUnix is when this writer was created and BytesWritten the
+	// record bytes it has appended since, before compression; together
+	// they give the write rate the retention projection rests on.
+	StartedUnix  int64
+	BytesWritten int64
+	Retention    Retention
+
+	Producers []ProducerStats
 }
 
 // Stats returns a snapshot. It is safe from any goroutine.
@@ -996,7 +1012,11 @@ func (w *Writer) Stats() Stats {
 		SealedBytes:     w.sealedBytes.Load(),
 		SegmentUUID:     w.seg.currentUUID(),
 		OrphanedIntents: w.stats.orphanedIntents.Load(),
+		StartedUnix:     w.startedAt.Unix(),
+		BytesWritten:    w.written.Load(),
+		Retention:       *w.retention.Load(),
 	}
+	s.SegmentOpenedUnix, s.SegmentRecords, s.SegmentBytes = w.seg.current()
 	if id := w.lastOrphan.Load(); id != nil {
 		s.LastOrphanEventID = *id
 	}

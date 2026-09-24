@@ -509,6 +509,7 @@ func TestAuditGatedPredicate(t *testing.T) {
 		{http.MethodGet, "/config/loadbalancer/all", false, ""},
 		{http.MethodGet, "/oauth/{provider}/token", true, ""},
 		{http.MethodGet, "/config/snapshot", true, audit.ClassRead},
+		{http.MethodGet, "/audit/status", false, ""},
 		{http.MethodHead, "/config/export", false, ""},
 		{http.MethodOptions, "/config/loadbalancer", false, ""},
 	} {

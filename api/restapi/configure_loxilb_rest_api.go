@@ -32,6 +32,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/ai"
+	auditops "github.com/loxilb-io/loxilb/api/restapi/operations/audit"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/l4_tracing"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/metadata"
@@ -381,6 +382,9 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.GetMetricsFwdropsHandler = operations.GetMetricsFwdropsHandlerFunc(handler.ConfigGetFwDrops)
 	api.GetMetricsReqcountperclientHandler = operations.GetMetricsReqcountperclientHandlerFunc(handler.ConfigGetReqCounterPerClient)
 	api.GetMetricsHostcountHandler = operations.GetMetricsHostcountHandlerFunc(handler.ConfigGetHostCount)
+
+	// Audit trail
+	api.AuditGetAuditStatusHandler = auditops.GetAuditStatusHandlerFunc(handler.AuditGetStatus)
 
 	// Log
 	api.GetLogsHandler = operations.GetLogsHandlerFunc(handler.ConfigGetLogs)

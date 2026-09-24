@@ -59,7 +59,7 @@ const (
 // there rather than written there.
 var (
 	SelectAllUsersQuery = fmt.Sprintf(
-		`SELECT id, username, created_at, role FROM %s.users ORDER BY id`, Schema)
+		`SELECT id, username, created_at, role, delegation_allowed FROM %s.users ORDER BY id`, Schema)
 
 	SelectUserQuery = fmt.Sprintf(
 		`SELECT id, username, password, role FROM %s.users WHERE id = $1`, Schema)
@@ -80,8 +80,11 @@ var (
 		 WHERE NOT EXISTS (SELECT 1 FROM %s.users)
 		 RETURNING id`, Schema, Schema)
 
+	// delegation_allowed is optional on an update: a NULL keeps what is
+	// stored, so a password change cannot silently revoke a delegation.
 	UpdateUserQuery = fmt.Sprintf(
-		`UPDATE %s.users SET username = $1, password = $2, role = $3 WHERE id = $4`, Schema)
+		`UPDATE %s.users SET username = $1, password = $2, role = $3,
+		 delegation_allowed = COALESCE($5::boolean, delegation_allowed) WHERE id = $4`, Schema)
 
 	DeleteUserQuery = fmt.Sprintf(`DELETE FROM %s.users WHERE id = $1`, Schema)
 

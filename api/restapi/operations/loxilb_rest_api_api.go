@@ -20,6 +20,7 @@ import (
 	"github.com/go-openapi/swag"
 
 	"github.com/loxilb-io/loxilb/api/restapi/operations/ai"
+	"github.com/loxilb-io/loxilb/api/restapi/operations/audit"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/dpu"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/l4_tracing"
@@ -160,6 +161,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		DeleteSniCertificatesHandler: DeleteSniCertificatesHandlerFunc(func(params DeleteSniCertificatesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteSniCertificates has not yet been implemented")
+		}),
+		AuditGetAuditStatusHandler: audit.GetAuditStatusHandlerFunc(func(params audit.GetAuditStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation audit.GetAuditStatus has not yet been implemented")
 		}),
 		UsersGetAuthUsersHandler: users.GetAuthUsersHandlerFunc(func(params users.GetAuthUsersParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation users.GetAuthUsers has not yet been implemented")
@@ -860,6 +864,8 @@ type LoxilbRestAPIAPI struct {
 	DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler
 	// DeleteSniCertificatesHandler sets the operation handler for the delete sni certificates operation
 	DeleteSniCertificatesHandler DeleteSniCertificatesHandler
+	// AuditGetAuditStatusHandler sets the operation handler for the get audit status operation
+	AuditGetAuditStatusHandler audit.GetAuditStatusHandler
 	// UsersGetAuthUsersHandler sets the operation handler for the get auth users operation
 	UsersGetAuthUsersHandler users.GetAuthUsersHandler
 	// GetConfigBfdAllHandler sets the operation handler for the get config bfd all operation
@@ -1434,6 +1440,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.DeleteSniCertificatesHandler == nil {
 		unregistered = append(unregistered, "DeleteSniCertificatesHandler")
+	}
+	if o.AuditGetAuditStatusHandler == nil {
+		unregistered = append(unregistered, "audit.GetAuditStatusHandler")
 	}
 	if o.UsersGetAuthUsersHandler == nil {
 		unregistered = append(unregistered, "users.GetAuthUsersHandler")
@@ -2252,6 +2261,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
 	o.handlers["DELETE"]["/sni/certificates"] = NewDeleteSniCertificates(o.context, o.DeleteSniCertificatesHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/audit/status"] = audit.NewGetAuditStatus(o.context, o.AuditGetAuditStatusHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}

@@ -152,3 +152,32 @@ func (w *Writer) SetRetention(r Retention) {
 func (w *Writer) RetentionPolicy() Retention {
 	return *w.retention.Load()
 }
+
+// minMeasuredUptime is how long the writer must have run before its write
+// rate is taken as representative; a projection from the first seconds
+// after boot would be dominated by the startup records.
+const minMeasuredUptime = time.Minute
+
+// ProjectedRetentionDays estimates how many days of records the policy
+// keeps: the age bound as configured, and the byte quota divided by the
+// rate this process has been writing at. The smaller bound wins. Zero
+// means no bound can be projected — retention is unlimited, or the writer
+// has not run long enough to measure its rate. The projection uses the
+// uncompressed write rate, so against a quota it errs on the short side.
+func (s Stats) ProjectedRetentionDays(now time.Time) float64 {
+	const day = float64(24 * time.Hour)
+	var days float64
+	if s.Retention.MaxAge > 0 {
+		days = float64(s.Retention.MaxAge) / day
+	}
+	if s.Retention.MaxBytes > 0 && s.BytesWritten > 0 {
+		uptime := now.Sub(time.Unix(s.StartedUnix, 0))
+		if uptime >= minMeasuredUptime {
+			perDay := float64(s.BytesWritten) / (float64(uptime) / day)
+			if quota := float64(s.Retention.MaxBytes) / perDay; days == 0 || quota < days {
+				days = quota
+			}
+		}
+	}
+	return days
+}

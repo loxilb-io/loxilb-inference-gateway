@@ -149,8 +149,12 @@ type segmenter struct {
 	// worker renames files, so it shares the cache with the writer.
 	uuidMu sync.Mutex
 	uuids  map[string]string
-	// curUUID mirrors uuid for readers off the writer goroutine.
-	curUUID atomic.Pointer[string]
+	// curUUID mirrors uuid for readers off the writer goroutine; the
+	// three counters below mirror opened, count and size the same way.
+	curUUID    atomic.Pointer[string]
+	curOpened  atomic.Int64
+	curRecords atomic.Uint64
+	curBytes   atomic.Int64
 
 	stats segStats
 }
@@ -350,6 +354,8 @@ func (s *segmenter) openActive(firstSeq uint64) error {
 	s.opened = s.now()
 	s.size = 0
 	s.count = 0
+	s.curOpened.Store(s.opened.Unix())
+	s.curRecords.Store(0)
 	s.firstSeq = firstSeq
 	s.lastSeq = 0
 	s.firstTS = time.Time{}
@@ -361,6 +367,7 @@ func (s *segmenter) openActive(firstSeq uint64) error {
 	}
 	n, err := writeJSONLineN(f, hdr)
 	s.size += int64(n)
+	s.curBytes.Store(s.size)
 	if err != nil {
 		return fmt.Errorf("audit: header for %s: %w", s.active, err)
 	}
@@ -412,6 +419,7 @@ func (s *segmenter) append(line []byte, seq uint64, ts time.Time) error {
 	}
 	n, err := s.f.Write(line)
 	s.size += int64(n)
+	s.curBytes.Store(s.size)
 	if err != nil {
 		return err
 	}
@@ -420,9 +428,17 @@ func (s *segmenter) append(line []byte, seq uint64, ts time.Time) error {
 		s.firstTS = ts
 	}
 	s.count++
+	s.curRecords.Store(s.count)
 	s.lastSeq = seq
 	s.lastTS = ts
 	return nil
+}
+
+// current describes the active segment for readers off the writer
+// goroutine: when it was opened, how many records it holds and its size
+// on disk including the header.
+func (s *segmenter) current() (openedUnix int64, records uint64, bytes int64) {
+	return s.curOpened.Load(), s.curRecords.Load(), s.curBytes.Load()
 }
 
 func (s *segmenter) sync() error {

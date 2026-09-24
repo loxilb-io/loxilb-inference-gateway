@@ -1876,6 +1876,10 @@ type User struct {
 	ID int `json:"id"`
 	// Role - role of the user
 	Role string `json:"role"`
+	// DelegationAllowed - whether a request this account authenticates
+	// may name another originator. Nil on an update keeps the stored
+	// value; a listing always carries it.
+	DelegationAllowed *bool `json:"delegation_allowed,omitempty"`
 }
 
 // L4TraceStatus - L4 connection tracing status and statistics

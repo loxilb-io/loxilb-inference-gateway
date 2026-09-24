@@ -50,6 +50,7 @@ type emitStubHook struct {
 	bootstrap error
 	principal interface{}
 	keys      []cmn.ApiKeySummary
+	updated   *cmn.User // what the last user update handed the store
 }
 
 func (s *emitStubHook) NetUserBootstrap(u *cmn.User) (int, error) {
@@ -61,7 +62,7 @@ func (s *emitStubHook) NetUserBootstrap(u *cmn.User) (int, error) {
 
 func (s *emitStubHook) NetUserAdd(u *cmn.User) (int, error) { return 2, nil }
 func (s *emitStubHook) NetUserGet() ([]cmn.User, error)     { return s.users, nil }
-func (s *emitStubHook) NetUserUpdate(u *cmn.User) error     { return nil }
+func (s *emitStubHook) NetUserUpdate(u *cmn.User) error     { s.updated = u; return nil }
 func (s *emitStubHook) NetAiInFlightStreamsGet() int64      { return 0 }
 func (s *emitStubHook) NetAPIKeyList(string) ([]cmn.ApiKeySummary, error) {
 	return s.keys, nil
@@ -237,6 +238,54 @@ func TestAuditEmitUserUpdateNamesTheAccount(t *testing.T) {
 	if got := currentUserRole(8); got != "" {
 		t.Fatalf("currentUserRole(8) = %q", got)
 	}
+}
+
+// The delegation flag reaches the store exactly as the request stated it:
+// present, it is applied and named among the changed fields; absent, the
+// store is told to keep what it has, so a password change cannot revoke
+// a delegation on the side.
+func TestAuditEmitUserUpdateDelegationFlag(t *testing.T) {
+	withAuthMode(t, true)
+	hook := &emitStubHook{users: []cmn.User{{ID: 7, Username: "bob", Role: "viewer"}}}
+	withEmitHook(t, hook)
+	f := newGateFixture(t)
+	username, password := "bob", "hunter2-canary"
+	var flag *bool
+	f.inside = func(r *http.Request) {
+		RecordAuditPrincipal(r, "alice|admin")
+		f.serve(UsersPutUsers(users.PutAuthUsersIDParams{
+			HTTPRequest: r, ID: 7,
+			User: &models.User{Username: &username, Password: &password, DelegationAllowed: flag},
+		}, "alice|admin"))
+	}
+	on := true
+	flag = &on
+	if rec := f.do(http.MethodPut, "/netlox/v1/auth/users/7", `{"username":"bob","password":"hunter2-canary","delegation_allowed":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("update answered %d", rec.Code)
+	}
+	if hook.updated == nil || hook.updated.DelegationAllowed == nil || !*hook.updated.DelegationAllowed {
+		t.Fatalf("the store did not receive the flag: %+v", hook.updated)
+	}
+	flag = nil
+	if rec := f.do(http.MethodPut, "/netlox/v1/auth/users/7", `{"username":"bob","password":"hunter2-canary"}`); rec.Code != http.StatusOK {
+		t.Fatalf("update answered %d", rec.Code)
+	}
+	if hook.updated == nil || hook.updated.DelegationAllowed != nil {
+		t.Fatalf("an absent flag reached the store as a value: %+v", hook.updated)
+	}
+	pairs := f.pairs()
+	if len(pairs) != 2 {
+		t.Fatalf("got %d pairs, want 2", len(pairs))
+	}
+	got := detailOf(pairs[0].result)["changed_fields"]
+	if got == nil || len(got.([]any)) != 3 || got.([]any)[0] != "delegation_allowed" {
+		t.Fatalf("changed_fields with the flag %v", got)
+	}
+	got = detailOf(pairs[1].result)["changed_fields"]
+	if got == nil || len(got.([]any)) != 2 {
+		t.Fatalf("changed_fields without the flag %v", got)
+	}
+	assertNoSecret(t, append([]map[string]any{pairs[0].intent, pairs[0].result}, pairs[1].intent, pairs[1].result), "hunter2")
 }
 
 func TestAuditEmitManualTokenFingerprint(t *testing.T) {
