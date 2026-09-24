@@ -1,0 +1,1642 @@
+{
+  "schema": 1,
+  "generated_by": "cicd/audit-mgmt/gen-coverage-manifest.py",
+  "stage_claimed": "1a",
+  "event_types": 65,
+  "matrix_digest": "dcbac6a72c35da5eca3b572dbfadd1e8134a6f2d6cf375aab0f14df7afb75760",
+  "requirements_by_stage": {
+    "1b": {
+      "uncovered": 3,
+      "covered but untested": 1
+    },
+    "3": {
+      "uncovered": 9
+    },
+    "2": {
+      "uncovered": 22
+    },
+    "1a": {
+      "covered and tested": 5,
+      "covered but untested": 26
+    }
+  },
+  "entries": [
+    {
+      "event_type": "data.ai.complete",
+      "class": "D",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1b",
+          "fields": [
+            "service",
+            "model",
+            "tokens_in",
+            "tokens_out",
+            "latency_ms",
+            "finish_reason"
+          ],
+          "behaviour": "one record per admitted request",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "data.ai.settle",
+      "class": "D",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1b",
+          "fields": [
+            "request_id",
+            "tokens_in",
+            "tokens_out"
+          ],
+          "behaviour": "tokens charged",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mcp.tool_call",
+      "class": "M-legacy",
+      "variants": [],
+      "excluded": "the bridge-local tool_call trail; every mutation it performs reaches the gateway REST API where the class-M gate records it with the originator",
+      "requirements": [],
+      "state": "intentionally excluded"
+    },
+    {
+      "event_type": "mgmt.audit.hold",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "hold_id",
+            "segments",
+            "reason_code"
+          ],
+          "behaviour": "legal hold applied",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.audit.hold_release",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "hold_id",
+            "segments"
+          ],
+          "behaviour": "legal hold released",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.audit.policy",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "changed_fields",
+            "floor_rejected"
+          ],
+          "behaviour": "T-GW-2 policy endpoint",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.audit.replay",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "sink",
+            "seq_from",
+            "seq_to"
+          ],
+          "behaviour": "re-submission of a range to a sink",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.audit.rotate_now",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "sealed_segment_uuid",
+            "new_segment_uuid"
+          ],
+          "behaviour": "operator seal-and-rotate",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.audit.sink",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "changed_fields",
+            "endpoint",
+            "tls_ca_id"
+          ],
+          "behaviour": "T-GW-2 sink endpoint",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.auth.login",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "username_claimed",
+            "username"
+          ],
+          "behaviour": "intent carries the claimed name and never the password; result carries the authenticated user; a refusal is re-typed sec.mgmt.authn_failed",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T15-s1",
+            "T15-s1e",
+            "T11-1a",
+            "T11-1b",
+            "T11-1d"
+          ],
+          "unit_tests": [
+            "TestAuditGateLoginCarriesClaimedNameNeverPassword",
+            "TestAuditGateLoginSuccessCarriesTheActorTheHandlerSet",
+            "TestAuditGateWithRealLoginHandler"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-T15-r1",
+          "state": "covered and tested"
+        }
+      ],
+      "state": "covered and tested"
+    },
+    {
+      "event_type": "mgmt.auth.logout",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [],
+          "behaviour": "pair; the session owner is the actor; the token no longer authenticates afterwards",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-5",
+            "TM-5b"
+          ],
+          "unit_tests": [
+            "TestAuditGateNamedRoutes"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.auth.oauth_callback",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "provider",
+            "action",
+            "state_token_fingerprint"
+          ],
+          "behaviour": "gated GET; the subject is known only once a token was issued; 503 while wedged before any exchange",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T22-2a",
+            "T22-2b",
+            "T22-2c",
+            "T22-5"
+          ],
+          "unit_tests": [
+            "TestAuditEmitOAuthActionsNameTheStep"
+          ],
+          "red_twin_run_id": null,
+          "note": "the completing callback needs a real identity provider; only the unknown-state refusal runs on this bed",
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.auth.oauth_start",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "provider",
+            "action",
+            "state_token_fingerprint"
+          ],
+          "behaviour": "side-effecting GET is gated: pair with a provisional actor, the state token fingerprinted; 503 while wedged",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T22-1a",
+            "T22-1c",
+            "T22-1d",
+            "T22-1e",
+            "T22-1f",
+            "T22-1g",
+            "T22-4a",
+            "T22-4b"
+          ],
+          "unit_tests": [
+            "TestAuditGateSideEffectingGETsAreGated",
+            "TestAuditEmitOAuthStartFingerprint"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.auth.oauth_token_refresh",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "provider",
+            "action",
+            "username"
+          ],
+          "behaviour": "gated GET; the query string (both tokens) is never recorded; 503 while wedged before any exchange",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T22-3a",
+            "T22-3b",
+            "T22-6",
+            "T15-6"
+          ],
+          "unit_tests": [
+            "TestAuditEmitOAuthActionsNameTheStep",
+            "TestPathIsSanitized"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.auth.token_upgrade",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "token_fingerprint_sha256"
+          ],
+          "behaviour": "pair; the new token is fingerprinted, never carried",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-4"
+          ],
+          "unit_tests": [
+            "TestAuditEmitManualTokenFingerprint"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.cert.reload",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "cert_id",
+            "subject",
+            "not_after",
+            "fingerprint_sha256"
+          ],
+          "behaviour": "pin in stage 2",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.config.mutate",
+      "class": "M",
+      "variants": [
+        "generated",
+        "extras",
+        "raw"
+      ],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "method",
+            "path",
+            "route_class",
+            "raw",
+            "changed_fields",
+            "config_generation"
+          ],
+          "behaviour": "two-phase: durable intent before the handler, result after; fail-closed with 503 audit_unavailable and the state unchanged",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T3-1a",
+            "T3-1b",
+            "T3-1c",
+            "T3-1d",
+            "T3-2a",
+            "T3-2b",
+            "T3-2c",
+            "T3-4a",
+            "T3-4b",
+            "T3-4c",
+            "T3-4d",
+            "T3-5a",
+            "T3-5b",
+            "T3-5c",
+            "T3-5d",
+            "T25-1a",
+            "T25-2a",
+            "T25-4a",
+            "TM-7"
+          ],
+          "unit_tests": [
+            "TestAuditGateWritesIntentAndResultPair",
+            "TestAuditGateRawRoutesAreMarkedRaw",
+            "TestAuditGatedPredicate"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-T3-r1",
+          "state": "covered and tested"
+        }
+      ],
+      "state": "covered and tested"
+    },
+    {
+      "event_type": "mgmt.maintenance",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "active_from",
+            "active_to"
+          ],
+          "behaviour": "pair carrying both values",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-3"
+          ],
+          "unit_tests": [
+            "TestAuditEmitMaintenanceTransition"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.opa.policy",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "policy_version",
+            "digest"
+          ],
+          "behaviour": "pin in stage 2",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "mgmt.snapshot.persist",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "filename",
+            "bytes",
+            "checksum",
+            "config_generation"
+          ],
+          "behaviour": "pair; the result names the file written",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-1"
+          ],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.snapshot.restore",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "restore_phase",
+            "entries_applied",
+            "entries_failed"
+          ],
+          "behaviour": "intent carries begin; result names plan/commit/rollback/rollback_failed/rejected",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestAuditEmitRestorePhases"
+          ],
+          "red_twin_run_id": null,
+          "note": "a restore rolls the whole configuration back on failure and is not driven on the shared bed; the handler is exercised behind the real gate in the unit suite",
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.user.create",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "username",
+            "role",
+            "bootstrap"
+          ],
+          "behaviour": "pair; the account is the subject and the password never leaves the request; the loopback bootstrap is marked on actor and detail; fail-closed",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-10",
+            "T3-3a",
+            "T3-3b",
+            "T11-1c",
+            "T20-0a",
+            "T20-1a",
+            "T20-1b"
+          ],
+          "unit_tests": [
+            "TestAuditEmitUserCreateBootstrap",
+            "TestAuditEmitUserCreateWithCredential"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-T3-r1",
+          "state": "covered and tested"
+        }
+      ],
+      "state": "covered and tested"
+    },
+    {
+      "event_type": "mgmt.user.delete",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [],
+          "behaviour": "pair",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-9"
+          ],
+          "unit_tests": [
+            "TestAuditGateNamedRoutes"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "mgmt.user.update",
+      "class": "M",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "username",
+            "changed_fields",
+            "role_from",
+            "role_to"
+          ],
+          "behaviour": "pair; changed field names only; delegation_allowed is a changed field",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T25-0d",
+            "T25-0e",
+            "T25-0f"
+          ],
+          "unit_tests": [
+            "TestAuditEmitUserUpdateNamesTheAccount",
+            "TestAuditEmitUserUpdateDelegationFlag"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "read.audit.content",
+      "class": "R",
+      "variants": [],
+      "excluded": "impossible by design over the management API; the readers are the SIEM and the on-host verifier",
+      "requirements": [],
+      "state": "intentionally excluded"
+    },
+    {
+      "event_type": "read.audit.policy",
+      "class": "R",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [],
+          "behaviour": "not audited by decision",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "read.audit.segment_metadata",
+      "class": "R",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "count"
+          ],
+          "behaviour": "R-list",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "read.audit.status",
+      "class": "R",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [],
+          "behaviour": "not audited by decision: polled by monitoring",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "read.config.export",
+      "class": "R",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "format",
+            "bytes",
+            "checksum",
+            "secrets_included",
+            "content_disposition"
+          ],
+          "behaviour": "R-export: two-phase like a mutation; reports what was served, never the content",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-2"
+          ],
+          "unit_tests": [
+            "TestAuditGateExportReadsAreTwoPhase",
+            "TestAuditEmitExportDetail"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "read.credential.list",
+      "class": "R",
+      "variants": [
+        "user",
+        "apikey"
+      ],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "resource",
+            "count",
+            "tenant"
+          ],
+          "behaviour": "R-list: served whatever the writer's state, one result-only record after the handler",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "TM-6",
+            "TM-8",
+            "T3-3c"
+          ],
+          "unit_tests": [
+            "TestAuditEmitListReadIsResultOnly",
+            "TestAuditEmitListReadServedWithoutWriter"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "read.log_archive.download",
+      "class": "R",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "filename",
+            "bytes"
+          ],
+          "behaviour": "R-export; an audit-named file is refused by the log-archive API",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T-GW-3-1",
+            "T-GW-3-2"
+          ],
+          "unit_tests": [
+            "TestLogArchivesNeverServeAuditFiles",
+            "TestAuditEmitArchiveDownloadBytes"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sec.ai.deny",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1b",
+          "fields": [
+            "request_id",
+            "key_id",
+            "reason"
+          ],
+          "behaviour": "data-path admission refusals",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sec.backend_tls_verify_failed",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "endpoint",
+            "x509_error"
+          ],
+          "behaviour": "backend certificate rejected",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sec.llamafw.block",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "request_id",
+            "scanner",
+            "decision"
+          ],
+          "behaviour": "scanner block",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sec.mgmt.authn_failed",
+      "class": "S",
+      "variants": [
+        "token",
+        "login"
+      ],
+      "result_of": "mgmt.auth.login",
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "mechanism",
+            "username_claimed",
+            "delegated"
+          ],
+          "behaviour": "a 401 result is re-typed with result_of naming the intent's type; reason auth for a token, login_failed for a password",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T15-s1b",
+            "T15-s1c",
+            "T15-s1d",
+            "T15-s2",
+            "T15-s2b",
+            "T15-s2c"
+          ],
+          "unit_tests": [
+            "TestAuditGateLoginCarriesClaimedNameNeverPassword",
+            "TestAuditOriginatorOnAnUnauthenticatedRefusal"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sec.mgmt.authz_denied",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "role",
+            "delegated"
+          ],
+          "behaviour": "a 403 result is re-typed; the principal and its role are named; the originator claim rides along untrusted",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T25-3a",
+            "T25-3b",
+            "T25-3c",
+            "T25-3d",
+            "T25-3e",
+            "T25-3f",
+            "T25-3g"
+          ],
+          "unit_tests": [
+            "TestAuditGateAuthzDenialIsASecurityRecord",
+            "TestAuditOriginatorOnARefusal"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sec.mtls.client_verify_failed",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "subject",
+            "x509_error"
+          ],
+          "behaviour": "frontend client certificate rejected",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sec.opa.l4_deny",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "policy_version"
+          ],
+          "behaviour": "pin in stage 2",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sec.pii.detected",
+      "class": "S",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "request_id",
+            "entity_types",
+            "count",
+            "action"
+          ],
+          "behaviour": "PII found",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.disk.reserve_breached",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "free_bytes",
+            "reserved_bytes"
+          ],
+          "behaviour": "crossing the reserve produces one record and durable writes are refused",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestRetentionPrunesOneAnnouncedSegmentPerPass"
+          ],
+          "red_twin_run_id": null,
+          "note": "the shipped configuration sets no reserve; the crossing is driven in the unit suite",
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.ha.role_change",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "instance_id",
+            "role_from",
+            "role_to"
+          ],
+          "behaviour": "HA transition",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.heartbeat",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "seq_high",
+            "accepted",
+            "dropped_by_reason",
+            "queue_depth",
+            "queue_hwm",
+            "write_failures_total"
+          ],
+          "behaviour": "fixed-interval liveness record with counters since boot",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T11-2e",
+            "T11-2f",
+            "T19-3b"
+          ],
+          "unit_tests": [
+            "TestHeartbeatWhenIdle"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.hold.applied",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "hold_id"
+          ],
+          "behaviour": "legal hold",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.hold.released",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "hold_id"
+          ],
+          "behaviour": "legal hold",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.intent.orphaned",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "intent_event_id",
+            "config_generation_at_boot"
+          ],
+          "behaviour": "boot-time scan of the previous boot: one record per intent without a result, nothing synthesised",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T20-1a",
+            "T20-1b",
+            "T20-2a",
+            "T20-2b",
+            "T20-2c",
+            "T20-3"
+          ],
+          "unit_tests": [
+            "TestOrphanedIntentIsReportedAtNextStart",
+            "TestOrphanScanIgnoresOwnBootAndEmptyDir"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-T20-r1",
+          "state": "covered and tested"
+        }
+      ],
+      "state": "covered and tested"
+    },
+    {
+      "event_type": "sys.key.rotated",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "old_key_id",
+            "new_key_id"
+          ],
+          "behaviour": "signing key rotated",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.producer.gap",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1b",
+          "fields": [
+            "producer_id",
+            "stream",
+            "pseq_from",
+            "pseq_to",
+            "reason",
+            "exact"
+          ],
+          "behaviour": "exact lost ranges per producer",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestProducerDropAccounting"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.replay.completed",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "replay_event_id",
+            "sink",
+            "seq_from",
+            "seq_to"
+          ],
+          "behaviour": "replay finished",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.segment.compress_failed",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "errno_class"
+          ],
+          "behaviour": "the plain segment is kept",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestRotationFramesAndPermissions"
+          ],
+          "red_twin_run_id": null,
+          "note": "fault point; unit suite arms it through the internal hook",
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.segment.lost_to_retention",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "seq_from",
+            "seq_to",
+            "sinks_pending"
+          ],
+          "behaviour": "prune of an unexported segment",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.segment.open",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "prev_segment_uuid",
+            "first_seq"
+          ],
+          "behaviour": "new segment started",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestRotationFramesAndPermissions"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.segment.prune",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "age_days",
+            "bytes",
+            "hold"
+          ],
+          "behaviour": "announced durably before the delete",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestRetentionPrunesOneAnnouncedSegmentPerPass"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        },
+        {
+          "stage": "2",
+          "fields": [
+            "exported_to"
+          ],
+          "behaviour": "unexported segments are refused",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.segment.recovered",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "records_recovered",
+            "truncated_tail_bytes"
+          ],
+          "behaviour": "unclosed segment of the previous boot closed at start",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T20-4"
+          ],
+          "unit_tests": [
+            "TestRecoveryOfUnsealedSegment"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        },
+        {
+          "stage": "3",
+          "fields": [],
+          "behaviour": "seal on recovery",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.segment.rotation_failed",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "errno_class"
+          ],
+          "behaviour": "writing continues on the old handle",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestRotationFramesAndPermissions"
+          ],
+          "red_twin_run_id": null,
+          "note": "fault point; unit suite arms it through the internal hook",
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.segment.seal",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "record_count",
+            "last_seq"
+          ],
+          "behaviour": "close footer, unkeyed",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestRotationFramesAndPermissions"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        },
+        {
+          "stage": "3",
+          "fields": [
+            "key_id",
+            "seal"
+          ],
+          "behaviour": "HMAC footer",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.segment.seal_failed",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "3",
+          "fields": [
+            "key_id",
+            "errno_class"
+          ],
+          "behaviour": "HMAC footer could not be written",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.sink.connect",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "peer_subject",
+            "cert_not_after",
+            "cursor"
+          ],
+          "behaviour": "sink session established",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.sink.cursor_recovery_failed",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "errno_class"
+          ],
+          "behaviour": "cursor cannot be rebuilt",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.sink.cursor_reset",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "old_cursor",
+            "new_cursor",
+            "method"
+          ],
+          "behaviour": "cursor rebuilt",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.sink.disconnect",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "reason",
+            "cursor",
+            "reconnect_window_records"
+          ],
+          "behaviour": "sink session lost",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.sink.poison",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "2",
+          "fields": [
+            "poison_seq",
+            "reason"
+          ],
+          "behaviour": "record skipped after rejection",
+          "scenario": null,
+          "assertion_ids": [],
+          "unit_tests": [],
+          "red_twin_run_id": null,
+          "state": "uncovered"
+        }
+      ],
+      "state": "uncovered"
+    },
+    {
+      "event_type": "sys.writer.panic",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "panic_msg",
+            "last_seq_before"
+          ],
+          "behaviour": "the panic counter moves even if the record cannot be written",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestSupervisorRestartsAfterPanic"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.writer.restart",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "last_seq_before",
+            "restart_count"
+          ],
+          "behaviour": "supervised restart after a panic; mutating calls got 503 for the gap",
+          "scenario": "unit",
+          "assertion_ids": [],
+          "unit_tests": [
+            "TestSupervisorRestartsAfterPanic"
+          ],
+          "red_twin_run_id": null,
+          "note": "needs the audit_faults build tag; the CI image is built without it, so the panic arm runs in the unit suite (every build, internal hook) and on the bed",
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.writer.start",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "boot_id"
+          ],
+          "behaviour": "first record of every boot",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T-GW-1-8"
+          ],
+          "unit_tests": [
+            "TestWriteDurableRoundTrip"
+          ],
+          "red_twin_run_id": null,
+          "state": "covered but untested"
+        }
+      ],
+      "state": "covered but untested"
+    },
+    {
+      "event_type": "sys.writer.write_failed",
+      "class": "A",
+      "variants": [],
+      "requirements": [
+        {
+          "stage": "1a",
+          "fields": [
+            "errno_class",
+            "first_ts",
+            "last_ts",
+            "count"
+          ],
+          "behaviour": "written retroactively once writing resumes; the metric and the operational log carry the failure meanwhile",
+          "scenario": "audit-mgmt",
+          "assertion_ids": [
+            "T19-1a",
+            "T19-1b",
+            "T19-2",
+            "T19-3a",
+            "T19-3b",
+            "T19-3c",
+            "T19-4a",
+            "T19-4b",
+            "T19-4c",
+            "T19-4d",
+            "T19-4e",
+            "T19-5",
+            "T19-6"
+          ],
+          "unit_tests": [
+            "TestWriteFailureIsRecordedRetroactively"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-T19-r1",
+          "state": "covered and tested"
+        }
+      ],
+      "state": "covered and tested"
+    }
+  ]
+}

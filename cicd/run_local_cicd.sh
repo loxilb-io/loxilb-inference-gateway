@@ -147,6 +147,18 @@ run_scenario ai-jwtauth -- './config.sh' './validation.sh'
 # suite's README for the reference green counts.
 run_scenario ai-authsep -- './config.sh' './validation.sh' './tiers.sh' './backcompat.sh'
 
+# audit-mgmt: the management-plane audit trail, container-only (no GPU) —
+# the same suite the audit-sanity workflow runs. The gate fails closed with
+# the state unchanged, actors are attributed or honestly auth=none, canary
+# secrets reach no segment, a crash between intent and result is reported
+# at the next boot, a full audit filesystem is visible on /metrics and in
+# the log before the retroactive record, and the delegated originator is
+# recorded and trusted only for accounts marked delegation_allowed. Needs
+# jq on the host; config.sh pulls postgres:18.6 for the two stores. The
+# coverage manifest next to it names which assertion proves which event
+# type (cicd/audit-mgmt/gen-coverage-manifest.py --check).
+run_scenario audit-mgmt -- './config.sh' './validation.sh'
+
 # AI QoS on the mock topology (no GPU): rule-attached ingress policing,
 # full-proxy payload shaping, and egress-direction policing. The per-engine
 # QoS acceptance (token quotas end-to-end against real inference engines)
