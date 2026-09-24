@@ -233,6 +233,17 @@ Combining `api_key_auth` with any declaration that does own response bytes bring
 the refusal back: `api_key_auth` + `sse_mode`, `+ pd_disagg_mode` or `+ an L7
 policy` is refused in both directions.
 
+The data plane applies the same split per connection. When a connection of such a
+service is set up, only the backend socket is handed to the kernel: response bytes
+are redirected to the client, while every request keeps arriving in userspace,
+where the credential is checked and `X-Api-Key` is stripped on each keep-alive
+request. A direction the service owns is taken away from the pairing and the
+other is kept, so an L7 policy attached while connections are live leaves them on
+the relay in both directions. `cicd/sockmap-fullproxy/validation_apikey_response.sh`
+holds both halves: the subject's response-redirect counter moves and its
+request-redirect counter does not, a keyed-then-unkeyed keep-alive run is refused
+from the second request on, and the strip is proven on every echo.
+
 The pairing is refused from both sides, because either can come second:
 
 - setting a `sockMapMode` on a service that already carries an L7 policy is
@@ -520,6 +531,7 @@ being torn down. `sockmap_stats` cannot see these. Look for them in two steps:
 | script | covers | guarantee |
 |---|---|---|
 | `validation.sh` | BPF assets attach, rules register, offload engages, AI gateway services refuse a `sockMapMode` | 6 |
+| `validation_apikey_response.sh` | a service declaring `api_key_auth` is refused the request direction and accepted for the response direction, at the API and in the data plane: responses redirected, requests relayed with the credential checked and `X-Api-Key` stripped on every keep-alive request, no redirect on a control rule with the mode off. Runs in CI; needs the testbed's optional key store | 4, 6 |
 | `validation_integrity.sh` | the relayed stream compared byte by byte against a predictable body, accelerated vs `off` | 1 |
 | `validation_observability.sh` | service statistics equal to `off`, including connections closed by `sockmapreset`; a refused redirect counted as one; `psock-drops.bt` attributing a drop | 3 |
 | `validation_concurrent.sh` | concurrent connection handling, maps drain after close, an `off` control arm | 4 |
