@@ -38,6 +38,12 @@ backups >10×; the live drill compressed 1 MB of debug logs to 44 KB).
 - `GET /netlox/v1/log-archives/{filename}` downloads from either directory
   (path-traversal guarded).
 - The MCP bridge exposes the same via `log_archives_list` / `log_archive_get`.
+- The management audit trail is outside this API by construction: it lives in
+  its own directory (`--audit-dir`, default `/var/log/loxilb/audit/`, mode
+  0700) and its files are named `audit.jsonl` / `audit-<UTC>.jsonl[.gz]`, which
+  the `loxilb*.log` filter never matches. A test holds that line. The trail's
+  state is readable through `GET /netlox/v1/audit/status` — counters, the
+  active segment, retention — never its records.
 
 ## Container deployments (important)
 

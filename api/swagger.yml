@@ -7394,6 +7394,40 @@ paths:
           $ref: '#/responses/ManagementStoreUnavailable'
 
 #----------------------------------------------
+# Audit Trail
+#----------------------------------------------
+  '/audit/status':
+    get:
+      summary: Audit trail status
+      description: >-
+        Reports the state of the management audit trail: whether a writer is
+        configured and running, records accepted and dropped per stream,
+        write, sync and timeout failures, the time of the last write, the
+        active segment and the sealed bytes, the retention policy with the
+        retention it projects, and the management intents of the previous
+        boot that never received a result. Status only: no record content is
+        served over the management API, and this read is not itself audited
+        because it is designed to be polled. A gateway whose audit directory
+        was unusable at start still answers, with available false, so the
+        refused management calls can be explained.
+      operationId: GetAuditStatus
+      tags:
+        - audit
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Audit trail status
+          schema:
+            $ref: '#/definitions/AuditStatus'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
+
+#----------------------------------------------
 # Log Archives
 #----------------------------------------------
   '/log-archives':
@@ -12946,6 +12980,10 @@ definitions:
       role:
         type: string
         enum: ["admin", "viewer"]
+      delegation_allowed:
+        type: boolean
+        x-nullable: true
+        description: Whether a request this account authenticates may name another originator that the trail then records as trusted. False for every new account; ignored on create and on login. Settable only by an administrator through PUT, where an omitted value keeps what is stored and a present one is recorded as a changed field.
     type: object
     required:
       - username
@@ -12969,6 +13007,9 @@ definitions:
       role:
         type: string
         enum: ["admin", "viewer"]
+      delegation_allowed:
+        type: boolean
+        description: Whether requests this account authenticates may name another originator.
     type: object
 
   FlowCountMetrics:
@@ -13159,6 +13200,207 @@ definitions:
         type: integer
         format: int64
         description: Bytes examined to build this page. Equal to the page's own span when unfiltered; larger for a filtered query that had to search backwards past non-matching lines. Compare against total_size to show progress through a long search.
+
+#----------------------------------------------
+# Audit Trail Definitions
+#----------------------------------------------
+  AuditStatus:
+    type: object
+    description: >-
+      State of the management audit trail. Every counter is since the writer
+      started in this process; identifiers name segments and events, never
+      their content.
+    properties:
+      available:
+        type: boolean
+        description: A writer was configured at start. When false the audit directory was unusable, every audited management call is refused, and the remaining fields describe nothing.
+      running:
+        type: boolean
+        description: The writer goroutine is running. False while it restarts after a failure.
+      boot_id:
+        type: string
+        description: Identity of this writer process, stamped on every record it wrote.
+      seq_high:
+        type: integer
+        format: int64
+        description: Highest sequence number written in this boot.
+      last_write:
+        type: string
+        description: Time of the last record written, RFC3339 UTC. Empty until the first record.
+      accepted:
+        type: object
+        additionalProperties:
+          type: integer
+          format: int64
+        description: Records written, by stream (mgmt, data, system).
+      dropped:
+        type: array
+        items:
+          $ref: '#/definitions/AuditDropCount'
+        description: Records the writer could not accept, by stream and reason. Absent reasons are zero.
+      result_drops:
+        type: integer
+        format: int64
+        description: Management result records lost after the mutation had happened. The intent stays on disk without its result; the loss is counted here, not hidden.
+      originator_dropped:
+        type: integer
+        format: int64
+        description: X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.
+      delegation_lookups:
+        type: integer
+        format: int64
+        description: Account lookups made to decide whether a named originator is trusted. A request without the header makes none.
+      queue_depth:
+        type: object
+        additionalProperties:
+          type: integer
+        description: Records waiting in each queue right now.
+      queue_hwm:
+        type: object
+        additionalProperties:
+          type: integer
+        description: High-water mark of each queue since start.
+      write_failures:
+        type: integer
+        format: int64
+      sync_failures:
+        type: integer
+        format: int64
+      mgmt_timeouts:
+        type: integer
+        format: int64
+        description: Durable management writes that missed the caller's deadline; each one refused a management call.
+      panics:
+        type: integer
+        format: int64
+      restarts:
+        type: integer
+        format: int64
+      heartbeats:
+        type: integer
+        format: int64
+      rotations:
+        type: integer
+        format: int64
+      path_sanitized:
+        type: integer
+        format: int64
+        description: Records whose resource path carried bytes outside the allowed set and was rewritten.
+      unattributed:
+        type: integer
+        format: int64
+        description: Records that reached the writer without a producer identity.
+      perm_repaired:
+        type: integer
+        format: int64
+        description: Times the active segment's mode was found wider than 0600 and narrowed.
+      rotation_failed:
+        type: integer
+        format: int64
+      compress_failed:
+        type: integer
+        format: int64
+      compress_skipped:
+        type: integer
+        format: int64
+      pruned:
+        type: integer
+        format: int64
+        description: Sealed segments removed by the retention policy.
+      reserve_breaches:
+        type: integer
+        format: int64
+      reserve_breached:
+        type: boolean
+        description: The audit filesystem is below its reserve right now; durable management writes are refused until space is recovered.
+      sealed_bytes:
+        type: integer
+        format: int64
+        description: Bytes held by sealed segments on disk, after compression.
+      orphaned_intents:
+        type: integer
+        format: int64
+        description: Management intents of the previous boot that had no result when this writer started. Each one is a change whose outcome is unknown.
+      last_orphan_event_id:
+        type: string
+        description: Event id of the most recent orphaned intent, for the investigator to look up in the trail.
+      segment:
+        $ref: '#/definitions/AuditSegmentStatus'
+      retention:
+        $ref: '#/definitions/AuditRetentionPolicy'
+      projected_retention_days:
+        type: number
+        format: double
+        description: Days of records the policy is projected to keep, from the age bound and from the byte quota divided by this process's write rate, whichever is shorter. Zero when nothing bounds retention or the rate is not yet measurable.
+      producers:
+        type: array
+        items:
+          $ref: '#/definitions/AuditProducerStatus'
+        description: Per-producer accounting, sorted by producer id.
+  AuditDropCount:
+    type: object
+    properties:
+      stream:
+        type: string
+      reason:
+        type: string
+      count:
+        type: integer
+        format: int64
+  AuditSegmentStatus:
+    type: object
+    description: The segment the writer is appending to.
+    properties:
+      uuid:
+        type: string
+      opened:
+        type: string
+        description: When the segment was opened, RFC3339 UTC.
+      records:
+        type: integer
+        format: int64
+      bytes:
+        type: integer
+        format: int64
+        description: Size on disk including the header line.
+  AuditRetentionPolicy:
+    type: object
+    description: The policy in force. Zero disables a bound.
+    properties:
+      max_age_seconds:
+        type: integer
+        format: int64
+      max_bytes:
+        type: integer
+        format: int64
+      reserve_bytes:
+        type: integer
+        format: int64
+        description: Free-space floor on the audit filesystem below which pruning proceeds regardless of age and quota and durable writes are refused.
+  AuditProducerStatus:
+    type: object
+    properties:
+      id:
+        type: string
+      stream:
+        type: string
+      pseq_high:
+        type: integer
+        format: int64
+        description: Highest producer sequence number handed out; a gap against the writer's arrivals is a loss.
+      accepted:
+        type: integer
+        format: int64
+      dropped:
+        type: object
+        additionalProperties:
+          type: integer
+          format: int64
+        description: Drops by reason.
+      drop_ring_overflows:
+        type: integer
+        format: int64
+        description: Drop records that could not be kept in the producer's own ring.
 
   LogArchives:
     type: object

@@ -219,6 +219,9 @@ type Writer struct {
 
 	seq       atomic.Uint64
 	lastWrite atomic.Int64
+	lastBeat  atomic.Int64 // when the writer goroutine last proved itself alive
+	written   atomic.Int64 // record bytes appended by this process
+	startedAt time.Time
 	seg       *segmenter
 	enc       *encoder
 	pool      sync.Pool
@@ -239,8 +242,11 @@ type Writer struct {
 	stats writerStats
 
 	// Writer-goroutine state.
-	pending   []syncReq
-	failing   *failInterval
+	pending []syncReq
+	failing *failInterval
+	// appended is set by a successful append and cleared by the flush that
+	// synced it; it is what lets last_write mean what it says.
+	appended  bool
 	recovered *recovery
 	pendingP  *panicInfo
 	sysDepth  int
@@ -269,6 +275,7 @@ func New(cfg Config) (*Writer, error) {
 		arrivals: make(map[string]uint64),
 		holds:    make(map[string]string),
 	}
+	w.startedAt = w.now()
 	for i := range w.queues {
 		w.queues[i] = make(chan *Record, cfg.QueueSize)
 	}
@@ -538,6 +545,8 @@ func (w *Writer) runGuarded() (info panicInfo, panicked bool) {
 }
 
 func (w *Writer) run() {
+	// Starting is the first proof of life; the heartbeat keeps it current.
+	w.lastBeat.Store(w.now().Unix())
 	w.running.Store(true)
 	w.startRecords()
 
@@ -702,7 +711,14 @@ func (w *Writer) flush() {
 		w.failPending(fmt.Errorf("%w: %v", ErrWriteFailed, err))
 		return
 	}
-	w.lastWrite.Store(w.now().Unix())
+	// last_write means a record reached the disk. A flush that had nothing
+	// to sync (every append since the last one failed) must not move it, or
+	// the staleness the metric exists to show would be hidden by the very
+	// ticker that fires while the disk is unwritable.
+	if w.appended {
+		w.lastWrite.Store(w.now().Unix())
+		w.appended = false
+	}
 	for _, sr := range w.pending {
 		sr.done <- nil
 	}
@@ -757,6 +773,8 @@ func (w *Writer) write(r *Record) error {
 		return err
 	}
 	w.seq.Store(seq)
+	w.appended = true
+	w.written.Add(int64(len(line)))
 	w.stats.accepted[idxOf(r.Stream)].Add(1)
 	if w.failing != nil && w.sysDepth == 0 {
 		w.recordWriteFailureEnd()
@@ -850,6 +868,7 @@ func (w *Writer) noteArrival(r *Record) {
 // drains the producers' drop rings into gap records.
 func (w *Writer) heartbeat() {
 	w.stats.heartbeats.Add(1)
+	w.lastBeat.Store(w.now().Unix())
 	w.emitProducerGaps()
 	w.writeSystem(sysRecord("sys.heartbeat", "writer", &SysDetail{Heartbeat: w.heartbeatPayload()}))
 }
@@ -932,6 +951,10 @@ type Stats struct {
 	Running       bool
 	SeqHigh       uint64
 	LastWriteUnix int64
+	// LastHeartbeatUnix is when the writer goroutine last wrote its
+	// liveness record; a value that stops advancing is a writer that is
+	// not running, whatever the counters say.
+	LastHeartbeatUnix int64
 
 	Accepted map[Stream]uint64
 	Dropped  []DropCount
@@ -963,40 +986,66 @@ type Stats struct {
 	OrphanedIntents   uint64
 	LastOrphanEventID string
 
-	SegmentUUID string
-	Producers   []ProducerStats
+	// The active segment: identity, when it was opened, and what it holds.
+	SegmentUUID       string
+	SegmentOpenedUnix int64
+	SegmentRecords    uint64
+	SegmentBytes      int64
+
+	// StartedUnix is when this writer was created and BytesWritten the
+	// record bytes it has appended since, before compression; together
+	// they give the write rate the retention projection rests on.
+	StartedUnix  int64
+	BytesWritten int64
+	Retention    Retention
+
+	Producers []ProducerStats
 }
+
+// Streams lists the record streams in a fixed order, for a consumer that
+// reports every stream whether or not it has seen a record.
+func Streams() []Stream { return append([]Stream(nil), streamByIdx[:]...) }
+
+// DropReasons lists the drop reasons in a fixed order, for the same
+// consumer: a reason reported at zero is distinguishable from one nobody
+// asked about.
+func DropReasons() []string { return append([]string(nil), dropReasons[:]...) }
 
 // Stats returns a snapshot. It is safe from any goroutine.
 func (w *Writer) Stats() Stats {
 	s := Stats{
-		BootID:          w.bootID,
-		Running:         w.running.Load(),
-		SeqHigh:         w.seq.Load(),
-		LastWriteUnix:   w.lastWrite.Load(),
-		Accepted:        make(map[Stream]uint64, numStreams),
-		QueueDepth:      make(map[string]int, numQueues),
-		QueueHWM:        make(map[string]int, numQueues),
-		WriteFailures:   w.stats.writeFailures.Load(),
-		SyncFailures:    w.stats.syncFailures.Load(),
-		MgmtTimeouts:    w.stats.mgmtTimeouts.Load(),
-		Panics:          w.stats.panics.Load(),
-		Restarts:        w.stats.restarts.Load(),
-		Heartbeats:      w.stats.heartbeats.Load(),
-		Rotations:       w.stats.rotations.Load(),
-		PathSanitized:   w.stats.pathSanitized.Load(),
-		Unattributed:    w.stats.unattributed.Load(),
-		PermRepaired:    w.seg.stats.permRepaired.Load(),
-		RotationFailed:  w.seg.stats.rotationFailed.Load(),
-		CompressFailed:  w.seg.stats.compressFailed.Load(),
-		CompressSkipped: w.seg.stats.compressSkipped.Load(),
-		Pruned:          w.stats.pruned.Load(),
-		ReserveBreaches: w.stats.reserveBreaches.Load(),
-		ReserveBreached: w.reserveBreached.Load(),
-		SealedBytes:     w.sealedBytes.Load(),
-		SegmentUUID:     w.seg.currentUUID(),
-		OrphanedIntents: w.stats.orphanedIntents.Load(),
+		BootID:            w.bootID,
+		Running:           w.running.Load(),
+		SeqHigh:           w.seq.Load(),
+		LastWriteUnix:     w.lastWrite.Load(),
+		LastHeartbeatUnix: w.lastBeat.Load(),
+		Accepted:          make(map[Stream]uint64, numStreams),
+		QueueDepth:        make(map[string]int, numQueues),
+		QueueHWM:          make(map[string]int, numQueues),
+		WriteFailures:     w.stats.writeFailures.Load(),
+		SyncFailures:      w.stats.syncFailures.Load(),
+		MgmtTimeouts:      w.stats.mgmtTimeouts.Load(),
+		Panics:            w.stats.panics.Load(),
+		Restarts:          w.stats.restarts.Load(),
+		Heartbeats:        w.stats.heartbeats.Load(),
+		Rotations:         w.stats.rotations.Load(),
+		PathSanitized:     w.stats.pathSanitized.Load(),
+		Unattributed:      w.stats.unattributed.Load(),
+		PermRepaired:      w.seg.stats.permRepaired.Load(),
+		RotationFailed:    w.seg.stats.rotationFailed.Load(),
+		CompressFailed:    w.seg.stats.compressFailed.Load(),
+		CompressSkipped:   w.seg.stats.compressSkipped.Load(),
+		Pruned:            w.stats.pruned.Load(),
+		ReserveBreaches:   w.stats.reserveBreaches.Load(),
+		ReserveBreached:   w.reserveBreached.Load(),
+		SealedBytes:       w.sealedBytes.Load(),
+		SegmentUUID:       w.seg.currentUUID(),
+		OrphanedIntents:   w.stats.orphanedIntents.Load(),
+		StartedUnix:       w.startedAt.Unix(),
+		BytesWritten:      w.written.Load(),
+		Retention:         *w.retention.Load(),
 	}
+	s.SegmentOpenedUnix, s.SegmentRecords, s.SegmentBytes = w.seg.current()
 	if id := w.lastOrphan.Load(); id != nil {
 		s.LastOrphanEventID = *id
 	}

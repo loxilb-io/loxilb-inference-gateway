@@ -23,6 +23,9 @@ type User struct {
 	// created at
 	CreatedAt string `json:"created_at,omitempty"`
 
+	// Whether a request this account authenticates may name another originator that the trail then records as trusted. False for every new account; ignored on create and on login. Settable only by an administrator through PUT, where an omitted value keeps what is stored and a present one is recorded as a changed field.
+	DelegationAllowed *bool `json:"delegation_allowed,omitempty"`
+
 	// id
 	ID int64 `json:"id,omitempty"`
 

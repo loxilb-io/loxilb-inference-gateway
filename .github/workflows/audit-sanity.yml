@@ -1,0 +1,176 @@
+name: Audit-Sanity-CI
+
+# The management-plane audit trail, self-contained on a hosted runner: no
+# GPU, no cloud service, no external identity provider. Two gates, in cost
+# order:
+#
+#   unit-gates       the writer, encoder, intent-recovery and retention
+#                    suites in pkg/audit (with the race detector, and once
+#                    more with the fault points compiled in), the gate,
+#                    emitter, originator, status and metrics suites in the
+#                    handler package, and the coverage manifest's drift check
+#   audit-scenario   cicd/audit-mgmt: the fail-closed gate with the state
+#                    oracle, actor conformance in both deployments, canary
+#                    hygiene across active/sealed/compressed segments, the
+#                    orphaned-intent report after a crash, the write-failure
+#                    fallback on a full filesystem and the retroactive record,
+#                    the delegated originator, and the named routes' pairs
+#
+# The fault-injected arms (writer panic and restart, rotation and gzip
+# failures) need the audit_faults build tag, which the shipped image does
+# not carry; they run in unit-gates through the package's internal hook.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkg/audit/**'
+      - 'pkg/logrotate/**'
+      - 'pkg/user/**'
+      - 'pkg/authz/**'
+      - 'api/**'
+      - 'options/**'
+      - 'mcp/**'
+      - 'cicd/audit-mgmt/**'
+      - 'cicd/common.sh'
+      - 'scripts/aigw-db-bootstrap.sql'
+      - 'loxilb-ebpf'
+      - '.github/workflows/audit-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'pkg/audit/**'
+      - 'pkg/logrotate/**'
+      - 'pkg/user/**'
+      - 'pkg/authz/**'
+      - 'api/**'
+      - 'options/**'
+      - 'mcp/**'
+      - 'cicd/audit-mgmt/**'
+      - 'cicd/common.sh'
+      - 'scripts/aigw-db-bootstrap.sql'
+      - 'loxilb-ebpf'
+      - '.github/workflows/audit-sanity.yml'
+  schedule:
+    # Nightly: a regression through an untouched path (a dependency bump, a
+    # submodule pin, runner drift) surfaces within a day.
+    - cron: '45 17 * * *'
+  workflow_dispatch:
+
+jobs:
+  unit-gates:
+    name: unit-gates
+    runs-on: ubuntu-22.04
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves libbsd-dev build-essential bison flex libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      # The handler package links the eBPF userland, so the tree must build
+      # before its tests can compile.
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+
+      - name: Coverage manifest agrees with the tree and the scenario
+        run: python3 -B cicd/audit-mgmt/gen-coverage-manifest.py --check
+
+      - name: Writer, encoder, recovery and retention suites
+        # -race because the writer is one goroutine fed by many; the second
+        # pass compiles the fault points in and proves the failure paths
+        # (restart record, retroactive write-failure record, kept plain
+        # segment) fire from the environment knob as well as from the hook.
+        run: |
+          sudo -E env "PATH=$PATH" go vet ./pkg/audit ./pkg/logrotate
+          sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/audit ./pkg/logrotate
+          sudo -E env "PATH=$PATH" go test -count=1 -tags audit_faults ./pkg/audit
+
+      - name: Disposable PostgreSQL for the store-backed suites
+        run: |
+          docker run -d --name audit-unit-pg \
+            -e POSTGRES_PASSWORD=ci-superuser-pw -e POSTGRES_DB=loxilb \
+            -p 127.0.0.1:5432:5432 postgres:18.6
+          for i in $(seq 1 30); do
+            docker exec audit-unit-pg pg_isready -U postgres >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec -i audit-unit-pg psql -U postgres -d loxilb \
+            -v aigw_password=ci-aigw-pw -v aigw_mgmt_password=ci-mgmt-pw \
+            -f /dev/stdin < scripts/aigw-db-bootstrap.sql
+
+      - name: Gate, emitter, originator, status and metrics suites
+        # The user store's delegation_allowed migration and lookup run
+        # against the real server (MGMT_TEST_PG=required: missing server
+        # fails, never skips).
+        env:
+          MGMT_TEST_PG: required
+          MGMT_TEST_DSN: postgres://aigw_mgmt_user:ci-mgmt-pw@127.0.0.1:5432/loxilb
+          AIKEY_TEST_PG: required
+          AIKEY_TEST_DSN: postgres://aigwuser:ci-aigw-pw@127.0.0.1:5432/loxilb
+        run: |
+          sudo -E env "PATH=$PATH" go vet ./api/restapi/handler ./pkg/user
+          sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/user
+          sudo -E env "PATH=$PATH" go test -count=1 -run 'Audit|LogArchivesNeverServeAuditFiles' ./api/restapi/handler
+          sudo -E env "PATH=$PATH" go test -count=1 -tags audit_faults -run 'Audit' ./api/restapi/handler
+
+      - name: MCP bridge module (originator header)
+        run: |
+          cd mcp
+          sudo -E env "PATH=$PATH" go vet ./...
+          sudo -E env "PATH=$PATH" go test -count=1 ./...
+
+  audit-scenario:
+    name: audit-scenario
+    runs-on: ubuntu-22.04
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev jq
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      # Same image recipe as the AI-gateway sanity workflow: pull the
+      # published image (or build it), overlay the freshly built binary,
+      # and commit — the scenario then tests THIS tree, not the registry.
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: Management-plane audit trail (cicd/audit-mgmt)
+        run: |
+          cd cicd/audit-mgmt/
+          ./config.sh
+          ./validation.sh
+      - name: Teardown
+        if: always()
+        run: |
+          cd cicd/audit-mgmt/
+          ./rmconfig.sh || true
+      - run: echo "Audit sanity complete"

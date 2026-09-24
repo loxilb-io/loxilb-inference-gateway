@@ -275,6 +275,267 @@ func init() {
       ],
       "type": "object"
     },
+    "AuditDropCount": {
+      "properties": {
+        "count": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AuditProducerStatus": {
+      "properties": {
+        "accepted": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "drop_ring_overflows": {
+          "description": "Drop records that could not be kept in the producer's own ring.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "dropped": {
+          "additionalProperties": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "description": "Drops by reason.",
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pseq_high": {
+          "description": "Highest producer sequence number handed out; a gap against the writer's arrivals is a loss.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "stream": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AuditRetentionPolicy": {
+      "description": "The policy in force. Zero disables a bound.",
+      "properties": {
+        "max_age_seconds": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "max_bytes": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "reserve_bytes": {
+          "description": "Free-space floor on the audit filesystem below which pruning proceeds regardless of age and quota and durable writes are refused.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "AuditSegmentStatus": {
+      "description": "The segment the writer is appending to.",
+      "properties": {
+        "bytes": {
+          "description": "Size on disk including the header line.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "opened": {
+          "description": "When the segment was opened, RFC3339 UTC.",
+          "type": "string"
+        },
+        "records": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "uuid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AuditStatus": {
+      "description": "State of the management audit trail. Every counter is since the writer started in this process; identifiers name segments and events, never their content.",
+      "properties": {
+        "accepted": {
+          "additionalProperties": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "description": "Records written, by stream (mgmt, data, system).",
+          "type": "object"
+        },
+        "available": {
+          "description": "A writer was configured at start. When false the audit directory was unusable, every audited management call is refused, and the remaining fields describe nothing.",
+          "type": "boolean"
+        },
+        "boot_id": {
+          "description": "Identity of this writer process, stamped on every record it wrote.",
+          "type": "string"
+        },
+        "compress_failed": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "compress_skipped": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "delegation_lookups": {
+          "description": "Account lookups made to decide whether a named originator is trusted. A request without the header makes none.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "dropped": {
+          "description": "Records the writer could not accept, by stream and reason. Absent reasons are zero.",
+          "items": {
+            "$ref": "#/definitions/AuditDropCount"
+          },
+          "type": "array"
+        },
+        "heartbeats": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "last_orphan_event_id": {
+          "description": "Event id of the most recent orphaned intent, for the investigator to look up in the trail.",
+          "type": "string"
+        },
+        "last_write": {
+          "description": "Time of the last record written, RFC3339 UTC. Empty until the first record.",
+          "type": "string"
+        },
+        "mgmt_timeouts": {
+          "description": "Durable management writes that missed the caller's deadline; each one refused a management call.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "originator_dropped": {
+          "description": "X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "orphaned_intents": {
+          "description": "Management intents of the previous boot that had no result when this writer started. Each one is a change whose outcome is unknown.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "panics": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "path_sanitized": {
+          "description": "Records whose resource path carried bytes outside the allowed set and was rewritten.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "perm_repaired": {
+          "description": "Times the active segment's mode was found wider than 0600 and narrowed.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "producers": {
+          "description": "Per-producer accounting, sorted by producer id.",
+          "items": {
+            "$ref": "#/definitions/AuditProducerStatus"
+          },
+          "type": "array"
+        },
+        "projected_retention_days": {
+          "description": "Days of records the policy is projected to keep, from the age bound and from the byte quota divided by this process's write rate, whichever is shorter. Zero when nothing bounds retention or the rate is not yet measurable.",
+          "format": "double",
+          "type": "number"
+        },
+        "pruned": {
+          "description": "Sealed segments removed by the retention policy.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "queue_depth": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Records waiting in each queue right now.",
+          "type": "object"
+        },
+        "queue_hwm": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "High-water mark of each queue since start.",
+          "type": "object"
+        },
+        "reserve_breached": {
+          "description": "The audit filesystem is below its reserve right now; durable management writes are refused until space is recovered.",
+          "type": "boolean"
+        },
+        "reserve_breaches": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "restarts": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "result_drops": {
+          "description": "Management result records lost after the mutation had happened. The intent stays on disk without its result; the loss is counted here, not hidden.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "retention": {
+          "$ref": "#/definitions/AuditRetentionPolicy"
+        },
+        "rotation_failed": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "rotations": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "running": {
+          "description": "The writer goroutine is running. False while it restarts after a failure.",
+          "type": "boolean"
+        },
+        "sealed_bytes": {
+          "description": "Bytes held by sealed segments on disk, after compression.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "segment": {
+          "$ref": "#/definitions/AuditSegmentStatus"
+        },
+        "seq_high": {
+          "description": "Highest sequence number written in this boot.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "sync_failures": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "unattributed": {
+          "description": "Records that reached the writer without a producer identity.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "write_failures": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "AutoPersistStatus": {
       "description": "Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.",
       "properties": {
@@ -6902,6 +7163,11 @@ func init() {
         "created_at": {
           "type": "string"
         },
+        "delegation_allowed": {
+          "description": "Whether a request this account authenticates may name another originator that the trail then records as trusted. False for every new account; ignored on create and on login. Settable only by an administrator through PUT, where an omitted value keeps what is stored and a present one is recorded as a changed field.",
+          "type": "boolean",
+          "x-nullable": true
+        },
         "id": {
           "type": "integer"
         },
@@ -7032,6 +7298,10 @@ func init() {
       "properties": {
         "created_at": {
           "type": "string"
+        },
+        "delegation_allowed": {
+          "description": "Whether requests this account authenticates may name another originator.",
+          "type": "boolean"
         },
         "id": {
           "type": "integer"
@@ -7274,6 +7544,36 @@ func init() {
     "version": "0.0.1"
   },
   "paths": {
+    "/audit/status": {
+      "get": {
+        "description": "Reports the state of the management audit trail: whether a writer is configured and running, records accepted and dropped per stream, write, sync and timeout failures, the time of the last write, the active segment and the sealed bytes, the retention policy with the retention it projects, and the management intents of the previous boot that never received a result. Status only: no record content is served over the management API, and this read is not itself audited because it is designed to be polled. A gateway whose audit directory was unusable at start still answers, with available false, so the refused management calls can be explained.",
+        "operationId": "GetAuditStatus",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit trail status",
+            "schema": {
+              "$ref": "#/definitions/AuditStatus"
+            }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Audit trail status",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
     "/auth/login": {
       "post": {
         "consumes": [
@@ -19667,6 +19967,45 @@ func init() {
   "host": "0.0.0.0:11111",
   "basePath": "/netlox/v1",
   "paths": {
+    "/audit/status": {
+      "get": {
+        "description": "Reports the state of the management audit trail: whether a writer is configured and running, records accepted and dropped per stream, write, sync and timeout failures, the time of the last write, the active segment and the sealed bytes, the retention policy with the retention it projects, and the management intents of the previous boot that never received a result. Status only: no record content is served over the management API, and this read is not itself audited because it is designed to be polled. A gateway whose audit directory was unusable at start still answers, with available false, so the refused management calls can be explained.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "audit"
+        ],
+        "summary": "Audit trail status",
+        "operationId": "GetAuditStatus",
+        "responses": {
+          "200": {
+            "description": "Audit trail status",
+            "schema": {
+              "$ref": "#/definitions/AuditStatus"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/auth/login": {
       "post": {
         "security": [],
@@ -32657,6 +32996,267 @@ func init() {
         }
       }
     },
+    "AuditDropCount": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string"
+        }
+      }
+    },
+    "AuditProducerStatus": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "drop_ring_overflows": {
+          "description": "Drop records that could not be kept in the producer's own ring.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "dropped": {
+          "description": "Drops by reason.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "pseq_high": {
+          "description": "Highest producer sequence number handed out; a gap against the writer's arrivals is a loss.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "stream": {
+          "type": "string"
+        }
+      }
+    },
+    "AuditRetentionPolicy": {
+      "description": "The policy in force. Zero disables a bound.",
+      "type": "object",
+      "properties": {
+        "max_age_seconds": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "reserve_bytes": {
+          "description": "Free-space floor on the audit filesystem below which pruning proceeds regardless of age and quota and durable writes are refused.",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "AuditSegmentStatus": {
+      "description": "The segment the writer is appending to.",
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "description": "Size on disk including the header line.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "opened": {
+          "description": "When the segment was opened, RFC3339 UTC.",
+          "type": "string"
+        },
+        "records": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "uuid": {
+          "type": "string"
+        }
+      }
+    },
+    "AuditStatus": {
+      "description": "State of the management audit trail. Every counter is since the writer started in this process; identifiers name segments and events, never their content.",
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "description": "Records written, by stream (mgmt, data, system).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "available": {
+          "description": "A writer was configured at start. When false the audit directory was unusable, every audited management call is refused, and the remaining fields describe nothing.",
+          "type": "boolean"
+        },
+        "boot_id": {
+          "description": "Identity of this writer process, stamped on every record it wrote.",
+          "type": "string"
+        },
+        "compress_failed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "compress_skipped": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "delegation_lookups": {
+          "description": "Account lookups made to decide whether a named originator is trusted. A request without the header makes none.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "dropped": {
+          "description": "Records the writer could not accept, by stream and reason. Absent reasons are zero.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AuditDropCount"
+          }
+        },
+        "heartbeats": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "last_orphan_event_id": {
+          "description": "Event id of the most recent orphaned intent, for the investigator to look up in the trail.",
+          "type": "string"
+        },
+        "last_write": {
+          "description": "Time of the last record written, RFC3339 UTC. Empty until the first record.",
+          "type": "string"
+        },
+        "mgmt_timeouts": {
+          "description": "Durable management writes that missed the caller's deadline; each one refused a management call.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "originator_dropped": {
+          "description": "X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "orphaned_intents": {
+          "description": "Management intents of the previous boot that had no result when this writer started. Each one is a change whose outcome is unknown.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "panics": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "path_sanitized": {
+          "description": "Records whose resource path carried bytes outside the allowed set and was rewritten.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "perm_repaired": {
+          "description": "Times the active segment's mode was found wider than 0600 and narrowed.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "producers": {
+          "description": "Per-producer accounting, sorted by producer id.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AuditProducerStatus"
+          }
+        },
+        "projected_retention_days": {
+          "description": "Days of records the policy is projected to keep, from the age bound and from the byte quota divided by this process's write rate, whichever is shorter. Zero when nothing bounds retention or the rate is not yet measurable.",
+          "type": "number",
+          "format": "double"
+        },
+        "pruned": {
+          "description": "Sealed segments removed by the retention policy.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "queue_depth": {
+          "description": "Records waiting in each queue right now.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "queue_hwm": {
+          "description": "High-water mark of each queue since start.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "reserve_breached": {
+          "description": "The audit filesystem is below its reserve right now; durable management writes are refused until space is recovered.",
+          "type": "boolean"
+        },
+        "reserve_breaches": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "restarts": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "result_drops": {
+          "description": "Management result records lost after the mutation had happened. The intent stays on disk without its result; the loss is counted here, not hidden.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "retention": {
+          "$ref": "#/definitions/AuditRetentionPolicy"
+        },
+        "rotation_failed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rotations": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "running": {
+          "description": "The writer goroutine is running. False while it restarts after a failure.",
+          "type": "boolean"
+        },
+        "sealed_bytes": {
+          "description": "Bytes held by sealed segments on disk, after compression.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "segment": {
+          "$ref": "#/definitions/AuditSegmentStatus"
+        },
+        "seq_high": {
+          "description": "Highest sequence number written in this boot.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "sync_failures": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "unattributed": {
+          "description": "Records that reached the writer without a producer identity.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "write_failures": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "AutoPersistStatus": {
       "description": "Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.",
       "type": "object",
@@ -40883,6 +41483,11 @@ func init() {
         "created_at": {
           "type": "string"
         },
+        "delegation_allowed": {
+          "description": "Whether a request this account authenticates may name another originator that the trail then records as trusted. False for every new account; ignored on create and on login. Settable only by an administrator through PUT, where an omitted value keeps what is stored and a present one is recorded as a changed field.",
+          "type": "boolean",
+          "x-nullable": true
+        },
         "id": {
           "type": "integer"
         },
@@ -41009,6 +41614,10 @@ func init() {
       "properties": {
         "created_at": {
           "type": "string"
+        },
+        "delegation_allowed": {
+          "description": "Whether requests this account authenticates may name another originator.",
+          "type": "boolean"
         },
         "id": {
           "type": "integer"

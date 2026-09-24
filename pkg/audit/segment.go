@@ -149,8 +149,12 @@ type segmenter struct {
 	// worker renames files, so it shares the cache with the writer.
 	uuidMu sync.Mutex
 	uuids  map[string]string
-	// curUUID mirrors uuid for readers off the writer goroutine.
-	curUUID atomic.Pointer[string]
+	// curUUID mirrors uuid for readers off the writer goroutine; the
+	// three counters below mirror opened, count and size the same way.
+	curUUID    atomic.Pointer[string]
+	curOpened  atomic.Int64
+	curRecords atomic.Uint64
+	curBytes   atomic.Int64
 
 	stats segStats
 }
@@ -348,8 +352,16 @@ func (s *segmenter) openActive(firstSeq uint64) error {
 	u := s.uuid
 	s.curUUID.Store(&u)
 	s.opened = s.now()
+	// The size is what a short write is cut back to, so it is the file's
+	// real length: zero for the segment just created, whatever a taken-over
+	// path already held.
 	s.size = 0
+	if st, err := f.Stat(); err == nil {
+		s.size = st.Size()
+	}
 	s.count = 0
+	s.curOpened.Store(s.opened.Unix())
+	s.curRecords.Store(0)
 	s.firstSeq = firstSeq
 	s.lastSeq = 0
 	s.firstTS = time.Time{}
@@ -361,6 +373,7 @@ func (s *segmenter) openActive(firstSeq uint64) error {
 	}
 	n, err := writeJSONLineN(f, hdr)
 	s.size += int64(n)
+	s.curBytes.Store(s.size)
 	if err != nil {
 		return fmt.Errorf("audit: header for %s: %w", s.active, err)
 	}
@@ -410,19 +423,44 @@ func (s *segmenter) append(line []byte, seq uint64, ts time.Time) error {
 	if s.fault(FaultWriterWriteFailed) {
 		return syscall.EIO
 	}
-	n, err := s.f.Write(line)
-	s.size += int64(n)
+	n, err := fileWrite(s.f, line)
 	if err != nil {
+		if n > 0 {
+			// A short write (a filesystem that filled mid-line) leaves the
+			// head of this record on disk, and the next successful append
+			// would continue it: two records on one line, neither readable.
+			// Cut the file back to the last complete line; O_APPEND puts
+			// the next write at the new end.
+			if terr := s.f.Truncate(s.size); terr == nil {
+				n = 0
+			}
+		}
+		s.size += int64(n)
+		s.curBytes.Store(s.size)
 		return err
 	}
+	s.size += int64(n)
+	s.curBytes.Store(s.size)
 	if s.count == 0 {
 		s.firstSeq = seq
 		s.firstTS = ts
 	}
 	s.count++
+	s.curRecords.Store(s.count)
 	s.lastSeq = seq
 	s.lastTS = ts
 	return nil
+}
+
+// fileWrite is (*os.File).Write behind a name the tests can replace with a
+// short write.
+var fileWrite = func(f *os.File, b []byte) (int, error) { return f.Write(b) }
+
+// current describes the active segment for readers off the writer
+// goroutine: when it was opened, how many records it holds and its size
+// on disk including the header.
+func (s *segmenter) current() (openedUnix int64, records uint64, bytes int64) {
+	return s.curOpened.Load(), s.curRecords.Load(), s.curBytes.Load()
 }
 
 func (s *segmenter) sync() error {

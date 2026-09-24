@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/user"
 	"sort"
 	"strings"
 	"sync"
@@ -189,9 +190,33 @@ func (b *Bridge) BuildServer(role guard.Role) *sdk.Server {
 }
 
 // RunStdio serves a single MCP session over stdin/stdout with the given role
-// (stdio inherits the local user's authority; default admin).
+// (stdio inherits the local user's authority; default admin). Every call
+// it makes names the bridge's own process as the originator: over stdio
+// there is no authenticated client, so the OS account that launched the
+// bridge is the finest attribution there is.
 func (b *Bridge) RunStdio(ctx context.Context, role guard.Role) error {
+	ctx = client.WithOriginator(ctx, stdioOriginator())
 	return b.BuildServer(role).Run(ctx, &sdk.StdioTransport{})
+}
+
+// httpOriginator names the authenticated MCP client.
+func httpOriginator(cl guard.Client) string { return "mcp:" + cl.Name }
+
+// stdioOriginator names the process: mcp-stdio:<os user>@<host>:<pid>.
+// Parts the OS will not tell are "unknown" rather than omitted, so the
+// shape is constant and a reader can tell an unknown from a missing one.
+func stdioOriginator() string {
+	name := "unknown"
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		name = u.Username
+	} else if v := os.Getenv("USER"); v != "" {
+		name = v
+	}
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "unknown"
+	}
+	return fmt.Sprintf("mcp-stdio:%s@%s:%d", name, host, os.Getpid())
 }
 
 // HTTPOptions configures the streamable-HTTP transport.
@@ -255,8 +280,11 @@ func (b *Bridge) HTTPHandler() (http.Handler, error) {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		inner.ServeHTTP(w, r.WithContext(
-			context.WithValue(r.Context(), clientCtxKey, cl)))
+		// The session is created from this context, so the client and
+		// the originator it implies reach every tool call of the session.
+		ctx := context.WithValue(r.Context(), clientCtxKey, cl)
+		ctx = client.WithOriginator(ctx, httpOriginator(cl))
+		inner.ServeHTTP(w, r.WithContext(ctx))
 	})
 
 	// Go 1.25 stdlib cross-origin protection: rejects browser-originated

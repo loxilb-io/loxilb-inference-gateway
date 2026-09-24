@@ -146,10 +146,11 @@ func UsersGetUsers(params users.GetAuthUsersParams, principal interface{}) middl
 	result := make([]*models.UserSummary, 0, len(res))
 	for _, user := range res {
 		result = append(result, &models.UserSummary{
-			ID:        int64(user.ID),
-			Username:  user.Username,
-			Role:      user.Role,
-			CreatedAt: user.CreatedAt.Format(time.RFC3339),
+			ID:                int64(user.ID),
+			Username:          user.Username,
+			Role:              user.Role,
+			CreatedAt:         user.CreatedAt.Format(time.RFC3339),
+			DelegationAllowed: user.DelegationAllowed != nil && *user.DelegationAllowed,
 		})
 	}
 
@@ -168,6 +169,9 @@ func UsersPutUsers(params users.PutAuthUsersIDParams, principal interface{}) mid
 		user.Password = *params.User.Password
 	}
 	user.ID = int(params.ID)
+	// Absent, the flag keeps what is stored; present, it is applied and
+	// the gate names it among the changed fields.
+	user.DelegationAllowed = params.User.DelegationAllowed
 	// The record names the account and, when a role is applied, both
 	// role values; the changed field names come from the gate and the
 	// password never leaves the request.
