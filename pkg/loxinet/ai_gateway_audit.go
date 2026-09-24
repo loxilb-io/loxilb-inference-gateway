@@ -324,13 +324,19 @@ func aiDenyStage(stage int) string {
 
 // aiDenyReason maps a refusal onto the envelope's closed reason vocabulary.
 //
-// The stage alone is not enough for the auth stage, which bundles three
-// genuinely different refusals: a credential that did not validate, a
-// valid credential asking for a model it may not have, and a policy store
-// that could not answer at all. Filing a store outage as an authentication
+// Two stages bundle refusals that a reader has to be able to tell apart,
+// so within those the error code decides.
+//
+// The auth stage covers a credential that did not validate, a valid
+// credential asking for a model it may not have, and a policy store that
+// could not answer at all. Filing a store outage as an authentication
 // failure would put an infrastructure fault in front of the on-call
-// engineer as a break-in attempt, so the error code decides within that
-// stage. Every other stage means exactly one thing.
+// engineer as a break-in attempt.
+//
+// The rate-limit stage covers both a request-rate refusal and a token
+// quota that is already spent. They are different resources with different
+// remedies — one is throttling, the other is a budget — and the stage
+// cannot distinguish them.
 func aiDenyReason(stage int, errorCode string) audit.Reason {
 	switch stage {
 	case aiStageAuth:
@@ -344,11 +350,24 @@ func aiDenyReason(stage int, errorCode string) audit.Reason {
 	case aiStageConflict:
 		return audit.ReasonAdmission
 	case aiStageRateLimit:
+		if aiTokenQuotaCode(errorCode) {
+			return audit.ReasonQuota
+		}
 		return audit.ReasonRateLimit
 	case aiStageReserve:
 		return audit.ReasonQuota
 	}
 	return audit.ReasonAdmission
+}
+
+// aiTokenQuotaCode reports whether a refusal code names a token budget
+// rather than a request rate.
+func aiTokenQuotaCode(errorCode string) bool {
+	switch errorCode {
+	case "token_quota_exceeded", "token_quota_would_exceed":
+		return true
+	}
+	return false
 }
 
 // aiCompleteReason maps a finished response onto the reason vocabulary.

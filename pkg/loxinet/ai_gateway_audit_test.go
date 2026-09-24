@@ -447,6 +447,12 @@ func TestAIDenyReasonPerStage(t *testing.T) {
 		{"policy store down", aiStageAuth, "policy_store_unavailable", "auth", audit.ReasonAdmission},
 		{"model conflict", aiStageConflict, "model_conflict", "conflict", audit.ReasonAdmission},
 		{"rate limited", aiStageRateLimit, "rate_limit_exceeded", "ratelimit", audit.ReasonRateLimit},
+		{"tenant rate limited", aiStageRateLimit, "tenant_quota_exceeded", "ratelimit", audit.ReasonRateLimit},
+		// The rate-limit stage also answers a spent token budget. That is a
+		// different resource with a different remedy, so it must not read
+		// as throttling.
+		{"token budget already spent", aiStageRateLimit, "token_quota_exceeded", "ratelimit", audit.ReasonQuota},
+		{"token budget would be exceeded", aiStageRateLimit, "token_quota_would_exceed", "ratelimit", audit.ReasonQuota},
 		{"reservation refused", aiStageReserve, "token_quota_exceeded", "reserve", audit.ReasonQuota},
 		{"no stage reported", aiStageNone, "", "keyless", audit.ReasonAdmission},
 	}
@@ -469,7 +475,8 @@ func TestAIDenyReasonPerStage(t *testing.T) {
 func TestAIReasonsAreInTheVocabulary(t *testing.T) {
 	for _, stage := range []int{aiStageNone, aiStageAuth, aiStageConflict, aiStageRateLimit, aiStageReserve, 99} {
 		for _, code := range []string{"", "invalid_api_key", "invalid_token", "model_not_allowed",
-			"policy_store_unavailable", "model_conflict", "rate_limit_exceeded", "token_quota_exceeded"} {
+			"policy_store_unavailable", "model_conflict", "rate_limit_exceeded",
+			"tenant_quota_exceeded", "token_quota_exceeded", "token_quota_would_exceed"} {
 			if r := aiDenyReason(stage, code); !audit.ValidReason(r) {
 				t.Errorf("aiDenyReason(%d, %q) = %q, not in the vocabulary", stage, code, r)
 			}
