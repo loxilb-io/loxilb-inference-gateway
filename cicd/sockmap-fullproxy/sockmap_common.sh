@@ -159,6 +159,106 @@ sockmap_wait_api_ready() {
   return 1
 }
 
+# ---------------------------------------------------------------------------
+# Optional API-key store
+#
+# validation_apikey_response.sh creates a key and drives keyed traffic through
+# the service it judges. Without a store, POST /config/ai/apikey answers 503
+# (ai_key_store_unconfigured) and that suite cannot run; no other suite here
+# touches a key. config.sh spawns the store when SOCKMAP_AI_KEY_STORE=1: the
+# PostgreSQL image and bootstrap script cicd/ai-apikey uses, so the fixture is
+# the product's own provisioning path. The store is configured by its own
+# --aikey-db-* options and not by --userservice, so the REST API stays
+# token-free and the helpers above keep working unchanged.
+SOCKMAP_PG_NAME=sockmap-pg
+SOCKMAP_PG_OWNER=oamuser
+SOCKMAP_PG_OWNER_PW=oampass
+SOCKMAP_PG_DB=loxilb
+SOCKMAP_AIKEY_PW=dp-secret-1
+SOCKMAP_MGMT_PW=mgmt-secret-1
+SOCKMAP_KEY_STORE_ARGS=""
+
+# Spawns PostgreSQL, runs the bootstrap script and writes the password files
+# into <config dir>, which config.sh mounts as /etc/loxilb/ in llb1. Sets
+# SOCKMAP_KEY_STORE_ARGS to the --aikey-db-* options llb1 must start with.
+sockmap_key_store_up() {   # <config dir>
+  local cfg=$1
+  docker rm -f "$SOCKMAP_PG_NAME" >/dev/null 2>&1
+  # The container runs with --rm, so a previous run's stop hands its removal
+  # to the daemon asynchronously and the name can still be taken here. Wait,
+  # bounded, until it is free.
+  local i
+  for i in $(seq 1 30); do
+    docker inspect "$SOCKMAP_PG_NAME" >/dev/null 2>&1 || break
+    sleep 1
+  done
+  if docker inspect "$SOCKMAP_PG_NAME" >/dev/null 2>&1; then
+    echo "[sockmap] ERROR: a previous $SOCKMAP_PG_NAME container is still being removed" >&2
+    return 1
+  fi
+  docker run --rm -d --name "$SOCKMAP_PG_NAME" \
+    -e POSTGRES_USER="$SOCKMAP_PG_OWNER" \
+    -e POSTGRES_PASSWORD="$SOCKMAP_PG_OWNER_PW" \
+    -e POSTGRES_DB="$SOCKMAP_PG_DB" \
+    postgres:18.6 >/dev/null || return 1
+
+  # Over TCP, not the unix socket: pg_isready answers on the socket before the
+  # server listens on a port the gateway can reach.
+  for i in $(seq 1 60); do
+    if docker exec "$SOCKMAP_PG_NAME" pg_isready -h 127.0.0.1 -U "$SOCKMAP_PG_OWNER" -d "$SOCKMAP_PG_DB" >/dev/null 2>&1; then
+      echo "[sockmap] PostgreSQL ready (${i}s)"
+      break
+    fi
+    sleep 1
+  done
+  docker exec "$SOCKMAP_PG_NAME" pg_isready -h 127.0.0.1 -U "$SOCKMAP_PG_OWNER" -d "$SOCKMAP_PG_DB" >/dev/null 2>&1 || {
+    echo "[sockmap] ERROR: PostgreSQL did not come up" >&2; return 1; }
+
+  docker cp ../../scripts/aigw-db-bootstrap.sql "$SOCKMAP_PG_NAME:/tmp/aigw-db-bootstrap.sql" || return 1
+  docker exec -e AIGW_DB_PASSWORD="$SOCKMAP_AIKEY_PW" -e AIGW_MGMT_DB_PASSWORD="$SOCKMAP_MGMT_PW" \
+    "$SOCKMAP_PG_NAME" psql -h 127.0.0.1 -U "$SOCKMAP_PG_OWNER" -d "$SOCKMAP_PG_DB" -q -f /tmp/aigw-db-bootstrap.sql || {
+    echo "[sockmap] ERROR: bootstrap script failed" >&2; return 1; }
+
+  local pg_ip
+  pg_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$SOCKMAP_PG_NAME")
+  [[ -n "$pg_ip" ]] || { echo "[sockmap] ERROR: $SOCKMAP_PG_NAME has no address" >&2; return 1; }
+  echo "[sockmap] PostgreSQL IP: $pg_ip"
+
+  # The password is a mounted file, the deployment shape; it never becomes a
+  # command-line argument.
+  rm -rf "$cfg"
+  mkdir -p "$cfg"
+  echo "$SOCKMAP_AIKEY_PW" > "$cfg/aikey_password"
+  SOCKMAP_KEY_STORE_ARGS="--aikey-db-host $pg_ip --aikey-db-port 5432 --aikey-db-user aigwuser --aikey-db-name $SOCKMAP_PG_DB --aikey-db-password-file /etc/loxilb/aikey_password"
+  return 0
+}
+
+# Removes the store container and the mounted config directory. Safe to call
+# when neither exists.
+sockmap_key_store_down() {   # <config dir>
+  docker stop "$SOCKMAP_PG_NAME" >/dev/null 2>&1 || true
+  docker rm   "$SOCKMAP_PG_NAME" >/dev/null 2>&1 || true
+  rm -rf "$1"
+}
+
+# Polls until the key API answers 200 through llb1. The gateway dials the store
+# in the background after boot, so the REST API being up says nothing about the
+# store: until the dial succeeds every key call answers 503.
+sockmap_wait_key_store_ready() {   # <llb> [tries]
+  local llb=$1
+  local tries=${2:-60}
+  local i=0 code=""
+  while (( i < tries )); do
+    code=$(_sm_dexec "$llb" curl -s -o /dev/null -w '%{http_code}' \
+             "http://localhost:11111/netlox/v1/config/ai/apikey?tenant_id=sockmap-probe" | tail -c 3)
+    [[ "$code" == "200" ]] && return 0
+    sleep 1
+    i=$((i + 1))
+  done
+  echo "[sockmap] ERROR: the key API through $llb still answers HTTP $code after $tries seconds" >&2
+  return 1
+}
+
 # Creates a fullproxy LB rule with sockmap acceleration through the REST API.
 #   $1: llb name
 #   $2: VIP
@@ -504,14 +604,23 @@ for e in json.load(sys.stdin):
   echo "$n"
 }
 
-# Counts sockmap failure messages. The daemon writes to /var/log/loxilb*.log
-# INSIDE the container, and `docker logs` is empty for it, so reading only docker
-# logs made this check pass vacuously — it never saw a failure it was meant to
-# catch. Both sources are read now: the datapath log carries the C-side messages
-# and the control-plane log the loader's.
+# Prints everything the daemon has logged so far. The daemon writes to
+# /var/log/loxilb<hostname>.log INSIDE the container (the file name carries the
+# container's hostname, so it is never plain loxilb.log), and `docker logs` is
+# empty for it, so reading only docker logs made the failure scan below pass
+# vacuously — it never saw a failure it was meant to catch. Both sources are
+# read: the datapath log carries the C-side messages and the control-plane log
+# the loader's. The glob has to be expanded inside the container, hence sh -c.
+sockmap_gateway_log() {
+  local llb=$1
+  sudo docker logs "$llb" 2>&1
+  _sm_dexec "$llb" sh -c 'cat /var/log/loxilb*.log 2>/dev/null'
+}
+
+# Counts sockmap failure messages in the daemon's log.
 sockmap_log_failure_count() {
   local llb=$1
-  { sudo docker logs "$llb" 2>&1; _sm_dexec "$llb" sh -c 'cat /var/log/loxilb*.log 2>/dev/null'; } \
+  sockmap_gateway_log "$llb" \
     | grep -cE "Sockmap: Registration failed!|Sockmap: peer_map registration failed!|Sockmap: peer_map delete failed|Sockmap: sock_verdict_map (add|delete) failed|sockmap: load failed|sockmap: attach failed|sockmap: portset map get failed|sockmap: portset fd get failed|sockmap: skmsg helper load failed|sockmap: skstream helper load failed|sockmap: portset update failed|sockmap: failed to (add|delete|remove)|sockmap: rule [0-9]+: failed|sockmap: rule id [0-9]+ out of range|sockmap: --sockmapsupport requires"
 }
 

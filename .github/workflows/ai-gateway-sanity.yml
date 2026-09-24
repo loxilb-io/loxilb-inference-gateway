@@ -17,6 +17,7 @@ on:
       - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/common/reflect-echo/**'
+      - 'cicd/sockmap-fullproxy/**'
       - 'pkg/**'
       - 'api/**'
       - '.github/workflows/ai-gateway-sanity.yml'
@@ -29,6 +30,7 @@ on:
       - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/common/reflect-echo/**'
+      - 'cicd/sockmap-fullproxy/**'
       - 'pkg/**'
       - 'api/**'
       - '.github/workflows/ai-gateway-sanity.yml'
@@ -208,3 +210,41 @@ jobs:
 # Related feature workflows: mcp-sanity.yml (MCP proxying),
 # l7-proxy-sanity.yml (HTTPS/H1/H2/mTLS/prefix + gRPC),
 # vllm-proxy-sanity.yml (real CPU-vLLM backends; scheduled — heavy image build).
+
+  # The sockmap testbed is otherwise run by hand (see cicd/sockmap-fullproxy/README.md):
+  # its acceleration suites need a kernel carrying the sk_psock_backlog fix, which
+  # the hosted runners do not have. This suite drives a handful of small echoes
+  # through a response-accelerated service, well under the volume where that defect
+  # shows, and holds the per-direction contract for a service that declares
+  # api_key_auth: the request direction is refused and stays on the relay, where the
+  # credential is checked and X-Api-Key stripped on every keep-alive request; the
+  # response direction is accepted and its bytes are redirected by the kernel. The
+  # image is built from the Dockerfile (-DHAVE_SOCKOPS, the build --sockmapsupport
+  # is documented for) rather than overlaid from the host build.
+  sockmap-apikey-response-sanity:
+    name: sockmap-apikey-response-sanity
+    runs-on: ubuntu-22.04
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install linux-tools-$(uname -r) linux-tools-common nodejs
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - name: Build the image the sockmap testbed starts (Dockerfile defaults)
+        run: docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      # The suite creates a key and drives keyed traffic, so the testbed brings
+      # up its optional PostgreSQL key store (the same fixture cicd/ai-apikey
+      # uses). Without the knob the suite refuses to start.
+      - name: A declared api_key_auth keeps requests on the relay and accelerates responses
+        env:
+          SOCKMAP_AI_KEY_STORE: "1"
+        run: |
+          cd cicd/sockmap-fullproxy/
+          ./config.sh
+          ./validation_apikey_response.sh
+          ./rmconfig.sh
+          cd -

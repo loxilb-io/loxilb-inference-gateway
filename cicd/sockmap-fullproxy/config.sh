@@ -19,6 +19,23 @@ lxdocker="${LOXILB_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}"
 
 sockmap_init_artifacts
 
+# SOCKMAP_AI_KEY_STORE=1 adds the API-key store that validation_apikey_response.sh
+# needs (it creates a key and drives keyed traffic). Off by default: no other
+# suite here uses a key, and the store is one more container to bring up.
+SOCKMAP_AI_KEY_STORE=${SOCKMAP_AI_KEY_STORE:-0}
+if [[ "$SOCKMAP_AI_KEY_STORE" == "1" ]]; then
+  echo "#########################################"
+  echo "Spawning the API-key store (SOCKMAP_AI_KEY_STORE=1)"
+  echo "#########################################"
+  if ! sockmap_key_store_up llb1_config; then
+    echo "ERROR: the API-key store did not come up"
+    exit 1
+  fi
+  # pick_config=yes mounts $(pwd)/llb1_config as /etc/loxilb/ in llb1, where
+  # the password file named by the store options lives.
+  pick_config=yes
+fi
+
 echo "#########################################"
 echo "Spawning all hosts (sockmap-fullproxy)"
 echo "#########################################"
@@ -31,7 +48,7 @@ echo "#########################################"
 # debugging.
 LOXILB_LOGLEVEL=${LOXILB_LOGLEVEL:-info}
 spawn_docker_host --dock-type loxilb --dock-name llb1 \
-  --extra-args "--sockmapsupport --loglevel $LOXILB_LOGLEVEL"
+  --extra-args "--sockmapsupport --loglevel $LOXILB_LOGLEVEL $SOCKMAP_KEY_STORE_ARGS"
 spawn_docker_host --dock-type host --dock-name l3h1
 spawn_docker_host --dock-type host --dock-name l3ep1
 spawn_docker_host --dock-type host --dock-name l3ep2
@@ -45,6 +62,10 @@ connect_docker_hosts l3ep1 llb1
 connect_docker_hosts l3ep2 llb1
 
 sleep 5
+
+# The config mount, if any, happened at spawn. Reset pick_config so that
+# config_docker_host does not skip llb1's address assignment.
+pick_config=""
 
 config_docker_host --host1 l3h1  --host2 llb1 --ptype phy --addr 10.10.10.1/24 --gw 10.10.10.254
 config_docker_host --host1 l3ep1 --host2 llb1 --ptype phy --addr 31.31.31.1/24 --gw 31.31.31.254
@@ -63,6 +84,14 @@ fi
 if ! sockmap_wait_api_ready llb1; then
   echo "ERROR: loxilb REST API never became ready"
   exit 1
+fi
+
+if [[ "$SOCKMAP_AI_KEY_STORE" == "1" ]]; then
+  if ! sockmap_wait_key_store_ready llb1 60; then
+    echo "ERROR: the API-key store never answered through llb1"
+    exit 1
+  fi
+  echo "[sockmap] API-key store answering through llb1."
 fi
 
 echo "#########################################"
