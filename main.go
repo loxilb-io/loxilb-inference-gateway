@@ -49,6 +49,13 @@ func main() {
 
 	if opts.Opts.Version {
 		fmt.Printf("loxilb version: %s %s\n", common.Version, common.BuildInfo)
+		// A binary that carries optional build tags says so here. The one
+		// that matters is audit_faults: it can be told at run time to
+		// break its own audit trail, so an operator holding an image must
+		// be able to tell it from a release without unpacking it.
+		if common.BuildTags != "" {
+			fmt.Printf("loxilb build tags: %s\n", common.BuildTags)
+		}
 		os.Exit(0)
 	}
 
