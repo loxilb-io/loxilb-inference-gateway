@@ -34,6 +34,9 @@ type AuditStatus struct {
 	// compress skipped
 	CompressSkipped int64 `json:"compress_skipped,omitempty"`
 
+	// Account lookups made to decide whether a named originator is trusted. A request without the header makes none.
+	DelegationLookups int64 `json:"delegation_lookups,omitempty"`
+
 	// Records the writer could not accept, by stream and reason. Absent reasons are zero.
 	Dropped []*AuditDropCount `json:"dropped"`
 
@@ -48,6 +51,9 @@ type AuditStatus struct {
 
 	// Durable management writes that missed the caller's deadline; each one refused a management call.
 	MgmtTimeouts int64 `json:"mgmt_timeouts,omitempty"`
+
+	// X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.
+	OriginatorDropped int64 `json:"originator_dropped,omitempty"`
 
 	// Management intents of the previous boot that had no result when this writer started. Each one is a change whose outcome is unknown.
 	OrphanedIntents int64 `json:"orphaned_intents,omitempty"`

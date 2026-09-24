@@ -391,6 +391,11 @@ func init() {
           "format": "int64",
           "type": "integer"
         },
+        "delegation_lookups": {
+          "description": "Account lookups made to decide whether a named originator is trusted. A request without the header makes none.",
+          "format": "int64",
+          "type": "integer"
+        },
         "dropped": {
           "description": "Records the writer could not accept, by stream and reason. Absent reasons are zero.",
           "items": {
@@ -412,6 +417,11 @@ func init() {
         },
         "mgmt_timeouts": {
           "description": "Durable management writes that missed the caller's deadline; each one refused a management call.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "originator_dropped": {
+          "description": "X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.",
           "format": "int64",
           "type": "integer"
         },
@@ -33103,6 +33113,11 @@ func init() {
           "type": "integer",
           "format": "int64"
         },
+        "delegation_lookups": {
+          "description": "Account lookups made to decide whether a named originator is trusted. A request without the header makes none.",
+          "type": "integer",
+          "format": "int64"
+        },
         "dropped": {
           "description": "Records the writer could not accept, by stream and reason. Absent reasons are zero.",
           "type": "array",
@@ -33124,6 +33139,11 @@ func init() {
         },
         "mgmt_timeouts": {
           "description": "Durable management writes that missed the caller's deadline; each one refused a management call.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "originator_dropped": {
+          "description": "X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.",
           "type": "integer",
           "format": "int64"
         },

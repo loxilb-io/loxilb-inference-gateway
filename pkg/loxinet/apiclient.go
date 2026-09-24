@@ -1370,6 +1370,11 @@ func (na *NetAPIStruct) NetUserGet() ([]cmn.User, error) {
 	return mh.UserService.GetUsers()
 }
 
+// NetUserDelegationAllowed - whether the account may delegate
+func (na *NetAPIStruct) NetUserDelegationAllowed(username string) (bool, error) {
+	return mh.UserService.DelegationAllowed(username)
+}
+
 // NetUserDel - Delete a user in loxilb
 func (na *NetAPIStruct) NetUserDel(ID int) error {
 	return mh.UserService.DeleteUser(ID)

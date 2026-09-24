@@ -13239,6 +13239,14 @@ definitions:
         type: integer
         format: int64
         description: Management result records lost after the mutation had happened. The intent stays on disk without its result; the loss is counted here, not hidden.
+      originator_dropped:
+        type: integer
+        format: int64
+        description: X-Loxilb-Originator headers that did not parse (unknown scheme, empty identifier, non-printable or over 256 bytes) and were dropped rather than recorded in part.
+      delegation_lookups:
+        type: integer
+        format: int64
+        description: Account lookups made to decide whether a named originator is trusted. A request without the header makes none.
       queue_depth:
         type: object
         additionalProperties:

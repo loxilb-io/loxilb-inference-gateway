@@ -379,6 +379,27 @@ func (s *UserService) GetUsers() ([]cmn.User, error) {
 	return users, err
 }
 
+// DelegationAllowed reports whether the account may delegate. An account
+// that does not exist may not; a store that cannot answer returns the
+// error so the caller can count it, and treats the answer as no. There is
+// no retry: the question is asked on the request path, once, and a slow
+// answer would hold a management call for a flag that only ever narrows
+// what the record claims.
+func (s *UserService) DelegationAllowed(username string) (bool, error) {
+	handle, err := s.store()
+	if err != nil {
+		return false, err
+	}
+	var allowed bool
+	if err := handle.QueryRow(SelectUserDelegationQuery, username).Scan(&allowed); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return allowed, nil
+}
+
 // DeleteUser deletes a user and every session they hold.
 //
 // The two are one operation. Deleting the row alone left the user's tokens

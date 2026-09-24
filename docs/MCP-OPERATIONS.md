@@ -69,6 +69,13 @@ four more, so a fully-wired admin sees 82 (83 with `--allow-import`). `--read-on
 
 Stdio sessions take the role from `--role` (default admin — stdio inherits
 the local user's authority). HTTP sessions take it from the bearer token.
+Every management call the bridge makes names who it acts for in
+`X-Loxilb-Originator`: `mcp:<client name>` for an HTTP session, and for a
+stdio session `mcp-stdio:<os user>@<host>:<pid>` — there is no
+authenticated client over stdio, so the OS account that launched the bridge
+is the finest attribution the gateway's audit trail can carry. The gateway
+records the value beside the bridge's own account and trusts it only when
+that account carries `delegation_allowed` (docs/MANAGEMENT-API-EXPOSURE.md).
 `tools/list` reflects exactly what the caller may do — treat it, not this
 table, as authoritative for a given configuration.
 

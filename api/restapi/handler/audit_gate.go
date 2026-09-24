@@ -85,7 +85,64 @@ var (
 	auditWriter      atomic.Pointer[audit.Writer]
 	auditResultDrops atomic.Uint64
 	auditRoutes      atomic.Pointer[auditRouteLookup]
+
+	auditOriginatorDropped atomic.Uint64
+	auditDelegationLookups atomic.Uint64
 )
+
+// The originator header lets a caller that acts for someone else — the
+// MCP bridge for its client, a CLI run under a service account — name
+// that someone. The name is recorded verbatim as actor.delegated and is
+// never the actor: whether it is trusted is a separate flag decided by
+// the authenticated account's own delegation permission, so a caller
+// cannot launder an identity through the header. The value is a closed
+// scheme followed by an identifier; anything else is dropped and counted.
+const (
+	AuditOriginatorHeader   = "X-Loxilb-Originator"
+	auditOriginatorMaxBytes = 256
+)
+
+var auditOriginatorSchemes = []string{"mcp:", "mcp-stdio:", "cli:"}
+
+// AuditOriginatorDropped counts originator headers that did not parse.
+func AuditOriginatorDropped() uint64 { return auditOriginatorDropped.Load() }
+
+// AuditDelegationLookups counts the account lookups made to decide
+// whether an originator is trusted; a request without the header makes
+// none.
+func AuditDelegationLookups() uint64 { return auditDelegationLookups.Load() }
+
+// auditOriginatorOf reads the header once and validates it: bounded,
+// printable ASCII, a known scheme with a non-empty identifier. A header
+// that fails is dropped and counted, never stored in part.
+func auditOriginatorOf(r *http.Request) string {
+	v := r.Header.Get(AuditOriginatorHeader)
+	if v == "" {
+		return ""
+	}
+	if auditOriginatorValid(v) {
+		return v
+	}
+	auditOriginatorDropped.Add(1)
+	return ""
+}
+
+func auditOriginatorValid(v string) bool {
+	if len(v) > auditOriginatorMaxBytes {
+		return false
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] > 0x7e {
+			return false
+		}
+	}
+	for _, scheme := range auditOriginatorSchemes {
+		if strings.HasPrefix(v, scheme) {
+			return len(v) > len(scheme)
+		}
+	}
+	return false
+}
 
 type auditRouteLookup struct {
 	basePath string
@@ -372,6 +429,40 @@ type auditTrail struct {
 	hasPrinc  bool
 	actor     *audit.Actor
 	enrich    []func(*audit.MgmtDetail)
+	// originator is the validated header value, copied onto every record
+	// of the request; trusted caches the one lookup that decides it.
+	originator string
+	trusted    *bool
+}
+
+// newAuditTrail starts the request-scoped state, reading the originator
+// header exactly once.
+func newAuditTrail(r *http.Request) *auditTrail {
+	return &auditTrail{originator: auditOriginatorOf(r)}
+}
+
+// delegationTrusted decides, once per request and only when an originator
+// was named, whether the authenticated account may delegate. The lookup
+// asks the store for that account; any failure, including a store that is
+// down, answers no rather than refusing the request — the flag narrows
+// what the record claims, it never blocks what the record records. Called
+// with the trail locked.
+func (t *auditTrail) delegationTrusted(username string) bool {
+	if t.originator == "" || username == "" {
+		return false
+	}
+	if t.trusted != nil {
+		return *t.trusted
+	}
+	auditDelegationLookups.Add(1)
+	allowed := false
+	if ApiHooks != nil {
+		if ok, err := ApiHooks.NetUserDelegationAllowed(username); err == nil {
+			allowed = ok
+		}
+	}
+	t.trusted = &allowed
+	return allowed
 }
 
 type auditTrailKey struct{}
@@ -437,7 +528,7 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 			auditRefuse(w, audit.ErrUnavailable)
 			return
 		}
-		trail := &auditTrail{}
+		trail := newAuditTrail(r)
 		r = r.WithContext(context.WithValue(r.Context(), auditTrailKey{}, trail))
 
 		fields, claimed := auditReadBody(r, route)
@@ -448,9 +539,13 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 		intent.EventType = route.event
 		intent.Class = route.class
 		intent.Phase = audit.PhaseIntent
+		// The intent is the pre-authentication view: the originator is
+		// named, but no principal exists yet to decide whether it is
+		// trusted, so the claim stands untrusted until the result.
 		intent.Actor = audit.Actor{
 			Auth: audit.AuthNone, Remote: r.RemoteAddr, Provisional: true,
 			UsernameClaimed: claimed, Mechanism: route.mechanism,
+			Delegated: trail.originator,
 		}
 		intent.Outcome = audit.Outcome{Reason: audit.ReasonOK}
 		intent.Mgmt = auditDetailFor(r, route, fields)
@@ -482,7 +577,7 @@ func AuditGateMiddleware(next http.Handler) http.Handler {
 // listing is metadata the caller was already authorized to see, so a
 // record the writer cannot take is counted, never a reason to refuse.
 func auditListRead(w http.ResponseWriter, r *http.Request, next http.Handler, route auditRoute) {
-	trail := &auditTrail{}
+	trail := newAuditTrail(r)
 	r = r.WithContext(context.WithValue(r.Context(), auditTrailKey{}, trail))
 	rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 	next.ServeHTTP(rec, r)
@@ -598,6 +693,19 @@ func auditOutcomeOf(status int, route auditRoute) audit.Outcome {
 func auditResultActor(r *http.Request, t *auditTrail, route auditRoute) audit.Actor {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	a := auditPrincipalActor(r, t, route)
+	// The originator rides on every record of the request, refusals
+	// included; trust is decided from the account the request actually
+	// authenticated as, so a claim from no account is never trusted.
+	a.Delegated = t.originator
+	a.DelegationTrusted = t.delegationTrusted(a.User)
+	return a
+}
+
+// auditPrincipalActor is the actor before delegation is applied: what a
+// handler established itself, else the principal the chain authenticated,
+// else the pre-authentication view carried over from the intent.
+func auditPrincipalActor(r *http.Request, t *auditTrail, route auditRoute) audit.Actor {
 	if t.actor != nil {
 		a := *t.actor
 		if a.Remote == "" {

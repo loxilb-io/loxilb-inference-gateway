@@ -2272,6 +2272,11 @@ type NetHookInterface interface {
 	NetUserAdd(um *User) (int, error)
 	NetUserBootstrap(um *User) (int, error)
 	NetUserGet() ([]User, error)
+	// NetUserDelegationAllowed reports whether the named account may
+	// delegate: whether an originator a request names on its behalf is to
+	// be trusted. An unknown account is not allowed; a store that cannot
+	// answer returns its error and the caller treats that as not allowed.
+	NetUserDelegationAllowed(username string) (bool, error)
 	NetUserDel(ID int) error
 	NetUserUpdate(um *User) error
 	NetUserLogin(um *User) (string, bool, error)

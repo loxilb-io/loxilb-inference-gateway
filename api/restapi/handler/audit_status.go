@@ -42,7 +42,11 @@ func AuditGetStatus(params auditops.GetAuditStatusParams, principal interface{})
 // the answer says so and carries the result-drop count, which the gate
 // keeps outside the writer.
 func auditStatusModel(w *audit.Writer, now time.Time) *models.AuditStatus {
-	out := &models.AuditStatus{ResultDrops: int64(AuditResultDrops())}
+	out := &models.AuditStatus{
+		ResultDrops:       int64(AuditResultDrops()),
+		OriginatorDropped: int64(AuditOriginatorDropped()),
+		DelegationLookups: int64(AuditDelegationLookups()),
+	}
 	if w == nil {
 		return out
 	}

@@ -99,6 +99,10 @@ var (
 	SelectUserPasswordOnlyQuery = fmt.Sprintf(
 		`SELECT password FROM %s.users WHERE username = $1`, Schema)
 
+	// DelegationAllowed needs only the flag.
+	SelectUserDelegationQuery = fmt.Sprintf(
+		`SELECT delegation_allowed FROM %s.users WHERE username = $1`, Schema)
+
 	// Tokens are stored by hash. The raw token is returned to its owner once
 	// and never written down.
 	InsertTokenQuery = fmt.Sprintf(

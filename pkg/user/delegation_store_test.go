@@ -99,3 +99,25 @@ func TestUpdateUserDelegationAllowed(t *testing.T) {
 		t.Fatal("the flag was not cleared")
 	}
 }
+
+// The per-request lookup answers the flag for the named account, no for an
+// account that does not exist, and reports a store it cannot reach.
+func TestDelegationAllowedLookup(t *testing.T) {
+	svc := storeFixture(t)
+	insertUserRow(t, svc, "plain", mustHash(t, "Admin123!"), "admin")
+	insertUserRow(t, svc, "delegating", mustHash(t, "Admin123!"), "admin")
+	on := true
+	if err := svc.UpdateUser(cmn.User{ID: userID(t, svc, "delegating"), Username: "delegating", Password: "Viewer99!", DelegationAllowed: &on}); err != nil {
+		t.Fatalf("UpdateUser: %v", err)
+	}
+	for name, want := range map[string]bool{"plain": false, "delegating": true, "nobody": false} {
+		got, err := svc.DelegationAllowed(name)
+		if err != nil || got != want {
+			t.Errorf("DelegationAllowed(%q) = %v, %v; want %v", name, got, err, want)
+		}
+	}
+	var down *UserService
+	if _, err := down.DelegationAllowed("plain"); err == nil {
+		t.Fatal("a service without a store answered instead of reporting it")
+	}
+}

@@ -51,6 +51,8 @@ type emitStubHook struct {
 	principal interface{}
 	keys      []cmn.ApiKeySummary
 	updated   *cmn.User // what the last user update handed the store
+	lookups   int       // delegation lookups the gate asked for
+	lookupErr error     // what a lookup answers when the store is down
 }
 
 func (s *emitStubHook) NetUserBootstrap(u *cmn.User) (int, error) {
@@ -63,7 +65,19 @@ func (s *emitStubHook) NetUserBootstrap(u *cmn.User) (int, error) {
 func (s *emitStubHook) NetUserAdd(u *cmn.User) (int, error) { return 2, nil }
 func (s *emitStubHook) NetUserGet() ([]cmn.User, error)     { return s.users, nil }
 func (s *emitStubHook) NetUserUpdate(u *cmn.User) error     { s.updated = u; return nil }
-func (s *emitStubHook) NetAiInFlightStreamsGet() int64      { return 0 }
+func (s *emitStubHook) NetUserDelegationAllowed(username string) (bool, error) {
+	s.lookups++
+	if s.lookupErr != nil {
+		return false, s.lookupErr
+	}
+	for _, u := range s.users {
+		if u.Username == username {
+			return u.DelegationAllowed != nil && *u.DelegationAllowed, nil
+		}
+	}
+	return false, nil
+}
+func (s *emitStubHook) NetAiInFlightStreamsGet() int64 { return 0 }
 func (s *emitStubHook) NetAPIKeyList(string) ([]cmn.ApiKeySummary, error) {
 	return s.keys, nil
 }
