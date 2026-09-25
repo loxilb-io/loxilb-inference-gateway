@@ -38,8 +38,8 @@ import (
 )
 
 // AuditProducerCost is the cost a relay worker pays to record one completed
-// request: the call into the export, the CGO crossing and the producer's
-// non-blocking hand-off, as seen from the C side.
+// request: the C call, the CGO crossing and the producer's non-blocking
+// hand-off, as seen from the C side.
 type AuditProducerCost struct {
 	Iters uint64
 	P50Ns float64
@@ -48,7 +48,7 @@ type AuditProducerCost struct {
 	MaxNs float64
 }
 
-// RunAuditProducerBench times the completion export from a worker-shaped C
+// RunAuditProducerBench times llb_ai_audit_emit_only from a worker-shaped C
 // thread and returns the distribution.
 //
 // It is measured from C on purpose. The cost that matters is the one paid on
@@ -56,6 +56,13 @@ type AuditProducerCost struct {
 // the crossing — it would report the cheaper number and call it the answer.
 // The harness carries a worker identity, so every record it emits is
 // attributed exactly as a relay worker's would be.
+//
+// It times the trail on its own rather than the completion export, whose
+// other half raises the Prometheus counters. The number wanted is what
+// recording costs, and it is read directly instead of subtracted out of a
+// larger one: differences of percentiles are not percentiles of
+// differences, and an export timed with no trail behind it still carries
+// the same garbage collection and scheduling that dominates the tail.
 //
 // The trail must be running: the calls emit real records, and a measurement
 // taken with no writer behind them is timing the drop path.
@@ -75,4 +82,39 @@ func RunAuditProducerBench(iters uint64) (AuditProducerCost, error) {
 		P99Ns: float64(out.p99_ns),
 		MaxNs: float64(out.max_ns),
 	}, nil
+}
+
+// llb_ai_audit_emit_only writes one completed request to the audit trail and
+// raises no counters.
+//
+// It exists so the trail's cost can be timed on its own. llb_ai_record_request
+// does this and the Prometheus work, and no measurement of the two together
+// can be turned into a measurement of one: subtracting an arm with the trail
+// closed subtracts the same garbage collection and scheduling that dominates
+// either arm's tail, and percentiles do not subtract in the first place.
+//
+// The only caller is the harness in sockproxy_ai_bench.c. The datapath wants
+// the counters as well as the record, so it calls llb_ai_record_request; a
+// second path into the trail on the request's own thread would be a way to
+// record a request that the dashboards never see.
+//
+//export llb_ai_audit_emit_only
+func llb_ai_audit_emit_only(tenantID *C.char, modelName *C.char, statusCode C.int, latencyMs C.int64_t, promptTokens C.int, completTokens C.int, errorCode *C.char, requestID *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, isStream C.int, producerID C.int) {
+	defer cgoRecover("llb_ai_audit_emit_only")
+
+	emitAIComplete(aiCompleteRecord{
+		RequestID:  C.GoString(requestID),
+		TenantID:   C.GoString(tenantID),
+		UserID:     C.GoString(userID),
+		KeyID:      C.GoString(keyID),
+		SvcIdent:   C.GoString(svcIdent),
+		ModelName:  C.GoString(modelName),
+		StatusCode: int(statusCode),
+		LatencyMs:  int64(latencyMs),
+		TokensIn:   int64(promptTokens),
+		TokensOut:  int64(completTokens),
+		IsStream:   isStream != 0,
+		ErrorCode:  C.GoString(errorCode),
+		WorkerID:   int(producerID),
+	})
 }

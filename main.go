@@ -89,16 +89,24 @@ func main() {
 // runAuditProducerBench measures what a relay worker pays to record one
 // completed request, and exits without starting the gateway.
 //
-// It runs the harness twice: once with no trail behind the export, and once
-// with the trail open. The export also feeds the Prometheus counters, and
-// that work is not the audit trail's — so the cost the gate is about is the
-// DELTA between the two arms, not the absolute of either. The second arm
-// needs a real writer: with none, every record would take the producer's
-// drop path and the number would be the cost of giving up.
+// Two readings, both absolute, neither to be subtracted from the other. The
+// floor is the harness with the trail closed: the C call and the CGO
+// crossing, returning where there is nothing to record to. The second is
+// the same call with the trail open. The floor is there to say how much of
+// the cost is the crossing rather than the recording — it is not an arm to
+// difference away, because a difference of percentiles is not the
+// percentile of differences.
+//
+// The hand-off does not block, so a loop that emits faster than the writer
+// drains fills the queue and the rest of the run times the drop path
+// instead. The producer's counters are printed for that reason: a run that
+// dropped is not a measurement of what recording costs, and the count is
+// what says so. A request-shaped rate never gets near it; a tight loop
+// does, within a queue's worth of calls.
 func runAuditProducerBench(iters uint64) int {
-	// Arm 1: the export as it was before the trail existed.
+	// Floor: the crossing with no trail behind it.
 	audit.SetGlobal(nil)
-	base, err := ln.RunAuditProducerBench(iters)
+	floor, err := ln.RunAuditProducerBench(iters)
 	if err != nil {
 		fmt.Printf("%s\n", err)
 		return 1
@@ -119,8 +127,8 @@ func runAuditProducerBench(iters uint64) int {
 	w.Start()
 	audit.SetGlobal(w)
 
-	// Arm 2: the same export with the trail behind it.
-	withTrail, err := ln.RunAuditProducerBench(iters)
+	cost, err := ln.RunAuditProducerBench(iters)
+	st := w.Stats()
 
 	audit.SetGlobal(nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -133,13 +141,13 @@ func runAuditProducerBench(iters uint64) int {
 		return 1
 	}
 
-	fmt.Printf("audit producer cost over %d calls per arm\n", iters)
-	fmt.Printf("  trail off: p50 %.0f ns  p95 %.0f ns  p99 %.0f ns  max %.0f ns\n",
-		base.P50Ns, base.P95Ns, base.P99Ns, base.MaxNs)
-	fmt.Printf("  trail on : p50 %.0f ns  p95 %.0f ns  p99 %.0f ns  max %.0f ns\n",
-		withTrail.P50Ns, withTrail.P95Ns, withTrail.P99Ns, withTrail.MaxNs)
-	fmt.Printf("  audit    : p50 %+.0f ns  p95 %+.0f ns  p99 %+.0f ns\n",
-		withTrail.P50Ns-base.P50Ns, withTrail.P95Ns-base.P95Ns,
-		withTrail.P99Ns-base.P99Ns)
+	fmt.Printf("audit producer cost over %d calls\n", cost.Iters)
+	fmt.Printf("  crossing: p50 %.0f ns  p95 %.0f ns  p99 %.0f ns  max %.0f ns\n",
+		floor.P50Ns, floor.P95Ns, floor.P99Ns, floor.MaxNs)
+	fmt.Printf("  emit    : p50 %.0f ns  p95 %.0f ns  p99 %.0f ns  max %.0f ns\n",
+		cost.P50Ns, cost.P95Ns, cost.P99Ns, cost.MaxNs)
+	for _, p := range st.Producers {
+		fmt.Printf("  producer %s: accepted %d  dropped %v\n", p.ID, p.Accepted, p.Dropped)
+	}
 	return 0
 }
