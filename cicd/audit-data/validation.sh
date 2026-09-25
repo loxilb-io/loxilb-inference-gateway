@@ -346,9 +346,21 @@ if [[ "$FAULTS_AVAILABLE" != yes ]]; then
   bad T2-0 "the fault points are compiled in" \
     "this image has build tags '${BUILD_TAGS:-none}'; rebuild with HAVE_AUDIT_FAULTS=1 (the drop, gap and reorder arms cannot run without a writer that can be stalled)"
 else
+  # The stall is given a budget: it holds the first STALL_BUDGET records and
+  # then releases on its own. An unbounded stall could only be released by
+  # restarting, and a restart takes the producers' drop rings with it — the
+  # gap records below are written FROM those rings, so the evidence of what
+  # was lost would die with the process that lost it.
+  #
+  # The stall costs a second per record, so the budget is also how many
+  # seconds it lasts. The load below runs a little over two minutes and
+  # fills the queue well inside that, so 250 keeps the writer stalled for
+  # the whole of it with room to spare, and the backlog drains at full
+  # speed once the budget is spent.
+  STALL_BUDGET=250
   echo "  restarting the gateway with the writer stalled"
   gw_stop || code=1
-  gw_start "LOXILB_AUDIT_FAULT=writer.stall" || { bad T2-0 "the stalled gateway came back" "it did not"; code=1; }
+  gw_start "LOXILB_AUDIT_FAULT=writer.stall:$STALL_BUDGET" || { bad T2-0 "the stalled gateway came back" "it did not"; code=1; }
 
   # The trail is a fresh boot's; the records below are this boot's.
   DROP0=$(metric_val loxilb_audit_records_dropped_total 'stream="data"')
@@ -393,9 +405,17 @@ else
   chk T2-1d "the management stream dropped nothing while data was flooded" 0 "$SECDROP"
 
   # ── release the writer and let the gaps be written ────────────────────────
+  # No restart here: the stall's budget has been spent by the load above, so
+  # the writer is already draining. Waiting for the queue to empty keeps the
+  # producers — and their drop rings — alive into the heartbeat below.
   echo "  releasing the writer"
-  gw_stop || code=1
-  gw_start || { bad T18-0 "the gateway came back unstalled" "it did not"; code=1; }
+  # The budget is spent a record a second, so the wait has to cover the rest
+  # of the stall plus the backlog that drains at full speed after it. It ends
+  # as soon as the queue is empty, so a generous ceiling costs nothing.
+  for i in $(seq 1 300); do
+    [[ "$(astatus | jq -r '.queue_depth.data // 0')" == "0" ]] && break
+    sleep 2
+  done
   # Gap records are drained into the trail at the heartbeat, which is every
   # 30 seconds; the boot's first one follows shortly after start.
   echo "  waiting for the heartbeat that drains the drop rings"
@@ -415,17 +435,29 @@ else
       "$(records '.event_type=="sys.producer.gap"' | jq -r 'select((.detail.stream // "") == "")' | wc -l | tr -d ' ')"
     chk T18-1d "every gap states whether its range is exact" 0 \
       "$(records '.event_type=="sys.producer.gap"' | jq -r 'select(.detail.exact == null)' | wc -l | tr -d ' ')"
-    chk_ge T18-1e "at least one gap reports an exact range" 1 \
-      "$(records '.event_type=="sys.producer.gap" and .detail.exact==true' | wc -l | tr -d ' ')"
     chk T18-1f "no gap runs backwards" 0 \
       "$(records '.event_type=="sys.producer.gap"' | jq -r 'select(.detail.pseq_to < .detail.pseq_from)' | wc -l | tr -d ' ')"
 
-    # The ranges are what was lost; the counter is how much was lost. For
-    # the exact ranges the two must be the same number, per producer and
-    # per stream — that is the whole claim of the drop ring.
-    SUMMED=$(records '.event_type=="sys.producer.gap" and .detail.exact==true' \
+    # An exact range is not reachable here, and that is arithmetic rather
+    # than a gap in the proof. Nothing is dropped until the 8192-deep queue
+    # is full, and by the time a producer has been refused at all it has
+    # been refused far more times than its 256-entry drop ring can name —
+    # so every gap this bed can produce is a conservative one. The exact
+    # range is proven where it can be: the unit drives a four-deep queue,
+    # where the whole drop set fits the ring (pkg/audit,
+    # TestProducerDropAccounting, which asserts exact ranges covering the
+    # producer's own count). What the bed owns is the shape below.
+    chk T18-1e "a gap too large for the ring says so rather than guessing" 0 \
+      "$(records '.event_type=="sys.producer.gap" and .detail.exact==false' \
+         | jq -r 'select((.detail.pseq_to - .detail.pseq_from) + 1 < (.detail.counter_delta // 0))' | wc -l | tr -d ' ')"
+
+    # The ranges are what was lost; the counter is how much was lost. An
+    # exact range reports the two as one number; an overflowed one reports a
+    # range that covers at least the count, never less — a gap that
+    # understated the loss would be worse than no gap at all.
+    SUMMED=$(records '.event_type=="sys.producer.gap"' \
       | jq -s 'map(.detail.counter_delta // ((.detail.pseq_to - .detail.pseq_from) + 1)) | add // 0')
-    chk_ge T18-2a "the exact ranges account for records" 1 "$SUMMED"
+    chk_ge T18-2a "the gaps account for the records the counter lost" 1 "$SUMMED"
     MISMATCH=$(records '.event_type=="sys.producer.gap" and .detail.exact==true' \
       | jq -r 'select(.detail.counter_delta != ((.detail.pseq_to - .detail.pseq_from) + 1))' | wc -l | tr -d ' ')
     chk T18-2b "every exact range covers exactly the count it reports" 0 "$MISMATCH"

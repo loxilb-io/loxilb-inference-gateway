@@ -1049,10 +1049,39 @@ func (w *Writer) Stats() Stats {
 	if id := w.lastOrphan.Load(); id != nil {
 		s.LastOrphanEventID = *id
 	}
+	// Every drop, wherever it was counted. The writer counts the ones it
+	// refuses itself; a record turned away because its queue was full is
+	// counted by the producer that could not hand it over, and that is the
+	// shape every data-path drop takes. Reporting only the writer's own
+	// counters left the stream totals reading zero while the producers
+	// behind them had lost thousands — and a lost record is exactly what
+	// these totals exist to report. Per-producer detail stays in
+	// s.Producers; this is the sum per stream and reason.
+	dropPerStream := make(map[Stream]map[string]uint64, numStreams)
 	for i := range streamByIdx {
 		s.Accepted[streamByIdx[i]] = w.stats.accepted[i].Load()
 		for j := range dropReasons {
 			if n := w.stats.dropped[i][j].Load(); n != 0 {
+				if dropPerStream[streamByIdx[i]] == nil {
+					dropPerStream[streamByIdx[i]] = make(map[string]uint64, numDropReasons)
+				}
+				dropPerStream[streamByIdx[i]][dropReasons[j]] += n
+			}
+		}
+	}
+	for _, p := range *w.producers.Load() {
+		for j := range dropReasons {
+			if n := p.dropped[j].Load(); n != 0 {
+				if dropPerStream[p.stream] == nil {
+					dropPerStream[p.stream] = make(map[string]uint64, numDropReasons)
+				}
+				dropPerStream[p.stream][dropReasons[j]] += n
+			}
+		}
+	}
+	for i := range streamByIdx {
+		for j := range dropReasons {
+			if n := dropPerStream[streamByIdx[i]][dropReasons[j]]; n != 0 {
 				s.Dropped = append(s.Dropped, DropCount{Stream: streamByIdx[i], Reason: dropReasons[j], Count: n})
 			}
 		}

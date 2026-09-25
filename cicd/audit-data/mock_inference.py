@@ -172,9 +172,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
 
-        def sse(obj):
-            self.wfile.write(b"data: " + json.dumps(obj).encode() + b"\n\n")
+        # The header above is a promise about framing, and this server speaks
+        # HTTP/1.1, so the body has to be chunk-framed for real. Writing the
+        # events raw made the first "chunk size" line read "data: {...}",
+        # which is not a hex length: a conforming reader refuses the body
+        # there, the connection dies mid-stream and the client never sees the
+        # terminator.
+        def chunk(payload):
+            self.wfile.write(b"%x\r\n" % len(payload) + payload + b"\r\n")
             self.wfile.flush()
+
+        def sse(obj):
+            chunk(b"data: " + json.dumps(obj).encode() + b"\n\n")
 
         base = {"id": "cmpl-audit", "object": "chat.completion.chunk", "model": model}
         for i in range(max(chunks, 1)):
@@ -188,7 +197,8 @@ class Handler(BaseHTTPRequestHandler):
             # gateway charges for a streamed response.
             sse(dict(base, choices=[], usage=self._usage(pt, ct)))
 
-        self.wfile.write(b"data: [DONE]\n\n")
+        chunk(b"data: [DONE]\n\n")
+        self.wfile.write(b"0\r\n\r\n")
         self.wfile.flush()
 
 

@@ -15,7 +15,7 @@ management plane.
 | T14 | one request leaves one key: an admitted request produces exactly one completion and exactly one settle joined by `request_id`; a refused one produces exactly one deny carrying a non-empty `request_id` and the tenant of the credential that was refused | three requests through the gate — a 403 on a model the key may not use, an admitted non-streaming request, an admitted SSE request — each with its own `X-Request-Id` |
 | T4 | the tokens in the record are the tokens that were charged | a non-streaming body cut mid-usage-object across two TCP writes, and an SSE stream with `include_usage`, each asking the backend for counts no other arm uses; the record is compared with the Prometheus charge counter's delta |
 | T2 | the drop counter is reachable | the writer is stalled, the data channel is saturated, and the counter is asserted to **rise** — an "no drops observed" check passes on an idle system and proves nothing |
-| T18 | what was lost before the writer is named exactly | every `sys.producer.gap` names a producer, a stream and whether its range is exact; an exact range covers exactly the count it reports; more than one producer appears; `loxilb_audit_records_unattributed_total` is zero |
+| T18 | what was lost before the writer is named exactly | every `sys.producer.gap` names a producer, a stream and whether its range is exact; a range too large for the ring is conservative rather than a guess, and an exact one covers exactly the count it reports; more than one producer appears; `loxilb_audit_records_unattributed_total` is zero |
 | T21 | a reorder is not a drop | concurrent traffic from several workers with the writer healthy produces no new gap record |
 
 ## The join key
@@ -62,6 +62,12 @@ the `audit_faults` tag can do:
 make HAVE_AUDIT_FAULTS=1
 ```
 
+The stall is armed with a budget (`writer.stall:<n>`) so that it releases
+itself after n records. An unbounded stall could only be lifted by
+restarting, and a restart takes the producers' drop rings with it — the
+gap records are written from those rings, so the evidence of what was lost
+would die with the process that lost it.
+
 `validation.sh` reads the gateway's build tags from `loxilb --version` and
 **fails** when they are absent, naming the rebuild. It does not skip them:
 an arm that quietly did not run would report a green that proves nothing.
@@ -75,14 +81,20 @@ asserts that.
   is not a container scenario and is not run here.
 - **T10** (the AI regression) is `cicd/vllm-pd-disagg` re-run with audit
   on, not a separate suite.
-- The drop-ring **overflow** arm of T18 (`exact=false` with a counter
-  delta) needs the ring to overflow between two heartbeats, which the
-  queue sizes here do not reach; it is driven in the unit suite.
+- The **exact-range** arm of T18 (`exact=true`) is arithmetic this bed
+  cannot reach. Nothing is dropped until the 8192-deep queue is full, and
+  a producer that has been refused at all has been refused far more times
+  than its 256-entry drop ring can name, so every gap here is a
+  conservative one. The exact range is driven in the unit suite, over a
+  four-deep queue where the whole drop set fits the ring.
 
 ## Known red, and why
 
-The suite is red on the `request_id` join and on one identity field. Both
-are datapath defects it found, not assertions waiting to be softened.
+The suite is red on T4's split-body arm: a response whose body arrives in
+more than one segment has its completion record written when the headers
+land, which is before the usage object it should report, so the record
+says nothing was spent while the settle beside it charges the real counts.
+That is a defect it found, not an assertion waiting to be softened.
 
 - **`data.ai.complete` and `data.ai.settle` carry no `request_id`.** The
   gate mints or adopts the id and the refusal record carries it, but the
