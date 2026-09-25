@@ -416,8 +416,8 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 // Return values:
 //
 //	decision   – 0=allow, 1=deny_401, 2=deny_403, 3=deny_429, 4=deny_503
-//	tenantID   – populated on allow and deny_403 (for metric recording)
-//	keyID      – populated on allow
+//	tenantID   – populated on allow and deny_403 (the credential validated)
+//	keyID      – populated on allow and deny_403 (likewise)
 //	modelOut   – model name echoed back on allow
 //	errorCode  – "invalid_api_key" or "model_not_allowed" on deny
 func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (decision int, tenantID, keyID, modelOut, errorCode string) {
@@ -463,9 +463,11 @@ func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (deci
 		}
 		if !allowed {
 			tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_validate_key: model %q not allowed for key %s\n", modelName, entry.KeyID)
-			// return tenantID on deny_403 so the caller can record
-			// the metric with the correct tenant label.
-			return 2, entry.TenantID, "", "", "model_not_allowed"
+			// Only the model was refused: the key itself validated, so both
+			// halves of its identity are known here. They are returned so
+			// the refusal can be counted against the right tenant and
+			// recorded against the credential that made it.
+			return 2, entry.TenantID, entry.KeyID, "", "model_not_allowed"
 		}
 	}
 
@@ -591,9 +593,17 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	metricTenant = tenantID
 	result.decision = C.int(decision)
 
+	// Whatever identity this verdict resolved goes back to C, allow or deny.
+	// A refusal that resolved one is attributable and must say so: the model
+	// denial validated the credential and knows exactly whose request it
+	// refused, and a record that cannot name the tenant cannot be counted
+	// against it or answered for. Arms that refuse before an identity exists
+	// return empty strings, which is the same value the caller would have
+	// read from a zeroed struct, so nothing else changes shape.
+	cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
+	cCopyStr((*C.char)(unsafe.Pointer(&result.key_id[0])), keyID, 64)
+
 	if decision == 0 {
-		cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
-		cCopyStr((*C.char)(unsafe.Pointer(&result.key_id[0])), keyID, 64)
 		cCopyStr((*C.char)(unsafe.Pointer(&result.model_name[0])), modelOut, 128)
 		return 0
 	}
@@ -694,9 +704,13 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 		metricJWTReason = prom.JWTReasonAllowed
 	}
 
+	// The JWT arm's twin of the API-key rule above: the identity the verdict
+	// resolved reaches C whether it admitted or refused, so a token whose
+	// model was denied is still refused by name.
+	cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
+	cCopyStr((*C.char)(unsafe.Pointer(&result.user_id[0])), userID, 128)
+
 	if decision == 0 {
-		cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
-		cCopyStr((*C.char)(unsafe.Pointer(&result.user_id[0])), userID, 128)
 		cCopyStr((*C.char)(unsafe.Pointer(&result.model_name[0])), metricModel, 128)
 		result.auth_flags = C.int(authFlags)
 		return 0
