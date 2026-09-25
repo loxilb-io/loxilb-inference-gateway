@@ -67,6 +67,12 @@ RED_TWINS = {
     "T15": "llbigw-2-twin-T15-r1",
     "T19": "llbigw-2-twin-T19-r1",
     "T20": "llbigw-2-twin-T20-r1",
+    # Stage 1b, run against cicd/audit-data. Each reverts one defect the
+    # scenario found, except the gap twin, whose row had no defect to revert.
+    "1b-reqid": "llbigw-2-twin-1b-reqid-r1",
+    "1b-complete": "llbigw-2-twin-1b-complete-r1",
+    "1b-deny": "llbigw-2-twin-1b-deny-r1",
+    "1b-gap": "llbigw-2-twin-1b-gap-r1",
 }
 
 
@@ -213,6 +219,7 @@ MATRIX = [
             assertions=["T14-2b", "T14-2c", "T14-2d", "T14-2e", "T14-2f", "T14-2g", "T14-2h", "T14-2i",
                         "T4-3c", "T4-3f", "T4-3g", "T4-3h"],
             scenario="audit-data",
+            twin="1b-deny",
             unit=["TestEmitAIDenyIsASecurityRecord", "TestEmitAIDenyCarriesNoCredential",
                   "TestAIDenyReasonPerStage"],
             note="a spent token budget arrives at the rate-limit stage and reads as quota, not "
@@ -259,6 +266,7 @@ MATRIX = [
             assertions=["T14-3a", "T14-3b", "T14-3d", "T14-4a", "T14-4b", "T14-4c", "T14-4d", "T14-4e",
                         "T14-5b", "T14-5e", "T14-5h", "T4-1d", "T4-1e"],
             scenario="audit-data",
+            twin="1b-complete",
             unit=["TestEmitAICompleteRecordsTheRequest", "TestEmitAICompleteCarriesNoBody",
                   "TestEmitAICompleteReasonFollowsTheDatapath"]),
     ]),
@@ -268,6 +276,7 @@ MATRIX = [
             "emitted even for a pure release, and reading quota rather than ok when the budget was spent",
             assertions=["T14-3e", "T14-3g", "T4-1b", "T4-1c", "T4-1f", "T4-2b", "T4-2c", "T4-2d", "T4-2e"],
             scenario="audit-data",
+            twin="1b-reqid",
             unit=["TestEmitAISettleRecordsTheCharge", "TestEmitAISettleRecordsAPureRelease",
                   "TestEmitAISettleOverQuotaSaysSo"]),
     ]),
@@ -310,6 +319,7 @@ MATRIX = [
             assertions=["T18-1a", "T18-1b", "T18-1c", "T18-1d", "T18-1e", "T18-1f",
                         "T18-2a", "T18-2b", "T18-2c", "T18-3a", "T21-1a", "T21-1b"],
             scenario="audit-data",
+            twin="1b-gap",
             unit=["TestProducerDropAccounting"],
             note="the EXACT range is unit-only by arithmetic, not by omission: nothing is dropped until "
                  "the 8192-deep queue is full, and a producer refused at all has been refused far more "

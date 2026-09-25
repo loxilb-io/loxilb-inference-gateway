@@ -131,6 +131,60 @@ Both live in the eBPF half and are fixed there, not here.
 - **Gaps are drained at the heartbeat**, every 30 seconds. The arms that
   read them wait for one; none asserts a gap inside a short boot.
 
+## Red twins
+
+A test counts only once its red twin has been run: the named mutation that
+makes the assertion fail for the right reason (plan §6.1). Twins are code
+mutations followed by a rebuild, which CI cannot do to itself, so they are
+run by hand on the bed and recorded here; `gen-coverage-manifest.py` marks
+a requirement *covered and tested* only when its `red_twin_run_id` names a
+row of this table, and nothing else may set one.
+
+Four of these revert a defect this scenario found; the gap twin had no
+defect to revert, so it mutates the claim the record exists to make. Each
+run: the mutation applied to a synced copy of the tree (the diff is in the
+run log), the image rebuilt with the fault-enabled overlay recipe, the
+whole scenario run against it, the file restored. The baseline run on the
+same trees and bed was green (71 assertions, 0 failed). Two of the
+mutations are fork-side, which the management scenario's twin patcher
+could not reach.
+
+| run id | twin | mutation | assertions that went red, and nothing else |
+|---|---|---|---|
+| `llbigw-2-twin-1b-reqid-r1` | the request-id join removed | `proxy_request_id` returns the live field only, dropping the snapshot (fork `common/sockproxy.h`) | T14-3c, T14-3d, T14-3f, T14-3g, T14-4a, T14-4c, T14-4d, T14-4e, T14-5d, T14-5e, T14-5f, T14-5g, T14-5h, T4-1a, T4-1b, T4-1c, T4-1d, T4-1e, T4-2a, T4-2b, T4-2c — every record that has to be found by its key |
+| `llbigw-2-twin-1b-complete-r1` | the completion written at header time | `proxy_ai_record_completion` called where the response status is parsed, before the body's usage object is read (fork `common/sockproxy_http.c`) | T4-1d, T4-1e (the completion says 0 tokens while the settle charges 41/9), T14-5e, T14-5h |
+| `llbigw-2-twin-1b-deny-r1` | the refusal cannot name its tenant | the identity copy moved back inside `if decision == 0` (`pkg/loxinet/ai_gateway_dp.go`) | T14-2b |
+| `llbigw-2-twin-1b-drops-r1` | the drop totals blind to producer drops | the producer fold removed from `Stats()` (`pkg/audit/writer.go`) | T2-1a |
+| `llbigw-2-twin-1b-gap-r1` | a gap that does not name its producer | `ProducerID` emitted empty in `emitProducerGaps` (`pkg/audit/writer.go`) | T18-1b (180 gaps unnamed), T18-2c |
+
+T2-1a asserts a Prometheus counter rather than a record field, so no
+requirement row claims it and its twin sets no `red_twin_run_id`; the
+mutation is recorded here because the drop totals are what the data
+stream's loss accounting is read from.
+
+### A twin that stayed green, and what it found
+
+A sixth mutation was run and is kept because it failed to go red:
+`exact := true` in `emitProducerGaps`, so every gap claims its range is
+exact whether or not the ring behind it overflowed. The scenario stayed at
+71/0. Two assertions were expected to catch it and neither can:
+
+- **T18-1e** selects `.detail.exact==false` and then checks the range. With
+  `exact` never false the filter matches nothing, and the assertion passes
+  on an empty set.
+- **T18-2b** selects `.detail.exact==true` and checks `counter_delta`
+  against the range width — but `emitProducerGaps` computes
+  `CounterDelta: run.to - run.from + 1`, so the two agree by construction
+  whatever `exact` says.
+
+So the bed does not currently test the exactness claim in either
+direction, and the requirement is marked tested on `llbigw-2-twin-1b-gap-r1`
+(the per-producer claim), not on these two. Detecting a lying `exact` needs
+an assertion that compares the flag against the producer's own ring
+overflow count, which the trail does not currently publish. Recorded rather
+than fixed here; the unit suite (`TestProducerDropAccounting`) still drives
+the exact-range arithmetic on a four-deep queue.
+
 ## Running
 
 ```

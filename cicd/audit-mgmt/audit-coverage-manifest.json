@@ -3,10 +3,10 @@
   "generated_by": "cicd/audit-mgmt/gen-coverage-manifest.py",
   "stage_claimed": "1b",
   "event_types": 65,
-  "matrix_digest": "9eaecb498e9f5bb57e4de81295a85b0de6a2e2725429649616c04acc473287eb",
+  "matrix_digest": "e8f7ad58bff9411337061bb86ef63c8ae71513aabce55a61acfcfd3b8fc3683e",
   "requirements_by_stage": {
     "1b": {
-      "covered but untested": 4
+      "covered and tested": 4
     },
     "3": {
       "uncovered": 9
@@ -59,11 +59,11 @@
             "TestEmitAICompleteCarriesNoBody",
             "TestEmitAICompleteReasonFollowsTheDatapath"
           ],
-          "red_twin_run_id": null,
-          "state": "covered but untested"
+          "red_twin_run_id": "llbigw-2-twin-1b-complete-r1",
+          "state": "covered and tested"
         }
       ],
-      "state": "covered but untested"
+      "state": "covered and tested"
     },
     {
       "event_type": "data.ai.settle",
@@ -99,11 +99,11 @@
             "TestEmitAISettleRecordsAPureRelease",
             "TestEmitAISettleOverQuotaSaysSo"
           ],
-          "red_twin_run_id": null,
-          "state": "covered but untested"
+          "red_twin_run_id": "llbigw-2-twin-1b-reqid-r1",
+          "state": "covered and tested"
         }
       ],
-      "state": "covered but untested"
+      "state": "covered and tested"
     },
     {
       "event_type": "mcp.tool_call",
@@ -860,12 +860,12 @@
             "TestEmitAIDenyCarriesNoCredential",
             "TestAIDenyReasonPerStage"
           ],
-          "red_twin_run_id": null,
+          "red_twin_run_id": "llbigw-2-twin-1b-deny-r1",
           "note": "a spent token budget arrives at the rate-limit stage and reads as quota, not ratelimit: a budget that ran out is a different resource from a client that is too fast, and a different remedy",
-          "state": "covered but untested"
+          "state": "covered and tested"
         }
       ],
-      "state": "covered but untested"
+      "state": "covered and tested"
     },
     {
       "event_type": "sec.backend_tls_verify_failed",
@@ -1245,12 +1245,12 @@
           "unit_tests": [
             "TestProducerDropAccounting"
           ],
-          "red_twin_run_id": null,
+          "red_twin_run_id": "llbigw-2-twin-1b-gap-r1",
           "note": "the EXACT range is unit-only by arithmetic, not by omission: nothing is dropped until the 8192-deep queue is full, and a producer refused at all has been refused far more times than its 256-entry ring can name, so every gap a bed can produce is conservative. TestProducerDropAccounting drives a four-deep queue, where the whole drop set fits the ring",
-          "state": "covered but untested"
+          "state": "covered and tested"
         }
       ],
-      "state": "covered but untested"
+      "state": "covered and tested"
     },
     {
       "event_type": "sys.replay.completed",
