@@ -181,4 +181,31 @@ else
   echo "skip: internal-ID check (python3 unavailable)"
 fi
 
+# 9. Audit fault points are not in a release build ----------------------------
+# The audit_faults tag compiles in points that a run-time environment
+# variable can use to stall the writer, panic it, or fail a rotation. They
+# exist so the trail's failure paths can be tested; a release that carried
+# them would ship a switch for breaking its own audit trail. The default
+# build must not set the tag, and nothing outside the test plumbing may turn
+# it on unconditionally.
+# Ask make what it would compile, rather than reading the Makefile: the
+# answer then comes from the same expansion the build uses.
+if command -v make >/dev/null 2>&1; then
+  default_tags=$(make --no-print-directory build-tags 2>/dev/null)
+  opted_in_tags=$(make --no-print-directory HAVE_AUDIT_FAULTS=1 build-tags 2>/dev/null)
+  case "$default_tags" in
+    *audit_faults*)
+      fail "a default build carries audit_faults ($default_tags) — the release image would ship the fault points" ;;
+    *)
+      case "$opted_in_tags" in
+        *audit_faults*)
+          pass "audit_faults is opt-in only: default build is '$default_tags'" ;;
+        *)
+          fail "HAVE_AUDIT_FAULTS=1 does not add audit_faults ($opted_in_tags) — the switch the test images rely on is broken" ;;
+      esac ;;
+  esac
+else
+  echo "skip: audit fault-point check (make unavailable)"
+fi
+
 exit $FAIL

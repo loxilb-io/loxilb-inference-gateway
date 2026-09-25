@@ -41,12 +41,22 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 MANIFEST = os.path.join(HERE, "audit-coverage-manifest.json")
-SCENARIO = "audit-mgmt"
-CLAIMED_STAGE = "1a"
+
+# More than one scenario feeds this matrix, so a requirement names the one
+# that proves it rather than inheriting a single global. audit-mgmt covers the
+# management plane; audit-data covers the inference path's own trail.
+SCENARIOS = {
+    "audit-mgmt": os.path.join(REPO, "cicd", "audit-mgmt", "validation.sh"),
+    "audit-data": os.path.join(REPO, "cicd", "audit-data", "validation.sh"),
+}
+DEFAULT_SCENARIO = "audit-mgmt"
+CLAIMED_STAGE = "1b"
 
 # Directories whose Go files may emit records. Every string literal shaped
 # like an event type found here must have an entry below.
-EMITTER_DIRS = ["pkg/audit", "api/restapi/handler"]
+# pkg/loxinet joined the list at stage 1b: the inference path's records are
+# emitted from the datapath's cgo exports, not from the management plane.
+EMITTER_DIRS = ["pkg/audit", "api/restapi/handler", "pkg/loxinet"]
 EVENT_LITERAL = re.compile(r'"((?:mgmt|sec|read|data|sys)\.[a-z_]+(?:\.[a-z_]+)*)"')
 
 # Red-twin runs are recorded by hand from a bed run: the mutation applied,
@@ -57,15 +67,26 @@ RED_TWINS = {
     "T15": "llbigw-2-twin-T15-r1",
     "T19": "llbigw-2-twin-T19-r1",
     "T20": "llbigw-2-twin-T20-r1",
+    # Stage 1b, run against cicd/audit-data. Each reverts one defect the
+    # scenario found, except the gap twin, whose row had no defect to revert.
+    "1b-reqid": "llbigw-2-twin-1b-reqid-r1",
+    "1b-complete": "llbigw-2-twin-1b-complete-r1",
+    "1b-deny": "llbigw-2-twin-1b-deny-r1",
+    "1b-gap": "llbigw-2-twin-1b-gap-r1",
 }
 
 
-def req(stage, fields, behaviour, assertions=(), unit=(), twin=None, note=None):
+def req(stage, fields, behaviour, assertions=(), unit=(), twin=None, note=None,
+        scenario=None):
+    if assertions and scenario is None:
+        scenario = DEFAULT_SCENARIO
+    if assertions and scenario not in SCENARIOS:
+        raise SystemExit(f"req(): unknown scenario {scenario!r}")
     r = {
         "stage": stage,
         "fields": list(fields),
         "behaviour": behaviour,
-        "scenario": SCENARIO if assertions else ("unit" if unit else None),
+        "scenario": scenario if assertions else ("unit" if unit else None),
         "assertion_ids": list(assertions),
         "unit_tests": list(unit),
         "red_twin_run_id": RED_TWINS.get(twin) if twin else None,
@@ -190,7 +211,21 @@ MATRIX = [
             assertions=["T25-3a", "T25-3b", "T25-3c", "T25-3d", "T25-3e", "T25-3f", "T25-3g"],
             unit=["TestAuditGateAuthzDenialIsASecurityRecord", "TestAuditOriginatorOnARefusal"]),
     ]),
-    entry("sec.ai.deny", "S", [later("1b", ["request_id", "key_id", "reason"], "data-path admission refusals")]),
+    entry("sec.ai.deny", "S", [
+        req("1b", ["request_id", "service", "model", "stage", "decision", "reason", "outcome.status"],
+            "one record per refusal, from the gate's single verdict frame: class security on the data "
+            "stream, the correlation key the gate decided on, the stage and error code that refused it, "
+            "and the identity that arm resolved — empty only when it refused before resolving one",
+            assertions=["T14-2b", "T14-2c", "T14-2d", "T14-2e", "T14-2f", "T14-2g", "T14-2h", "T14-2i",
+                        "T4-3c", "T4-3f", "T4-3g", "T4-3h"],
+            scenario="audit-data",
+            twin="1b-deny",
+            unit=["TestEmitAIDenyIsASecurityRecord", "TestEmitAIDenyCarriesNoCredential",
+                  "TestAIDenyReasonPerStage"],
+            note="a spent token budget arrives at the rate-limit stage and reads as quota, not "
+                 "ratelimit: a budget that ran out is a different resource from a client that is "
+                 "too fast, and a different remedy"),
+    ]),
     entry("sec.mtls.client_verify_failed", "S", [later("2", ["subject", "x509_error"], "frontend client certificate rejected")]),
     entry("sec.backend_tls_verify_failed", "S", [later("2", ["endpoint", "x509_error"], "backend certificate rejected")]),
     entry("sec.llamafw.block", "S", [later("2", ["request_id", "scanner", "decision"], "scanner block")]),
@@ -221,8 +256,30 @@ MATRIX = [
     entry("read.audit.content", "R", [], excluded="impossible by design over the management API; the readers are the SIEM and the on-host verifier"),
 
     # ── class D: data path ──────────────────────────────────────────────────
-    entry("data.ai.complete", "D", [later("1b", ["service", "model", "tokens_in", "tokens_out", "latency_ms", "finish_reason"], "one record per admitted request")]),
-    entry("data.ai.settle", "D", [later("1b", ["request_id", "tokens_in", "tokens_out"], "tokens charged")]),
+    entry("data.ai.complete", "D", [
+        req("1b", ["request_id", "service", "model", "tokens_in", "tokens_out", "latency_ms", "stream",
+                   "outcome.status"],
+            "one record per admitted request, carrying the correlation key the gate decided on so it "
+            "joins its settle and any refusal, and written once the tokens are known rather than when "
+            "the response headers land — a body split across segments would otherwise report nothing "
+            "spent beside a settle charging the real amount",
+            assertions=["T14-3a", "T14-3b", "T14-3d", "T14-4a", "T14-4b", "T14-4c", "T14-4d", "T14-4e",
+                        "T14-5b", "T14-5e", "T14-5h", "T4-1d", "T4-1e"],
+            scenario="audit-data",
+            twin="1b-complete",
+            unit=["TestEmitAICompleteRecordsTheRequest", "TestEmitAICompleteCarriesNoBody",
+                  "TestEmitAICompleteReasonFollowsTheDatapath"]),
+    ]),
+    entry("data.ai.settle", "D", [
+        req("1b", ["request_id", "service", "model", "tokens_in", "tokens_out", "reserved", "res_epoch"],
+            "the tokens recorded are the tokens charged, joined to the completion by the request id; "
+            "emitted even for a pure release, and reading quota rather than ok when the budget was spent",
+            assertions=["T14-3e", "T14-3g", "T4-1b", "T4-1c", "T4-1f", "T4-2b", "T4-2c", "T4-2d", "T4-2e"],
+            scenario="audit-data",
+            twin="1b-reqid",
+            unit=["TestEmitAISettleRecordsTheCharge", "TestEmitAISettleRecordsAPureRelease",
+                  "TestEmitAISettleOverQuotaSaysSo"]),
+    ]),
 
     # ── class A: the audit system ───────────────────────────────────────────
     entry("sys.writer.start", "A", [
@@ -255,8 +312,20 @@ MATRIX = [
             assertions=["T11-2e", "T11-2f", "T19-3b"], unit=["TestHeartbeatWhenIdle"]),
     ]),
     entry("sys.producer.gap", "A", [
-        req("1b", ["producer_id", "stream", "pseq_from", "pseq_to", "reason", "exact"], "exact lost ranges per producer",
-            unit=["TestProducerDropAccounting"]),
+        req("1b", ["producer_id", "stream", "pseq_from", "pseq_to", "reason", "exact"],
+            "what a saturated writer lost, named per producer: every gap names its producer and stream "
+            "and states whether its range is exact, no range runs backwards, and a range too large for "
+            "the drop ring is conservative rather than a guess",
+            assertions=["T18-1a", "T18-1b", "T18-1c", "T18-1d", "T18-1e", "T18-1f",
+                        "T18-2a", "T18-2b", "T18-2c", "T18-3a", "T21-1a", "T21-1b"],
+            scenario="audit-data",
+            twin="1b-gap",
+            unit=["TestProducerDropAccounting"],
+            note="the EXACT range is unit-only by arithmetic, not by omission: nothing is dropped until "
+                 "the 8192-deep queue is full, and a producer refused at all has been refused far more "
+                 "times than its 256-entry ring can name, so every gap a bed can produce is "
+                 "conservative. TestProducerDropAccounting drives a four-deep queue, where the whole "
+                 "drop set fits the ring"),
     ]),
     entry("sys.intent.orphaned", "A", [
         req("1a", ["intent_event_id", "config_generation_at_boot"],
@@ -389,14 +458,22 @@ def check(manifest):
         if any(r["stage"] == CLAIMED_STAGE for r in e["requirements"]) and e["event_type"] not in literals:
             errors.append(f"{e['event_type']} is claimed at stage {CLAIMED_STAGE} but nothing in the Go tree emits it")
 
-    with open(os.path.join(HERE, "validation.sh"), encoding="utf-8") as fh:
-        validation = fh.read()
+    validations = {}
+    for name, path in SCENARIOS.items():
+        try:
+            with open(path, encoding="utf-8") as fh:
+                validations[name] = fh.read()
+        except OSError as exc:
+            errors.append(f"scenario {name}: {exc}")
+            validations[name] = ""
     seen_units = {}
     for e in manifest["entries"]:
         for r in e.get("requirements", []):
+            body = validations.get(r["scenario"], "")
             for a in r["assertion_ids"]:
-                if not re.search(r"\b" + re.escape(a) + r"\b", validation):
-                    errors.append(f"{e['event_type']}: assertion {a} is not in validation.sh")
+                if not re.search(r"\b" + re.escape(a) + r"\b", body):
+                    errors.append(f"{e['event_type']}: assertion {a} is not in "
+                                  f"{r['scenario']}/validation.sh")
             for u in r["unit_tests"]:
                 if u not in seen_units:
                     seen_units[u] = unit_test_exists(u)

@@ -76,6 +76,22 @@ export CGO_CFLAGS += $(shell cd loxilb-ebpf/doca && $(MAKE) HAVE_DOCA=1 --no-pri
 export CGO_LDFLAGS += $(shell cd loxilb-ebpf/doca && $(MAKE) HAVE_DOCA=1 --no-print-directory print-cgo-ldflags 2>/dev/null)
 endif
 
+# Audit fault points - compiled in only for the test images that drive the
+# audit trail's failure paths (a stalled or panicking writer, a rotation or
+# compression failure). A release image must never carry them: the point is
+# selected at run time by an environment variable, so shipping the code
+# would put a switch for breaking the audit trail inside the product. The
+# build advertises the tag on /version and release-hygiene asserts a release
+# image does not.
+ifdef HAVE_AUDIT_FAULTS
+ifdef GO_BUILD_TAGS
+GO_BUILD_TAGS := $(GO_BUILD_TAGS),audit_faults
+else
+GO_BUILD_TAGS := -tags audit_faults
+endif
+LDFLAGS += -X 'github.com/loxilb-io/loxilb/common.BuildTags=audit_faults'
+endif
+
 # DPU slim build profile - align Go CGO struct layout with eBPF/userspace
 ifdef HAVE_DP_DPU_SLIM
 export CGO_CFLAGS += -DHAVE_DP_DPU_SLIM=1
@@ -145,6 +161,14 @@ build: subsys api-models
 .PHONY: version
 version:
 	@echo $(VERSION)
+
+# Print the build tags this invocation would compile in. Scripts and CI ask
+# make rather than reading the Makefile, so the answer is the one the build
+# actually uses: release-hygiene asserts a default build carries no
+# audit_faults, and the audit-data scenario asserts its test image does.
+.PHONY: build-tags
+build-tags:
+	@echo $(GO_BUILD_TAGS)
 
 clean: subsys-clean
 	go clean

@@ -588,3 +588,43 @@ func TestAuditGateWithRealLoginHandler(t *testing.T) {
 		}
 	}
 }
+
+// The gate's writer and the package-level handle the datapath reaches
+// through are one writer with two doors. They are set and cleared
+// together, so a data-path record can never be written to a writer the
+// management gate has already stopped using, and the datapath can never
+// find an empty handle while the gate is still recording.
+func TestAuditWriterHandlesMoveTogether(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "audit")
+	w, err := audit.New(audit.Config{Dir: dir, CreateDir: true, InstanceID: "gw-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Start()
+	t.Cleanup(func() {
+		SetAuditWriter(nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = w.Close(ctx)
+	})
+
+	SetAuditWriter(w)
+	if AuditWriter() != w {
+		t.Fatal("the gate does not hold the writer it was given")
+	}
+	if audit.Global() != w {
+		t.Fatal("the datapath handle does not hold the writer the gate was given")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := CloseAuditWriter(ctx); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if AuditWriter() != nil {
+		t.Error("the gate still holds a closed writer")
+	}
+	if audit.Global() != nil {
+		t.Error("the datapath still holds a closed writer")
+	}
+}

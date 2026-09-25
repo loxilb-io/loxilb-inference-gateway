@@ -1,7 +1,7 @@
 name: Audit-Sanity-CI
 
 # The management-plane audit trail, self-contained on a hosted runner: no
-# GPU, no cloud service, no external identity provider. Two gates, in cost
+# GPU, no cloud service, no external identity provider. Three gates, in cost
 # order:
 #
 #   unit-gates       the writer, encoder, intent-recovery and retention
@@ -15,10 +15,18 @@ name: Audit-Sanity-CI
 #                    orphaned-intent report after a crash, the write-failure
 #                    fallback on a full filesystem and the retroactive record,
 #                    the delegated originator, and the named routes' pairs
+#   audit-data-      cicd/audit-data: the inference path's own trail — the
+#   scenario         three records of one request joined by the id the gate
+#                    decided on, the tokens recorded against the tokens
+#                    charged, the refusals with the identity each arm
+#                    resolved, and what a saturated writer loses named
+#                    exactly, per producer
 #
-# The fault-injected arms (writer panic and restart, rotation and gzip
-# failures) need the audit_faults build tag, which the shipped image does
-# not carry; they run in unit-gates through the package's internal hook.
+# The fault-injected arms of unit-gates (writer panic and restart, rotation
+# and gzip failures) need the audit_faults build tag, which the shipped image
+# does not carry; they run through the package's internal hook. The data
+# scenario's saturation arms need the tag in the IMAGE, so that job builds
+# its own and the scenario refuses to run against one without it.
 
 on:
   push:
@@ -33,6 +41,7 @@ on:
       - 'options/**'
       - 'mcp/**'
       - 'cicd/audit-mgmt/**'
+      - 'cicd/audit-data/**'
       - 'cicd/common.sh'
       - 'scripts/aigw-db-bootstrap.sql'
       - 'loxilb-ebpf'
@@ -48,6 +57,7 @@ on:
       - 'options/**'
       - 'mcp/**'
       - 'cicd/audit-mgmt/**'
+      - 'cicd/audit-data/**'
       - 'cicd/common.sh'
       - 'scripts/aigw-db-bootstrap.sql'
       - 'loxilb-ebpf'
@@ -174,3 +184,67 @@ jobs:
           cd cicd/audit-mgmt/
           ./rmconfig.sh || true
       - run: echo "Audit sanity complete"
+
+  audit-data-scenario:
+    # The inference path's trail. Run twice over the datapath's HTTP-trace
+    # build flag, because the producer identity every data record carries is
+    # the relay worker's id, and that id used to exist only in a trace build:
+    # a gap record naming no producer is the shape this leg exists to catch,
+    # and it can only appear in one of the two builds.
+    name: audit-data-scenario (http-trace ${{ matrix.trace.name }})
+    runs-on: ubuntu-22.04
+    if: github.actor != 'dependabot[bot]'
+    strategy:
+      fail-fast: false
+      matrix:
+        trace:
+          - name: 'off'
+            flags: ''
+          - name: 'on'
+            flags: 'HAVE_HTTP_TRACE=1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev jq
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+
+      # HAVE_AUDIT_FAULTS is carried by EVERY make invocation below, the
+      # overlay included: docker-cp depends on build, so a bare docker-cp
+      # rebuilds without the tag and silently ships a binary whose writer
+      # cannot be stalled. The scenario reads the tag off /version and fails
+      # rather than skipping, so a slip here is loud, but it is cheaper to
+      # not slip.
+      - run: sudo -E env "PATH=$PATH" make HAVE_AUDIT_FAULTS=1 ${{ matrix.trace.flags }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp HAVE_AUDIT_FAULTS=1 ${{ matrix.trace.flags }}
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: Data-plane audit trail (cicd/audit-data)
+        run: |
+          cd cicd/audit-data/
+          ./config.sh
+          ./validation.sh
+      - name: Teardown
+        if: always()
+        run: |
+          cd cicd/audit-data/
+          ./rmconfig.sh || true
+      - run: echo "Audit data-stream sanity complete"

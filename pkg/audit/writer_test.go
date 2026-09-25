@@ -938,3 +938,46 @@ func TestShortAppendLeavesNoTornLine(t *testing.T) {
 		t.Fatalf("retroactive record %v", wf)
 	}
 }
+
+// TestStatsDropsCountProducerDrops pins what the stream totals report. A
+// record turned away because its queue was full is counted by the producer
+// that could not hand it over — which is every data-path drop — and the
+// totals behind /audit/status and loxilb_audit_records_dropped_total are
+// built from Stats(). Summing only the writer's own counters left those
+// totals reading zero while the producers behind them had lost thousands.
+func TestStatsDropsCountProducerDrops(t *testing.T) {
+	old := stallNanos.Swap(int64(30 * time.Millisecond))
+	defer stallNanos.Store(old)
+
+	cfg := testConfig(t)
+	cfg.QueueSize = 4
+	w := startWriter(t, cfg)
+	w.faults.arm(FaultWriterStall)
+	w.Append(mgmtIntent("/wake"))
+	time.Sleep(5 * time.Millisecond)
+
+	p := w.Producer("w1", StreamData)
+	const n = 40
+	dropped := 0
+	for i := 0; i < n; i++ {
+		if !p.Emit(dataRecord()) {
+			dropped++
+		}
+	}
+	w.faults.arm("")
+	if dropped == 0 {
+		t.Fatalf("nothing was dropped, so this case proves nothing")
+	}
+
+	var reported uint64
+	for _, d := range w.Stats().Dropped {
+		if d.Stream == StreamData && d.Reason == DropQueueFull {
+			reported += d.Count
+		}
+	}
+	if reported != uint64(dropped) {
+		t.Errorf("stream total reports %d %s drops, the producer dropped %d",
+			reported, DropQueueFull, dropped)
+	}
+	closeWriter(t, w)
+}

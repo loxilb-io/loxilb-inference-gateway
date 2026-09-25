@@ -39,6 +39,17 @@ var Version = "dev"
 
 var BuildInfo string = ""
 
+// BuildTags names the optional build tags compiled into this binary, for
+// the ones a deployment has to be able to see from the outside. It is
+// stamped at link time by the Makefile.
+//
+// Only audit_faults sets it today. That tag compiles in fault points the
+// audit trail's failure tests drive, selected at run time by an
+// environment variable, so a binary carrying it must be identifiable as
+// one that can be told to break its own audit trail. An empty string is a
+// binary with no such tag, which is what a release is.
+var BuildTags string = ""
+
 // Product is the flavor identifier surfaced on GET /version so shared
 // clients (loxilb-ui) can distinguish this gateway from plain upstream
 // loxilb, which never sets the field. Clients treat an absent product as

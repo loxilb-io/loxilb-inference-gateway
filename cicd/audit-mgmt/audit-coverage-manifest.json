@@ -1,13 +1,12 @@
 {
   "schema": 1,
   "generated_by": "cicd/audit-mgmt/gen-coverage-manifest.py",
-  "stage_claimed": "1a",
+  "stage_claimed": "1b",
   "event_types": 65,
-  "matrix_digest": "dcbac6a72c35da5eca3b572dbfadd1e8134a6f2d6cf375aab0f14df7afb75760",
+  "matrix_digest": "e8f7ad58bff9411337061bb86ef63c8ae71513aabce55a61acfcfd3b8fc3683e",
   "requirements_by_stage": {
     "1b": {
-      "uncovered": 3,
-      "covered but untested": 1
+      "covered and tested": 4
     },
     "3": {
       "uncovered": 9
@@ -29,22 +28,42 @@
         {
           "stage": "1b",
           "fields": [
+            "request_id",
             "service",
             "model",
             "tokens_in",
             "tokens_out",
             "latency_ms",
-            "finish_reason"
+            "stream",
+            "outcome.status"
           ],
-          "behaviour": "one record per admitted request",
-          "scenario": null,
-          "assertion_ids": [],
-          "unit_tests": [],
-          "red_twin_run_id": null,
-          "state": "uncovered"
+          "behaviour": "one record per admitted request, carrying the correlation key the gate decided on so it joins its settle and any refusal, and written once the tokens are known rather than when the response headers land \u2014 a body split across segments would otherwise report nothing spent beside a settle charging the real amount",
+          "scenario": "audit-data",
+          "assertion_ids": [
+            "T14-3a",
+            "T14-3b",
+            "T14-3d",
+            "T14-4a",
+            "T14-4b",
+            "T14-4c",
+            "T14-4d",
+            "T14-4e",
+            "T14-5b",
+            "T14-5e",
+            "T14-5h",
+            "T4-1d",
+            "T4-1e"
+          ],
+          "unit_tests": [
+            "TestEmitAICompleteRecordsTheRequest",
+            "TestEmitAICompleteCarriesNoBody",
+            "TestEmitAICompleteReasonFollowsTheDatapath"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-1b-complete-r1",
+          "state": "covered and tested"
         }
       ],
-      "state": "uncovered"
+      "state": "covered and tested"
     },
     {
       "event_type": "data.ai.settle",
@@ -55,18 +74,36 @@
           "stage": "1b",
           "fields": [
             "request_id",
+            "service",
+            "model",
             "tokens_in",
-            "tokens_out"
+            "tokens_out",
+            "reserved",
+            "res_epoch"
           ],
-          "behaviour": "tokens charged",
-          "scenario": null,
-          "assertion_ids": [],
-          "unit_tests": [],
-          "red_twin_run_id": null,
-          "state": "uncovered"
+          "behaviour": "the tokens recorded are the tokens charged, joined to the completion by the request id; emitted even for a pure release, and reading quota rather than ok when the budget was spent",
+          "scenario": "audit-data",
+          "assertion_ids": [
+            "T14-3e",
+            "T14-3g",
+            "T4-1b",
+            "T4-1c",
+            "T4-1f",
+            "T4-2b",
+            "T4-2c",
+            "T4-2d",
+            "T4-2e"
+          ],
+          "unit_tests": [
+            "TestEmitAISettleRecordsTheCharge",
+            "TestEmitAISettleRecordsAPureRelease",
+            "TestEmitAISettleOverQuotaSaysSo"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-1b-reqid-r1",
+          "state": "covered and tested"
         }
       ],
-      "state": "uncovered"
+      "state": "covered and tested"
     },
     {
       "event_type": "mcp.tool_call",
@@ -234,7 +271,7 @@
           "state": "covered and tested"
         }
       ],
-      "state": "covered and tested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.auth.logout",
@@ -257,7 +294,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.auth.oauth_callback",
@@ -287,7 +324,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.auth.oauth_start",
@@ -321,7 +358,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.auth.oauth_token_refresh",
@@ -351,7 +388,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.auth.token_upgrade",
@@ -375,7 +412,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.cert.reload",
@@ -451,7 +488,7 @@
           "state": "covered and tested"
         }
       ],
-      "state": "covered and tested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.maintenance",
@@ -476,7 +513,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.opa.policy",
@@ -522,7 +559,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.snapshot.restore",
@@ -547,7 +584,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.user.create",
@@ -580,7 +617,7 @@
           "state": "covered and tested"
         }
       ],
-      "state": "covered and tested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.user.delete",
@@ -602,7 +639,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "mgmt.user.update",
@@ -632,7 +669,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "read.audit.content",
@@ -725,7 +762,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "read.credential.list",
@@ -757,7 +794,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "read.log_archive.download",
@@ -784,7 +821,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sec.ai.deny",
@@ -795,18 +832,40 @@
           "stage": "1b",
           "fields": [
             "request_id",
-            "key_id",
-            "reason"
+            "service",
+            "model",
+            "stage",
+            "decision",
+            "reason",
+            "outcome.status"
           ],
-          "behaviour": "data-path admission refusals",
-          "scenario": null,
-          "assertion_ids": [],
-          "unit_tests": [],
-          "red_twin_run_id": null,
-          "state": "uncovered"
+          "behaviour": "one record per refusal, from the gate's single verdict frame: class security on the data stream, the correlation key the gate decided on, the stage and error code that refused it, and the identity that arm resolved \u2014 empty only when it refused before resolving one",
+          "scenario": "audit-data",
+          "assertion_ids": [
+            "T14-2b",
+            "T14-2c",
+            "T14-2d",
+            "T14-2e",
+            "T14-2f",
+            "T14-2g",
+            "T14-2h",
+            "T14-2i",
+            "T4-3c",
+            "T4-3f",
+            "T4-3g",
+            "T4-3h"
+          ],
+          "unit_tests": [
+            "TestEmitAIDenyIsASecurityRecord",
+            "TestEmitAIDenyCarriesNoCredential",
+            "TestAIDenyReasonPerStage"
+          ],
+          "red_twin_run_id": "llbigw-2-twin-1b-deny-r1",
+          "note": "a spent token budget arrives at the rate-limit stage and reads as quota, not ratelimit: a budget that ran out is a different resource from a client that is too fast, and a different remedy",
+          "state": "covered and tested"
         }
       ],
-      "state": "uncovered"
+      "state": "covered and tested"
     },
     {
       "event_type": "sec.backend_tls_verify_failed",
@@ -885,7 +944,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sec.mgmt.authz_denied",
@@ -917,7 +976,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sec.mtls.client_verify_failed",
@@ -1005,7 +1064,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.ha.role_change",
@@ -1058,7 +1117,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.hold.applied",
@@ -1129,7 +1188,7 @@
           "state": "covered and tested"
         }
       ],
-      "state": "covered and tested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.key.rotated",
@@ -1167,17 +1226,31 @@
             "reason",
             "exact"
           ],
-          "behaviour": "exact lost ranges per producer",
-          "scenario": "unit",
-          "assertion_ids": [],
+          "behaviour": "what a saturated writer lost, named per producer: every gap names its producer and stream and states whether its range is exact, no range runs backwards, and a range too large for the drop ring is conservative rather than a guess",
+          "scenario": "audit-data",
+          "assertion_ids": [
+            "T18-1a",
+            "T18-1b",
+            "T18-1c",
+            "T18-1d",
+            "T18-1e",
+            "T18-1f",
+            "T18-2a",
+            "T18-2b",
+            "T18-2c",
+            "T18-3a",
+            "T21-1a",
+            "T21-1b"
+          ],
           "unit_tests": [
             "TestProducerDropAccounting"
           ],
-          "red_twin_run_id": null,
-          "state": "covered but untested"
+          "red_twin_run_id": "llbigw-2-twin-1b-gap-r1",
+          "note": "the EXACT range is unit-only by arithmetic, not by omission: nothing is dropped until the 8192-deep queue is full, and a producer refused at all has been refused far more times than its 256-entry ring can name, so every gap a bed can produce is conservative. TestProducerDropAccounting drives a four-deep queue, where the whole drop set fits the ring",
+          "state": "covered and tested"
         }
       ],
-      "state": "uncovered"
+      "state": "covered and tested"
     },
     {
       "event_type": "sys.replay.completed",
@@ -1223,7 +1296,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.segment.lost_to_retention",
@@ -1268,7 +1341,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.segment.prune",
@@ -1304,7 +1377,7 @@
           "state": "uncovered"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.segment.recovered",
@@ -1339,7 +1412,7 @@
           "state": "uncovered"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.segment.rotation_failed",
@@ -1362,7 +1435,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.segment.seal",
@@ -1398,7 +1471,7 @@
           "state": "uncovered"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.segment.seal_failed",
@@ -1549,7 +1622,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.writer.restart",
@@ -1573,7 +1646,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.writer.start",
@@ -1597,7 +1670,7 @@
           "state": "covered but untested"
         }
       ],
-      "state": "covered but untested"
+      "state": "uncovered"
     },
     {
       "event_type": "sys.writer.write_failed",
@@ -1636,7 +1709,7 @@
           "state": "covered and tested"
         }
       ],
-      "state": "covered and tested"
+      "state": "uncovered"
     }
   ]
 }
