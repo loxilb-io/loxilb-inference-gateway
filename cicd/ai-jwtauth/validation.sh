@@ -3222,7 +3222,9 @@ echo "             climbing with the stream count."
 # heap (heap_sys) and goroutine stacks (stack_sys) are left inside the scored
 # number on purpose: a Go-side leak lands there, and heap_sys is printed
 # beside the verdict so it reads as what it is. Unreadable accounting
-# attributes nothing. The ceiling itself is unchanged.
+# attributes nothing. The ceiling itself is unchanged. The counters are read
+# after the data segment when the window opens and before it when the window
+# closes, so a chunk mapped between the two reads is scored, never subtracted.
 #
 # On a build that plants 20k finalizer specials on one bearer call, the
 # window read 16 0 1028 0 0 0 with the runtime reporting +1024 kB (four
@@ -3285,6 +3287,17 @@ H2L_TASKS_PREV=$(gw_tasks)
 while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
   h2l_round_drive
+  # On the round that would close the window, the runtime's counters are read
+  # BEFORE the data segment, and at the open they are read AFTER it. A chunk
+  # the runtime maps between the two reads (the metrics scrape itself can
+  # trigger one) then lands in the scored growth and not in the subtracted
+  # number, never the other way round: the ordering can only make the case
+  # stricter. A thread event on this round restarts the window and these two
+  # readings are simply taken again on the next closing round.
+  if [ "$H2L_PHASE" = measure ] && [ $((H2L_WINDOW + 1)) -ge "$H2L_MEAS_ROUNDS" ]; then
+    H2L_BOOK3=$(gw_go_bookkeeping_kb)
+    H2L_HEAP3=$(gw_go_heap_kb)
+  fi
   H2L_NOW=$(gw_vmdata_kb)
   H2L_THR=$(gw_threads)
   H2L_TASKS_NOW=$(gw_tasks)
@@ -3339,8 +3352,6 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
     H2L_DONE=1
     H2L_DATA3=$H2L_NOW
     H2L_THR3=$H2L_THR
-    H2L_BOOK3=$(gw_go_bookkeeping_kb)
-    H2L_HEAP3=$(gw_go_heap_kb)
     break
   fi
 done
