@@ -2893,6 +2893,38 @@ gw_tasks() {
   docker exec llb1 sh -c 'for t in /proc/'"$pid"'/task/*; do printf "%s %s\n" "${t##*/}" "$(cat $t/comm 2>/dev/null)"; done' 2>/dev/null | sort
 }
 
+# gw_go_bookkeeping_kb -- what the Go runtime has taken from the OS for its
+# own bookkeeping, from its own accounting on the metrics endpoint: span and
+# cache descriptors, GC metadata, profiling buckets and the immortal-metadata
+# chunks behind them (mspan_sys, mcache_sys, gc_sys, buck_hash_sys,
+# other_sys). It grows in 256 KiB chunks at moments the runtime chooses and is
+# never returned; it is not stream state, and the runtime reports it exactly
+# when it maps it, so it is READ here, not inferred from a jump. The heap
+# (heap_sys) and goroutine stacks (stack_sys) are deliberately NOT in this
+# sum: a Go-side leak lands there and must stay scored.
+gw_go_bookkeeping_kb() {
+  local body
+  body=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null)
+  case "$body" in
+    *go_memstats_other_sys_bytes*) ;;
+    *) echo unreadable; return ;;
+  esac
+  printf '%s\n' "$body" | awk '
+    /^go_memstats_(mspan|mcache|gc|buck_hash|other)_sys_bytes / { sum += $2 + 0 }
+    END { printf "%d", sum / 1024 }'
+}
+# gw_go_heap_kb -- heap_sys, printed beside the verdict so a Go-side leak is
+# visible as such; it stays inside the scored number.
+gw_go_heap_kb() {
+  local body
+  body=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null)
+  case "$body" in
+    *go_memstats_heap_sys_bytes*) ;;
+    *) echo unreadable; return ;;
+  esac
+  printf '%s\n' "$body" | awk '/^go_memstats_heap_sys_bytes / { printf "%d", ($2 + 0) / 1024 }'
+}
+
 # gw_maps_snapshot -- one line per private writable mapping of the gateway
 # process, "start-end size_kB name", so two snapshots can say WHICH mapping a
 # data-segment jump landed in: the brk heap ([heap]), the Go arenas (the
@@ -3174,6 +3206,34 @@ echo "             climbing with the stream count."
 # build that keeps 64 KiB per denial, and one that starts a thread every 150
 # denials, both never settle under this loop and fail.
 #
+# 🚨 THE RUNTIME'S OWN BOOKKEEPING IS READ FROM THE RUNTIME, NOT GUESSED AT.
+#
+# With threads accounted for, the next red on a clean branch was smaller and
+# a different shape: scored rounds 0 0 256 0 0 0 on a constant thread count,
+# the whole of it in one new 256 kB anonymous mapping, page-aligned only, no
+# guard page below it, outside the Go arenas and outside [heap]. That is the
+# Go runtime's immortal-metadata chunk (256 KiB exactly): span and cache
+# descriptors, GC metadata and profiling buckets are carved from it, it is
+# mapped when the runtime decides, and it is never returned. The runtime
+# charges every such chunk to its own counters the moment it maps it, and
+# those counters are on the metrics endpoint this suite already reads. So the
+# window now also records mspan_sys + mcache_sys + gc_sys + buck_hash_sys +
+# other_sys before and after, and scores VmData growth MINUS that delta. The
+# heap (heap_sys) and goroutine stacks (stack_sys) are left inside the scored
+# number on purpose: a Go-side leak lands there, and heap_sys is printed
+# beside the verdict so it reads as what it is. Unreadable accounting
+# attributes nothing. The ceiling itself is unchanged. The counters are read
+# after the data segment when the window opens and before it when the window
+# closes, so a chunk mapped between the two reads is scored, never subtracted.
+#
+# On a build that plants 20k finalizer specials on one bearer call, the
+# window read 16 0 1028 0 0 0 with the runtime reporting +1024 kB (four
+# 256 KiB chunks) and +20 kB left unaccounted, where the previous logic
+# scored 0 4 1024 0 0 0 as a +1028 kB failure. A build that keeps 64 KiB
+# of Go heap per denial still moves +8192/+12288 kB every round and never
+# settles, and a C-side leak of 64 KiB per denial moves 9600 kB every round
+# and never settles: neither is subtracted, both still fail.
+#
 # An UNSETTLED run is a failed MEASUREMENT, not a detected leak, and says so.
 # So is a round that could not be read, and a series shorter than the rounds
 # actually driven: an oracle that cannot obtain its reading has shown nothing.
@@ -3227,6 +3287,17 @@ H2L_TASKS_PREV=$(gw_tasks)
 while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
   h2l_round_drive
+  # On the round that would close the window, the runtime's counters are read
+  # BEFORE the data segment, and at the open they are read AFTER it. A chunk
+  # the runtime maps between the two reads (the metrics scrape itself can
+  # trigger one) then lands in the scored growth and not in the subtracted
+  # number, never the other way round: the ordering can only make the case
+  # stricter. A thread event on this round restarts the window and these two
+  # readings are simply taken again on the next closing round.
+  if [ "$H2L_PHASE" = measure ] && [ $((H2L_WINDOW + 1)) -ge "$H2L_MEAS_ROUNDS" ]; then
+    H2L_BOOK3=$(gw_go_bookkeeping_kb)
+    H2L_HEAP3=$(gw_go_heap_kb)
+  fi
   H2L_NOW=$(gw_vmdata_kb)
   H2L_THR=$(gw_threads)
   H2L_TASKS_NOW=$(gw_tasks)
@@ -3269,6 +3340,8 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
       H2L_DATA0=$H2L_NOW
       H2L_RSS0=$(gw_rss_kb)
       H2L_THR0=$H2L_THR
+      H2L_BOOK0=$(gw_go_bookkeeping_kb)
+      H2L_HEAP0=$(gw_go_heap_kb)
       gw_maps_snapshot .h2l_maps_before
     fi
     continue
@@ -3301,6 +3374,7 @@ else
   FAIL=$((FAIL + 1))
 fi
 echo "         per-round gateway threads:$H2L_THREADS_SERIES"
+echo "         per-round VmData steps, every round (warm-up included):$H2L_ALL_DELTAS"
 if [ -n "$H2L_THREAD_EVENTS" ]; then
   echo "         thread events (soft stack limit $(gw_stack_limit_kb) kB):$H2L_THREAD_EVENTS"
   echo "         a new thread's stack and first malloc arena land in VmData and are not"
@@ -3328,16 +3402,38 @@ else
   H2L_MEAS_STREAMS=$(( H2L_MEAS_ROUNDS * 150 ))
   echo "         per-round VmData growth (kB, 150 streams each):$H2L_DELTAS"
   echo "         VmData +${H2L_GROW} kB over $H2L_MEAS_STREAMS streams; VmRSS moved ${H2L_RSSGROW} kB (diagnostic, not scored)"
-  if [ "$H2L_GROW" -le "$H2L_DATA_KB" ]; then
+  # The Go runtime's own bookkeeping over the window, from its own accounting.
+  # Unreadable accounting attributes nothing: the whole growth stays scored.
+  H2L_BOOK=0
+  H2L_HEAP="unreadable"
+  if [ "${H2L_BOOK0:-unreadable}" != unreadable ] && [ "${H2L_BOOK3:-unreadable}" != unreadable ] &&
+     [ -n "$H2L_BOOK0" ] && [ -n "$H2L_BOOK3" ]; then
+    H2L_BOOK=$(( H2L_BOOK3 - H2L_BOOK0 ))
+    [ "$H2L_BOOK" -lt 0 ] && H2L_BOOK=0
+  fi
+  if [ "${H2L_HEAP0:-unreadable}" != unreadable ] && [ "${H2L_HEAP3:-unreadable}" != unreadable ] &&
+     [ -n "$H2L_HEAP0" ] && [ -n "$H2L_HEAP3" ]; then
+    H2L_HEAP=$(( H2L_HEAP3 - H2L_HEAP0 ))
+  fi
+  H2L_NET=$(( H2L_GROW - H2L_BOOK ))
+  [ "$H2L_NET" -lt 0 ] && H2L_NET=0
+  if [ "$H2L_BOOK0" = unreadable ] || [ "$H2L_BOOK3" = unreadable ] || [ -z "$H2L_BOOK0" ] || [ -z "$H2L_BOOK3" ]; then
+    echo "         Go runtime accounting unreadable on the metrics endpoint: nothing attributed, the whole growth is scored"
+  else
+    echo "         of which the Go runtime's own bookkeeping (mspan/mcache/gc/buckhash/other sys, from its metrics): +${H2L_BOOK} kB"
+    echo "         Go heap sys moved ${H2L_HEAP} kB (inside the scored number, never subtracted)"
+  fi
+  echo "         unaccounted growth: +${H2L_NET} kB (ceiling ${H2L_DATA_KB} kB)"
+  if [ "$H2L_NET" -le "$H2L_DATA_KB" ]; then
     echo "  [PASS] H2-LIFE-003 data segment flat across $H2L_MEAS_STREAMS reset streams on a settled"
-    echo "         process (+${H2L_GROW} kB, ceiling ${H2L_DATA_KB} kB; settled after $H2L_SETTLED_AT rounds, $H2L_THR0 threads throughout)."
+    echo "         process (+${H2L_NET} kB unaccounted of +${H2L_GROW} kB, ceiling ${H2L_DATA_KB} kB; settled after $H2L_SETTLED_AT rounds, $H2L_THR0 threads throughout)."
     echo "         NOTE: bounds MEGABYTE-scale growth only -- the allocator free pool this"
     echo "         late in the suite absorbs a kilobyte-per-stream leak; see the header"
     PASS=$((PASS + 1))
   else
-    echo "  [FAIL] H2-LIFE-003 - the data segment grew +${H2L_GROW} kB over $H2L_MEAS_STREAMS reset"
-    echo "         streams on a settled process with a constant thread count ($H2L_THR0 -> $H2L_THR3;"
-    echo "         ceiling ${H2L_DATA_KB} kB; about $(( H2L_GROW * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never"
+    echo "  [FAIL] H2-LIFE-003 - the data segment grew +${H2L_NET} kB beyond the Go runtime's own"
+    echo "         bookkeeping over $H2L_MEAS_STREAMS reset streams on a settled process with a constant"
+    echo "         thread count ($H2L_THR0 -> $H2L_THR3; ceiling ${H2L_DATA_KB} kB; about $(( H2L_NET * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never"
     echo "         scavenged back, so this is memory allocated and not returned, not"
     echo "         resident-page noise"
     FAIL=$((FAIL + 1))
