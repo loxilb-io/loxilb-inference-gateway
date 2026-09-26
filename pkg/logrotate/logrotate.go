@@ -84,6 +84,14 @@ func backupName(path string, t time.Time) string {
 	return fmt.Sprintf("%s-%s%s", base, t.UTC().Format(backupTimeFormat), ext)
 }
 
+// BackupName returns the rotated name for path at time t:
+// "<base>-<UTC timestamp><ext>" in the same directory, with a timestamp
+// that sorts lexically in chronological order. It is exported for file
+// layers that manage their own rotation over this package's primitives.
+func BackupName(path string, t time.Time) string {
+	return backupName(path, t)
+}
+
 // isBackupOf reports whether name (no directory) is a rotated form of the
 // original file name.
 func isBackupOf(orig, name string) bool {
@@ -254,13 +262,21 @@ func finishRotation(orig, bak string, cfg Config) {
 // gzipFile replaces path with path.gz (written via a temp file so a crash
 // never leaves a truncated archive in place).
 func gzipFile(path string) error {
+	return GzipFile(path, 0o644)
+}
+
+// GzipFile replaces path with path.gz, creating the archive with mode perm.
+// The archive is written to a temporary file and renamed into place so a
+// crash never leaves a truncated archive under the final name; the
+// original is removed only after the rename succeeded.
+func GzipFile(path string, perm os.FileMode) error {
 	src, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 	tmp := path + ".gz.tmp"
-	dst, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	dst, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
 	if err != nil {
 		return err
 	}

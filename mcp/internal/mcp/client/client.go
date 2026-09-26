@@ -157,6 +157,43 @@ func (c *Client) login(ctx context.Context) error {
 	return nil
 }
 
+// OriginatorHeader names, on every management call the bridge makes, who
+// the bridge is acting for. The gateway records it beside its own view of
+// the caller and decides separately whether to trust it; it is never the
+// gateway's idea of who authenticated.
+const OriginatorHeader = "X-Loxilb-Originator"
+
+type originatorKey struct{}
+
+// WithOriginator marks a context so that every request made under it
+// carries the originator. The bridge sets it once per session from the
+// authenticated MCP client, or from its own process identity over stdio.
+func WithOriginator(ctx context.Context, originator string) context.Context {
+	if originator == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, originatorKey{}, originator)
+}
+
+// OriginatorFrom returns the originator the context carries, or "".
+func OriginatorFrom(ctx context.Context) string {
+	v, _ := ctx.Value(originatorKey{}).(string)
+	return v
+}
+
+// decorate sets the headers every request to the target carries: the
+// bearer once logged in, and the originator when the context names one.
+// A context that names none sends no header — the gateway must never see
+// a fabricated originator.
+func (c *Client) decorate(ctx context.Context, req *http.Request) {
+	if t := c.getToken(); t != "" {
+		req.Header.Set("Authorization", "Bearer "+t)
+	}
+	if o := OriginatorFrom(ctx); o != "" {
+		req.Header.Set(OriginatorHeader, o)
+	}
+}
+
 // do performs one JSON request against basePath+path, transparently
 // re-authenticating once on 401 when credentials are configured.
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
@@ -177,9 +214,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 			req.Header.Set("Content-Type", "application/json")
 		}
 		req.Header.Set("Accept", "application/json")
-		if t := c.getToken(); t != "" {
-			req.Header.Set("Authorization", "Bearer "+t)
-		}
+		c.decorate(ctx, req)
 		return c.hc.Do(req)
 	}
 
@@ -298,9 +333,7 @@ func (c *Client) MetricsText(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if t := c.getToken(); t != "" {
-		req.Header.Set("Authorization", "Bearer "+t)
-	}
+	c.decorate(ctx, req)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("target %s: GET /metrics: %w", c.name, err)

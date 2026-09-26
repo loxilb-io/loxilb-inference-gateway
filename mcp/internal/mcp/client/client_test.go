@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -126,4 +127,40 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// Every request under a context that names an originator carries it; a
+// context that names none sends no header at all, so the gateway never
+// sees an originator the bridge made up.
+func TestClientSendsTheOriginatorItWasGiven(t *testing.T) {
+	var seen []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/netlox/v1/version", func(w http.ResponseWriter, r *http.Request) {
+		v, ok := r.Header[OriginatorHeader]
+		if !ok {
+			seen = append(seen, "<absent>")
+		} else {
+			seen = append(seen, v...)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": "0.9.8.6"})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c, err := New("test", Options{URL: srv.URL, Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Version(WithOriginator(context.Background(), "mcp:claude")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Version(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Version(WithOriginator(context.Background(), "")); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"mcp:claude", "<absent>", "<absent>"}; strings.Join(seen, ",") != strings.Join(want, ",") {
+		t.Fatalf("originators seen %v, want %v", seen, want)
+	}
 }

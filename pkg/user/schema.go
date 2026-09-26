@@ -57,8 +57,15 @@ var (
 	username    TEXT NOT NULL UNIQUE,
 	password    TEXT NOT NULL,
 	created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-	role        TEXT NOT NULL CHECK (role IN ('admin','viewer'))
+	role        TEXT NOT NULL CHECK (role IN ('admin','viewer')),
+	delegation_allowed BOOLEAN NOT NULL DEFAULT false
 )`, Schema)
+
+	// usersAddDelegationAllowed is the forward-only migration for a store
+	// provisioned before the column existed: every existing account reads
+	// false, which is the same answer a fresh table gives.
+	usersAddDelegationAllowed = fmt.Sprintf(
+		`ALTER TABLE %s.users ADD COLUMN IF NOT EXISTS delegation_allowed BOOLEAN NOT NULL DEFAULT false`, Schema)
 
 	createTokenTable = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.token (
 	id          SERIAL PRIMARY KEY,
@@ -120,6 +127,7 @@ func ensureSchema(db *sql.DB) error {
 		sql  string
 	}{
 		{"users table", createUsersTable},
+		{"users_add_delegation_allowed", usersAddDelegationAllowed},
 		{"token table", createTokenTable},
 		{"token username index", createTokenUsernameIndex},
 		{"token expires_at index", createTokenExpiryIndex},

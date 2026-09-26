@@ -103,6 +103,17 @@ func MarkConfigMutated() {
 	configDirty.Set(1)
 }
 
+// ConfigGeneration is the mutation watermark, read-only: the number of
+// successful mutating config calls counted since boot. The audit trail
+// stamps it on every management result and on the orphaned-intent records
+// written at the next start, so a record can be placed against the state
+// the running config had reached.
+func ConfigGeneration() uint64 {
+	dirtyMu.Lock()
+	defer dirtyMu.Unlock()
+	return mutationSeq
+}
+
 // beginPersistSeq returns the mutation watermark a starting persist can
 // claim on success. Read BEFORE the capture: a mutation racing the capture
 // may or may not be inside the document, so it must stay unclaimed (the

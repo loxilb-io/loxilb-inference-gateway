@@ -360,10 +360,12 @@ func (s *UserService) GetUsers() ([]cmn.User, error) {
 			// picked by hand is what made this endpoint fail for every
 			// database that returned a different one — the driver had already
 			// done the parsing correctly.
-			if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.Role); err != nil {
+			var delegation bool
+			if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.Role, &delegation); err != nil {
 				tk.LogIt(tk.LogError, "Failed to scan user: %v\n", err.Error())
 				return err
 			}
+			user.DelegationAllowed = &delegation
 			users = append(users, user)
 		}
 
@@ -375,6 +377,27 @@ func (s *UserService) GetUsers() ([]cmn.User, error) {
 		return nil
 	}, AuthMaxRetries, AuthRetryDelay, retryableDBError)
 	return users, err
+}
+
+// DelegationAllowed reports whether the account may delegate. An account
+// that does not exist may not; a store that cannot answer returns the
+// error so the caller can count it, and treats the answer as no. There is
+// no retry: the question is asked on the request path, once, and a slow
+// answer would hold a management call for a flag that only ever narrows
+// what the record claims.
+func (s *UserService) DelegationAllowed(username string) (bool, error) {
+	handle, err := s.store()
+	if err != nil {
+		return false, err
+	}
+	var allowed bool
+	if err := handle.QueryRow(SelectUserDelegationQuery, username).Scan(&allowed); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return allowed, nil
 }
 
 // DeleteUser deletes a user and every session they hold.
@@ -456,7 +479,7 @@ func (s *UserService) UpdateUser(user cmn.User) error {
 		// sessions survived would keep the authority they were demoted out
 		// of — in this process's cache and in every peer's.
 		if err := s.revokeSessions(handle, existingUser.Username, func(tx *sql.Tx) error {
-			if _, err := tx.Exec(UpdateUserQuery, user.Username, hashedPassword, user.Role, user.ID); err != nil {
+			if _, err := tx.Exec(UpdateUserQuery, user.Username, hashedPassword, user.Role, user.ID, user.DelegationAllowed); err != nil {
 				tk.LogIt(tk.LogError, "Failed to update user: %v\n", err.Error())
 				return err
 			}

@@ -32,6 +32,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/maintenance"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	tk "github.com/loxilb-io/loxilib"
@@ -252,6 +253,7 @@ func ConfigGetSnapshot(params operations.GetConfigSnapshotParams, principal any)
 	}
 
 	filename := fmt.Sprintf("loxilb-snapshot-%s.json", time.Now().UTC().Format("20060102-150405"))
+	auditExportServed(params.HTTPRequest, doc, data, filename)
 	return middleware.ResponderFunc(func(w http.ResponseWriter, _ runtime.Producer) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
@@ -260,6 +262,19 @@ func ConfigGetSnapshot(params operations.GetConfigSnapshotParams, principal any)
 		if _, err := w.Write(data); err != nil {
 			tk.LogIt(tk.LogError, "snapshot: failed to write response: %v\n", err)
 		}
+	})
+}
+
+// auditExportServed records what a configuration export served: its size,
+// checksum and name, and the statement that a snapshot document carries no
+// secret material. The document itself is never part of the record.
+func auditExportServed(r *http.Request, doc *snapshot.Document, data []byte, filename string) {
+	size, checksum := int64(len(data)), doc.Checksum
+	AuditDetail(r, func(d *audit.MgmtDetail) {
+		d.Bytes, d.Checksum = size, checksum
+		d.Format, d.ContentDisposition = "json", filename
+		secrets := false
+		d.SecretsIncluded = &secrets
 	})
 }
 
@@ -382,6 +397,7 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 		// failure): nothing was mutated, the document is at fault.
 		status = http.StatusBadRequest
 	}
+	auditRestoreEnded(params.HTTPRequest, mode, result)
 	if result.Result == snapshot.ResultRollbackFailed {
 		tk.LogIt(tk.LogCritical, "snapshot restore ROLLBACK-FAILED; pre-restore snapshot: %s errors: %v\n",
 			result.PreRestoreSnapshotPersisted, result.Errors)
@@ -404,6 +420,35 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 	})
 }
 
+// auditRestoreEnded names, on the restore's result record, the phase the
+// pipeline ended in and how much it touched: a dry-run ends at plan, a
+// commit at commit or at rollback, and a document refused before apply is
+// rejected. The intent already carries begin.
+func auditRestoreEnded(r *http.Request, mode snapshot.RestoreMode, result *snapshot.Result) {
+	phase := auditRestoreRejected
+	applied := 0
+	switch result.Result {
+	case snapshot.ResultOK:
+		phase = auditRestoreCommit
+		if mode == snapshot.ModeDryRun {
+			phase = auditRestorePlan
+		} else {
+			for _, item := range result.Plan {
+				applied += item.ToApply
+			}
+		}
+	case snapshot.ResultRolledBack:
+		phase = auditRestoreRollback
+	case snapshot.ResultRollbackFailed:
+		phase = auditRestoreRollbackFailed
+	}
+	failed := len(result.Errors)
+	AuditDetail(r, func(d *audit.MgmtDetail) {
+		d.RestorePhase = phase
+		d.EntriesApplied, d.EntriesFailed = applied, failed
+	})
+}
+
 // ConfigPostPersist implements POST /config/persist (§6.1 rule 1): the
 // gateway dumps its own running config to {ConfigPath}/snapshot.json --
 // "save" as an API, available to every channel (UI, OAM, loxicmd --api).
@@ -423,6 +468,15 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 		}}
 	}
 	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s (generation %d)\n", path, doc.Generation)
+	// The record identifies the file written, its size and checksum.
+	var size int64
+	if st, serr := os.Stat(path); serr == nil {
+		size = st.Size()
+	}
+	checksum := doc.Checksum
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) {
+		d.Filename, d.Bytes, d.Checksum = path, size, checksum
+	})
 
 	// §9 response contract, through the swagger model: the persisted
 	// document's identity and coverage, so automation can verify what was

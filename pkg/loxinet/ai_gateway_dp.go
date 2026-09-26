@@ -416,8 +416,8 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 // Return values:
 //
 //	decision   – 0=allow, 1=deny_401, 2=deny_403, 3=deny_429, 4=deny_503
-//	tenantID   – populated on allow and deny_403 (for metric recording)
-//	keyID      – populated on allow
+//	tenantID   – populated on allow and deny_403 (the credential validated)
+//	keyID      – populated on allow and deny_403 (likewise)
 //	modelOut   – model name echoed back on allow
 //	errorCode  – "invalid_api_key" or "model_not_allowed" on deny
 func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (decision int, tenantID, keyID, modelOut, errorCode string) {
@@ -463,9 +463,11 @@ func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (deci
 		}
 		if !allowed {
 			tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_validate_key: model %q not allowed for key %s\n", modelName, entry.KeyID)
-			// return tenantID on deny_403 so the caller can record
-			// the metric with the correct tenant label.
-			return 2, entry.TenantID, "", "", "model_not_allowed"
+			// Only the model was refused: the key itself validated, so both
+			// halves of its identity are known here. They are returned so
+			// the refusal can be counted against the right tenant and
+			// recorded against the credential that made it.
+			return 2, entry.TenantID, entry.KeyID, "", "model_not_allowed"
 		}
 	}
 
@@ -591,9 +593,17 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	metricTenant = tenantID
 	result.decision = C.int(decision)
 
+	// Whatever identity this verdict resolved goes back to C, allow or deny.
+	// A refusal that resolved one is attributable and must say so: the model
+	// denial validated the credential and knows exactly whose request it
+	// refused, and a record that cannot name the tenant cannot be counted
+	// against it or answered for. Arms that refuse before an identity exists
+	// return empty strings, which is the same value the caller would have
+	// read from a zeroed struct, so nothing else changes shape.
+	cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
+	cCopyStr((*C.char)(unsafe.Pointer(&result.key_id[0])), keyID, 64)
+
 	if decision == 0 {
-		cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
-		cCopyStr((*C.char)(unsafe.Pointer(&result.key_id[0])), keyID, 64)
 		cCopyStr((*C.char)(unsafe.Pointer(&result.model_name[0])), modelOut, 128)
 		return 0
 	}
@@ -694,9 +704,13 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 		metricJWTReason = prom.JWTReasonAllowed
 	}
 
+	// The JWT arm's twin of the API-key rule above: the identity the verdict
+	// resolved reaches C whether it admitted or refused, so a token whose
+	// model was denied is still refused by name.
+	cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
+	cCopyStr((*C.char)(unsafe.Pointer(&result.user_id[0])), userID, 128)
+
 	if decision == 0 {
-		cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
-		cCopyStr((*C.char)(unsafe.Pointer(&result.user_id[0])), userID, 128)
 		cCopyStr((*C.char)(unsafe.Pointer(&result.model_name[0])), metricModel, 128)
 		result.auth_flags = C.int(authFlags)
 		return 0
@@ -1357,8 +1371,14 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.c
 // key and per-VIP buckets the reservation claimed; parameter order mirrors
 // tokenQuotaConsumeInternal.
 //
+// requestID correlates the charge with the request's completion record and
+// with the refusal record if the gate turned it away, so the three can be
+// joined on a key rather than guessed at by timestamp. producerID is the
+// emitting thread's worker identity, negative on the teardown path that
+// releases a reservation off a worker.
+//
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, requestID *C.char, producerID C.int, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
@@ -1396,6 +1416,26 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.c
 	store := getGlobalRL()
 	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), C.GoString(userID), C.GoString(keyID), C.GoString(svcIdent), count,
 		int(reservedToks), int64(resEpoch))
+
+	// One settle record per call that reached the store, whether it charged
+	// tokens, released an unspent reservation, or was refused. The refused
+	// one matters most: it is the only record that says the tenant's usage
+	// was already over the line when the response came back.
+	emitAISettle(aiSettleRecord{
+		RequestID: C.GoString(requestID),
+		TenantID:  tenant,
+		UserID:    C.GoString(userID),
+		KeyID:     C.GoString(keyID),
+		SvcIdent:  C.GoString(svcIdent),
+		ModelName: C.GoString(modelName),
+		TokensIn:  int64(promptTokens),
+		TokensOut: int64(completTokens),
+		Reserved:  int64(reservedToks),
+		ResEpoch:  int64(resEpoch),
+		Allowed:   allowed,
+		WorkerID:  int(producerID),
+	})
+
 	if !allowed {
 		if result != nil {
 			result.decision = 3
@@ -1533,33 +1573,92 @@ func llb_ai_stream_end(tenantID *C.char, modelName *C.char) C.int {
 	return 0
 }
 
-// llb_ai_record_request records a completed AI Gateway request for Prometheus metrics.
+// llb_ai_record_request records a completed AI Gateway request: the
+// Prometheus request counter and latency histogram, and the audit trail's
+// data.ai.complete record.
 //
-// C sockproxy calls this once on response completion. It translates C types to
-// Go and delegates to prom.RecordAIRequest (request counter + latency
-// histogram). The token, stream-lifecycle, and errorCode parameters are kept
-// for C ABI compatibility but are unused: token series are fed from
-// llb_ai_token_quota_consume (whose counts always match the charge — the
-// counts passed here can lag on split non-streaming bodies), stream lifecycle
-// is tracked by llb_ai_stream_start/_end, and denials never reach this export
-// at all — the gate answers them itself, so they are counted under
-// outcome="denied" by recordGateDenial and their reason by the
-// point-of-denial counters.
+// C sockproxy calls this once on response completion. Denials never reach
+// this export at all — the gate answers them itself, counts them under
+// outcome="denied" through recordGateDenial, and records them through
+// llb_ai_record_deny.
+//
+// The two consumers read different halves of the call. The metrics take
+// only the tenant, model, status and latency: the token series are fed
+// from llb_ai_token_quota_consume, whose counts always match the charge,
+// while the counts passed here can lag on split non-streaming bodies, and
+// stream lifecycle is tracked by llb_ai_stream_start/_end. The record
+// takes the rest, because a trail entry has to describe the request that
+// happened rather than the one the counters aggregate.
 //
 // Parameters:
 //
-//	tenantID:   tenant identifier from the validated API key (NUL-terminated)
-//	modelName:  effective model name extracted from X-Model header or JSON body
-//	statusCode: HTTP response status code (200, 401, 403, 429, 500, …)
-//	latencyMs:  request latency in milliseconds; 0 when unknown
+//	tenantID:      tenant identifier from the validated API key (NUL-terminated)
+//	modelName:     effective model name extracted from X-Model header or JSON body
+//	statusCode:    HTTP response status code (200, 401, 403, 429, 500, …)
+//	latencyMs:     request latency in milliseconds; 0 when unknown
+//	promptTokens,
+//	completTokens: usage as the datapath read it; recorded, never charged here
+//	streamStart,
+//	streamEnd:     stream lifecycle flags, tracked by the stream exports
+//	errorCode:     how the response ended when it ended badly ("" otherwise)
+//	requestID:     correlation key shared with the settle and deny records
+//	userID, keyID: identity resolved at admission
+//	svcIdent:      "VIP:port" of the rule ("" when unknown)
+//	isStream:      1 when the response was an SSE stream
+//	producerID:    emitting thread's worker identity; negative off a worker
 //
 //export llb_ai_record_request
-func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int, latencyMs C.int64_t, promptTokens C.int, completTokens C.int, streamStart C.int, streamEnd C.int, errorCode *C.char) {
+func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int, latencyMs C.int64_t, promptTokens C.int, completTokens C.int, streamStart C.int, streamEnd C.int, errorCode *C.char, requestID *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, isStream C.int, producerID C.int) {
 	defer cgoRecover("llb_ai_record_request")
 	tenantIDStr := C.GoString(tenantID)
 	modelNameStr := C.GoString(modelName)
 
 	prom.RecordAIRequest(tenantIDStr, modelNameStr, int(statusCode), int64(latencyMs))
+
+	// The trail is written after the metric on purpose: the metric is what
+	// the existing alerting reads, and it must not be skipped because the
+	// record could not be built.
+	emitAIComplete(aiCompleteRecord{
+		RequestID:  C.GoString(requestID),
+		TenantID:   tenantIDStr,
+		UserID:     C.GoString(userID),
+		KeyID:      C.GoString(keyID),
+		SvcIdent:   C.GoString(svcIdent),
+		ModelName:  modelNameStr,
+		StatusCode: int(statusCode),
+		LatencyMs:  int64(latencyMs),
+		TokensIn:   int64(promptTokens),
+		TokensOut:  int64(completTokens),
+		IsStream:   isStream != 0,
+		ErrorCode:  C.GoString(errorCode),
+		WorkerID:   int(producerID),
+	})
+}
+
+// llb_ai_record_deny records one request the admission gate refused.
+//
+// The C gate calls this once per refusal from its single verdict frame, so
+// an arm added to the decision cannot refuse a request unrecorded. There
+// is no metric here: the deny counters are already raised on the export
+// that produced the decision, and counting the same refusal twice would
+// double every denial rate in the dashboards.
+//
+//export llb_ai_record_deny
+func llb_ai_record_deny(requestID *C.char, producerID C.int, svcIdent *C.char, modelName *C.char, tenantID *C.char, keyID *C.char, userID *C.char, stage C.int, httpStatus C.int, errorCode *C.char) {
+	defer cgoRecover("llb_ai_record_deny")
+
+	emitAIDeny(aiDenyRecord{
+		RequestID:  C.GoString(requestID),
+		TenantID:   C.GoString(tenantID),
+		UserID:     C.GoString(userID),
+		KeyID:      C.GoString(keyID),
+		SvcIdent:   C.GoString(svcIdent),
+		ModelName:  C.GoString(modelName),
+		Stage:      int(stage),
+		HTTPStatus: int(httpStatus),
+		ErrorCode:  C.GoString(errorCode),
+		WorkerID:   int(producerID),
+	})
 }
 
 // llb_ai_pd_record records a P/D disaggregation lifecycle event for Prometheus metrics.

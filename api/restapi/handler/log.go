@@ -35,6 +35,7 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	"github.com/loxilb-io/loxilb/pkg/audit"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -771,6 +772,13 @@ func ConfigGetLogArchivesFilename(params operations.GetLogArchivesFilenameParams
 		return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "File is empty"})
 	}
 
+	// The result record carries what was actually served, which is known
+	// only once the copy has run; the detail closure reads it afterwards.
+	var served int64
+	AuditDetail(params.HTTPRequest, func(d *audit.MgmtDetail) {
+		d.Bytes, d.ContentDisposition = served, filename
+	})
+
 	// Set headers and send the file
 	return middleware.ResponderFunc(func(w http.ResponseWriter, _ runtime.Producer) {
 		defer file.Close()
@@ -779,6 +787,7 @@ func ConfigGetLogArchivesFilename(params operations.GetLogArchivesFilenameParams
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
 		w.WriteHeader(http.StatusOK)
 		bytesCopied, err := io.Copy(w, file)
+		served = bytesCopied
 		if err != nil {
 			tk.LogIt(tk.LogError, "Failed to copy file content: %s, error: %v\n", file.Name(), err)
 		} else {

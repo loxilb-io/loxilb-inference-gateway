@@ -30,32 +30,38 @@ var Opts struct {
 	LogMaxBackups     int            `long:"log-max-backups" description:"Rotated files to keep per log, oldest deleted first (0 keeps all until log-max-age)" default:"4" env:"LOXILB_LOG_MAX_BACKUPS"`
 	LogMaxAge         int            `long:"log-max-age" description:"Days to retain rotated log files (0 keeps forever)" default:"28" env:"LOXILB_LOG_MAX_AGE"`
 	LogNoCompress     bool           `long:"log-no-compress" description:"Do not gzip rotated log files" env:"LOXILB_LOG_NO_COMPRESS"`
-	CPUProfile        string         `long:"cpuprofile" description:"Enable cpu profiling and specify file to use" default:"none" env:"CPUPROF"`
-	Prometheus        bool           `short:"p" long:"prometheus" description:"Run prometheus thread"`
-	MetricsAuth       string         `long:"metrics-auth" description:"Whether GET /metrics requires a bearer token: auto requires it only under mgmt-profile remote-tls; require always requires it; disable never does and is refused under remote-tls" default:"auto" choice:"auto" choice:"require" choice:"disable" env:"METRICS_AUTH"`
-	CRC32SumDisable   bool           `long:"disable-crc32" description:"Disable crc32 checksum update(experimental)"`
-	PassiveEPProbe    bool           `long:"passive-probe" description:"Enable passive liveness probes(experimental)"`
-	RssEnable         bool           `long:"rss-enable" description:"Enable rss optimization(experimental)"`
-	EgrHooks          bool           `long:"egr-hooks" description:"Enable eBPF egress hooks(experimental)"`
-	BgpPeerMode       bool           `short:"r" long:"peer" description:"Run loxilb with goBGP only, no Datapath"`
-	BlackList         string         `long:"blacklist" description:"Regex string of blacklisted ports" default:"none"`
-	RPC               string         `long:"rpc" description:"RPC mode for syncing - netrpc or grpc" default:"netrpc"`
-	K8sAPI            string         `long:"k8s-api" description:"Enable k8s watcher(experimental)" default:"none"`
-	IPVSCompat        bool           `long:"ipvs-compat" description:"Enable ipvs-compat(experimental)"`
-	FallBack          bool           `long:"fallback" description:"Fallback to system default networking(experimental)"`
-	LocalSockPolicy   bool           `long:"localsockpolicy" description:"support local socket policies (experimental)"`
-	SockMapSupport    bool           `long:"sockmapsupport" description:"Support sockmap based L4 proxying (experimental; requires -DHAVE_SOCKOPS build and a kernel with the sk_psock_backlog duplicate-transmission fix, see docs/sockmap-acceleration.md)"`
-	KtlsSupport       bool           `long:"ktlssupport" description:"Support kernel TLS offload for HTTPS sockmap (experimental)"`
-	Cloud             string         `long:"cloud" description:"cloud type if any e.g aws,ncloud" default:"on-prem"`
-	CloudCIDRBlock    string         `long:"cloudcidrblock" description:"cloud implementations need VIP cidr blocks(experimental)"`
-	CloudInstance     string         `long:"cloudinstance" description:"instance-name to distinguish instance sets running in a same cloud-region"`
-	ConfigPath        string         `long:"config-path" description:"Config file path" default:"/etc/loxilb/"`
-	ConfigAutoPersist string         `long:"config-auto-persist" description:"Debounced write-through of the running config to snapshot.json after successful mutating API calls (on/off)" choice:"on" choice:"off" default:"on"`
-	ConfigBootProfile string         `long:"config-boot-profile" description:"Boot behavior when snapshot.json fails to restore: compat falls back to the legacy *.txt replay (degraded state exposed via the status surface), strict skips the fallback and boots empty pending operator recovery via POST /config/restore" choice:"strict" choice:"compat" default:"compat"`
-	ProxyModeOnly     bool           `long:"proxyonlymode" description:"Run loxilb in proxy mode only, no Datapath"`
-	WhiteList         string         `long:"whitelist" description:"Regex string of whitelisted interface(experimental)" default:"none"`
-	ClusterInterface  string         `long:"clusterinterface" description:"cluster interface for egress HA" default:""`
-	UserServiceEnable bool           `long:"userservice" description:"Enable user service for loxilb"`
+	// Hidden: a measurement entry point, not an operator knob. It runs the
+	// producer-cost harness and exits, so it never appears in --help beside
+	// the flags that configure a running gateway.
+	AuditProducerBench uint64 `long:"audit-producer-bench" description:"Time the completion export from a worker-shaped thread and exit" hidden:"true"`
+	AuditDir           string `long:"audit-dir" description:"Directory for the audit trail segments (created 0700; every management change is recorded here before it is applied)" default:"/var/log/loxilb/audit" env:"LOXILB_AUDIT_DIR"`
+	AuditRequired      bool   `long:"audit-required" description:"Refuse to start when the audit directory cannot be prepared; without it the gateway starts and refuses every audited management call instead" env:"LOXILB_AUDIT_REQUIRED"`
+	CPUProfile         string `long:"cpuprofile" description:"Enable cpu profiling and specify file to use" default:"none" env:"CPUPROF"`
+	Prometheus         bool   `short:"p" long:"prometheus" description:"Run prometheus thread"`
+	MetricsAuth        string `long:"metrics-auth" description:"Whether GET /metrics requires a bearer token: auto requires it only under mgmt-profile remote-tls; require always requires it; disable never does and is refused under remote-tls" default:"auto" choice:"auto" choice:"require" choice:"disable" env:"METRICS_AUTH"`
+	CRC32SumDisable    bool   `long:"disable-crc32" description:"Disable crc32 checksum update(experimental)"`
+	PassiveEPProbe     bool   `long:"passive-probe" description:"Enable passive liveness probes(experimental)"`
+	RssEnable          bool   `long:"rss-enable" description:"Enable rss optimization(experimental)"`
+	EgrHooks           bool   `long:"egr-hooks" description:"Enable eBPF egress hooks(experimental)"`
+	BgpPeerMode        bool   `short:"r" long:"peer" description:"Run loxilb with goBGP only, no Datapath"`
+	BlackList          string `long:"blacklist" description:"Regex string of blacklisted ports" default:"none"`
+	RPC                string `long:"rpc" description:"RPC mode for syncing - netrpc or grpc" default:"netrpc"`
+	K8sAPI             string `long:"k8s-api" description:"Enable k8s watcher(experimental)" default:"none"`
+	IPVSCompat         bool   `long:"ipvs-compat" description:"Enable ipvs-compat(experimental)"`
+	FallBack           bool   `long:"fallback" description:"Fallback to system default networking(experimental)"`
+	LocalSockPolicy    bool   `long:"localsockpolicy" description:"support local socket policies (experimental)"`
+	SockMapSupport     bool   `long:"sockmapsupport" description:"Support sockmap based L4 proxying (experimental; requires -DHAVE_SOCKOPS build and a kernel with the sk_psock_backlog duplicate-transmission fix, see docs/sockmap-acceleration.md)"`
+	KtlsSupport        bool   `long:"ktlssupport" description:"Support kernel TLS offload for HTTPS sockmap (experimental)"`
+	Cloud              string `long:"cloud" description:"cloud type if any e.g aws,ncloud" default:"on-prem"`
+	CloudCIDRBlock     string `long:"cloudcidrblock" description:"cloud implementations need VIP cidr blocks(experimental)"`
+	CloudInstance      string `long:"cloudinstance" description:"instance-name to distinguish instance sets running in a same cloud-region"`
+	ConfigPath         string `long:"config-path" description:"Config file path" default:"/etc/loxilb/"`
+	ConfigAutoPersist  string `long:"config-auto-persist" description:"Debounced write-through of the running config to snapshot.json after successful mutating API calls (on/off)" choice:"on" choice:"off" default:"on"`
+	ConfigBootProfile  string `long:"config-boot-profile" description:"Boot behavior when snapshot.json fails to restore: compat falls back to the legacy *.txt replay (degraded state exposed via the status surface), strict skips the fallback and boots empty pending operator recovery via POST /config/restore" choice:"strict" choice:"compat" default:"compat"`
+	ProxyModeOnly      bool   `long:"proxyonlymode" description:"Run loxilb in proxy mode only, no Datapath"`
+	WhiteList          string `long:"whitelist" description:"Regex string of whitelisted interface(experimental)" default:"none"`
+	ClusterInterface   string `long:"clusterinterface" description:"cluster interface for egress HA" default:""`
+	UserServiceEnable  bool   `long:"userservice" description:"Enable user service for loxilb"`
 
 	// Management-plane store (PostgreSQL, shared server with loxilb-oam).
 	//

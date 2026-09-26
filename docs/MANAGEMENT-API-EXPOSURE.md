@@ -16,6 +16,33 @@ surface.
 Every one of those refusals is fatal before any socket binds. A profile whose
 security precondition does not hold is not started in a degraded mode.
 
+## Audit attribution
+
+Every management change is recorded in the audit trail under `--audit-dir`
+before it is applied, and the record's actor is the principal the request
+authenticated as. That principal exists only when an authentication service
+is enabled. Without `--userservice`, `--oauth2` or `--manualtoken` the
+management API is open and every record carries `actor.auth=none` and
+`actor.mechanism=none`: the trail still proves what changed and when, but
+not who changed it. A deployment that needs attributable records must
+enable an authentication service; `remote-tls` already requires one.
+
+A caller that acts for someone else — the loxilb-mcp bridge for the client
+it authenticated, a CLI run under a service account — may name that someone
+in `X-Loxilb-Originator`. The value is `<scheme>:<identifier>` with the
+scheme one of `mcp`, `mcp-stdio` or `cli`, printable ASCII, at most 256
+bytes; anything else is dropped and counted, never recorded in part. The
+gateway records it verbatim as `actor.delegated` on every record of that
+request — intent, result, a refusal, a listing read — and never as
+`actor.user`. Whether the claim is trusted is `actor.delegation_trusted`,
+decided by one lookup of the authenticated account's `delegation_allowed`
+flag (false for every account until an administrator sets it through
+`PUT /auth/users/{id}`); from an account without the flag the claim is
+still recorded, as evidence of the attempt, and flagged untrusted. The
+bridge sends `mcp:<client name>` over HTTP and `mcp-stdio:<os user>@<host>:<pid>`
+over stdio, where nothing finer than the OS account that launched it
+exists. `GET /audit/status` reports the dropped headers and the lookups.
+
 ## `GET /metrics`
 
 The Prometheus route is declared without a security requirement, because a

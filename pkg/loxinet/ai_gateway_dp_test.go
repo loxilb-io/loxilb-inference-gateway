@@ -353,6 +353,7 @@ func TestValidateAPIKeyInternal(t *testing.T) {
 			modelName:     "claude-3",
 			wantDecision:  2,
 			wantTenantID:  "tenant-3",
+			wantKeyID:     "key-restricted",
 			wantErrorCode: "model_not_allowed",
 		},
 		{
@@ -367,6 +368,7 @@ func TestValidateAPIKeyInternal(t *testing.T) {
 			modelName:     "",
 			wantDecision:  2,
 			wantTenantID:  "tenant-4",
+			wantKeyID:     "key-restricted2",
 			wantErrorCode: "model_not_allowed",
 		},
 		{

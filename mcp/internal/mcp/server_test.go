@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -230,5 +232,25 @@ clients: [{name: c, role: admin, token: 0123456789abcdef0123456789abcdef, token_
 		if _, err := LoadConfig(write(name, content)); err == nil {
 			t.Errorf("%s accepted, want error", name)
 		}
+	}
+}
+
+// The originator the bridge names has a fixed shape per transport: the
+// authenticated client over HTTP, the launching process over stdio.
+func TestOriginatorShapes(t *testing.T) {
+	cl, err := guard.NewClient("claude-desktop", guard.RoleAdmin, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := httpOriginator(cl); got != "mcp:claude-desktop" {
+		t.Fatalf("http originator %q", got)
+	}
+	got := stdioOriginator()
+	re := regexp.MustCompile(`^mcp-stdio:[^@]+@[^:]+:[0-9]+$`)
+	if !re.MatchString(got) {
+		t.Fatalf("stdio originator %q does not match %s", got, re)
+	}
+	if !strings.HasSuffix(got, ":"+strconv.Itoa(os.Getpid())) {
+		t.Fatalf("stdio originator %q does not end in this pid", got)
 	}
 }

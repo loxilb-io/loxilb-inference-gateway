@@ -23,6 +23,9 @@ type UserSummary struct {
 	// created at
 	CreatedAt string `json:"created_at,omitempty"`
 
+	// Whether requests this account authenticates may name another originator.
+	DelegationAllowed bool `json:"delegation_allowed,omitempty"`
+
 	// id
 	ID int64 `json:"id,omitempty"`
 

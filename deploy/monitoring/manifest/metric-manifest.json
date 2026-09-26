@@ -1,18 +1,18 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-22T17:42:26+00:00",
-  "source_revision": "881c222e10fb2885d78c893a92340f08a65968bf"
+  "generated_at": "2026-09-25T00:29:45+00:00",
+  "source_revision": "18961eb45a09089ecf65df6b7d2464a6490088fb"
  },
  "contract": {
-  "total": 253,
+  "total": 271,
   "owners": {
-   "loxilb": 230,
+   "loxilb": 248,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 197,
+   "default": 215,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -21,11 +21,11 @@
   }
  },
  "coverage": {
-  "default_families": 197,
+  "default_families": 215,
   "default_referenced": 157,
   "default_waived": 21,
-  "default_unreferenced": 19,
-  "writer_classified": 197,
+  "default_unreferenced": 37,
+  "writer_classified": 215,
   "writer_unclassified": 0,
   "writer_unverified": 64
  },
@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1485,
-     "call_line": 1493,
+     "def_line": 1525,
+     "call_line": 1533,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -1254,8 +1254,8 @@
      "symbol": "llb_ai_validate_bearer",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 631,
-     "call_line": 658,
+     "def_line": 641,
+     "call_line": 668,
      "calls": "RecordJWTValidation",
      "entry_point": "cgo-export",
      "note": "recorded in the same defer as recordGateDenial, so every arm counts exactly once -- including the nil-result and panic paths, which leave before a verdict is reached and are counted as internal_error"
@@ -1306,8 +1306,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -1315,8 +1315,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -1366,8 +1366,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -1375,8 +1375,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2207,8 +2207,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 536,
-     "call_line": 604,
+     "def_line": 538,
+     "call_line": 614,
      "calls": "RecordModelNotAllowed",
      "entry_point": "cgo-export"
     }
@@ -2249,8 +2249,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1619,
-     "call_line": 1622,
+     "def_line": 1718,
+     "call_line": 1721,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2291,8 +2291,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1582,
-     "call_line": 1585,
+     "def_line": 1681,
+     "call_line": 1684,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2334,8 +2334,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1582,
-     "call_line": 1585,
+     "def_line": 1681,
+     "call_line": 1684,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2377,8 +2377,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1582,
-     "call_line": 1585,
+     "def_line": 1681,
+     "call_line": 1684,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2420,8 +2420,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1582,
-     "call_line": 1585,
+     "def_line": 1681,
+     "call_line": 1684,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2466,8 +2466,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1582,
-     "call_line": 1585,
+     "def_line": 1681,
+     "call_line": 1684,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2509,8 +2509,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1594,
-     "call_line": 1597,
+     "def_line": 1693,
+     "call_line": 1696,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2552,8 +2552,8 @@
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1607,
-     "call_line": 1610,
+     "def_line": 1706,
+     "call_line": 1709,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -2593,8 +2593,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 536,
-     "call_line": 578,
+     "def_line": 538,
+     "call_line": 580,
      "calls": "RecordPolicyStoreUnavailable",
      "entry_point": "cgo-export",
      "note": "two more sites share the family: validateAPIKeyInternal (:235) and llb_ai_ratelimit_check (:559)"
@@ -2638,8 +2638,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 974,
+     "def_line": 933,
+     "call_line": 988,
      "calls": "RecordRateLimitHit",
      "entry_point": "cgo-export",
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
@@ -2682,8 +2682,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1557,
-     "call_line": 1562,
+     "def_line": 1611,
+     "call_line": 1616,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2730,8 +2730,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1557,
-     "call_line": 1562,
+     "def_line": 1611,
+     "call_line": 1616,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2770,8 +2770,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 758,
+     "def_line": 754,
+     "call_line": 772,
      "calls": "RecordTokenQuotaColdOpen",
      "note": "the no-peer branch; the warmup-deadline branch increments from the StartQuotaWarmup callback at :437"
     },
@@ -2779,8 +2779,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2821,8 +2821,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 976,
+     "def_line": 933,
+     "call_line": 990,
      "calls": "RecordTokenQuotaDenied",
      "entry_point": "cgo-export",
      "note": "TWO CALL SITES, and they are NOT the same condition. This one is the gate's post-hoc latch (error code token_quota_exceeded): the tenant is over budget and every request is refused until the bucket refills. The second is llb_ai_token_quota_reserve at pkg/loxinet/ai_gateway_dp.go:1319 (def :1266), the pre-admission reservation refusal (error code token_quota_would_exceed): THIS request's worst case did not fit the headroom left, the bucket is NOT put in debt, and a smaller request from the same tenant is still admitted. So this family is the union of both refusal modes and a delta on it names neither site on its own; the reason label on loxilb_ai_rate_limit_hits_total is the byproduct that separates them, and both arms are now driven per-site in cicd/ai-jwtauth. The second site was previously carried here as a bare aside pointing at :757, a line three edits stale."
@@ -2874,8 +2874,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2883,8 +2883,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2934,8 +2934,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2943,8 +2943,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2996,8 +2996,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3005,8 +3005,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3058,8 +3058,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3067,8 +3067,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3111,8 +3111,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1361,
-     "call_line": 1387,
+     "def_line": 1381,
+     "call_line": 1407,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3154,8 +3154,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1361,
-     "call_line": 1387,
+     "def_line": 1381,
+     "call_line": 1407,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3199,8 +3199,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1361,
-     "call_line": 1387,
+     "def_line": 1381,
+     "call_line": 1407,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3243,8 +3243,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1636,
-     "call_line": 1638,
+     "def_line": 1735,
+     "call_line": 1737,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }
@@ -3296,8 +3296,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3305,8 +3305,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3358,8 +3358,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3367,8 +3367,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3419,8 +3419,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3428,8 +3428,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3480,8 +3480,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3489,8 +3489,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3540,8 +3540,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3549,8 +3549,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3600,8 +3600,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 740,
-     "call_line": 781,
+     "def_line": 754,
+     "call_line": 795,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -3609,8 +3609,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 919,
-     "call_line": 953,
+     "def_line": 933,
+     "call_line": 967,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -3720,6 +3720,749 @@
    "verification_evidence": "COMMITTED GATE since 2026-09-21: cicd/vllm-pd-disagg validation.sh phase N, 47 asserts. The scenario is named in ai-gateway-sanity.yml on the default path, so this family is scored on every PR. Supersedes the 2026-09-16 D-14 hand-run (image d14-u24, sha256:4e262e1e6dd6) -- a one-off runtime observation on the M08 bed with no standing gate; that text is preserved in the campaign resume doc. THE ORACLE IS A MATRIX, NOT A RATE. Each arm puts the fixture in a state that can produce exactly ONE outcome and asserts the matching child moves inside a band, while every OTHER child is flat -- including the child that carried the previous arm, which must FREEZE. N1 states the activation-P pre-create separately and labels it as the pre-create property and NOT as liveness, because all seven children read 0 on a gateway whose scraper never ran a single poll. N2 404 -> http_error; N3 200 + the recognized vLLM series -> ok with http_error FROZEN; N4 200 carrying nothing recognized -> unparseable with ok AND http_error frozen; N5 one mock's listener stopped -> unreachable AND http_error in the SAME window, each inside its own share of a tick, plus a conservation identity stated only alongside those two arm-specific deltas; N6 that mock restarted -> unreachable FREEZES while http_error resumes over the whole population. body_error, bad_request and unknown are not reachable from a live scrape of a well-behaved listener and are asserted FLAT throughout rather than claimed as runtime-covered; they stay unit-covered by TestRecordWorkerScrapeFoldsUnknown and siblings. THE DRIVE SHAPE IS DERIVED: N0 reads the gateway's own loadbalancer list and counts endpoints over pd_disagg rules (10 polls per 10s tick from three rules) and each endpoint's multiplicity, so N5 predicts the stopped endpoint's share (l3ep4 = 2 of 10) separately from the rest (8 of 10). A band built on a hardcoded population would redden a correct product after any config change. THE WINDOW IS MEASURED, not nominal: every reading is bracketed by a timestamp before and after the /metrics curl, the tick floor taken from the narrowest possible elapsed window and the ceiling from the widest. The first bed run put every reading exactly on the lower band edge, which is where a slow scrape would have produced a false red; that was fixed before any run was treated as evidence. FIXTURE: mock_vllm.py gained a runtime metrics-mode knob (absent | vllm | garbage) on its existing admin server plus a /metrics route. Default 'absent' is byte-identical to the historical behaviour -- the path falls through to the same 404 -- so phases A-M and the three other scenarios that docker-cp this file are unaffected, and phase N restores it on the way out. GREEN: full suite 134P/0F on ws-u24 (sha256:5723bfafa78c, built from main 307b4c71). Readings: N2 http_error +22, N3 ok +26 with http_error frozen at 481, N4 unparseable +24 with ok frozen at 40 and http_error still 481, N5 unreachable +5 and http_error +19 in one window summing to 24 of a 20..30 window, N6 unreachable frozen at 27 while http_error +28. RETENTION: phase N was also run TWICE against the SAME gateway with NO reconfiguration (the run_local path re-runs config.sh, which hands each run an empty gateway and proves nothing about retention). Both 47P/0F while the family's running totals climbed to http_error 651, ok 79, unparseable 79, unreachable 11 -- every delta still inside its band on a counter carrying a full suite's history. RED TWINS, all three predicted IN WRITING before the first twin build finished, and all three matching exactly -- same count, same arms, no others. Twin P (wstwinp-u24 sha256:b1c4a5bc4c27, RecordWorkerScrape stops incrementing, diff 11 lines) 127P/7F: the seven reds are every BAND arm, while every FLAT arm, every FREEZE arm and N1 stayed GREEN -- TN4d reads 'http_error flat at 0'. So the freezes cannot detect a dead writer and the bands carry that claim alone. Twin Q (wstwinq-u24 sha256:a8d177d48cb0, every outcome charged to result=\\\"ok\\\", diff 12 lines) 123P/11F: the whole of N3 passed, 9 of 9, under a mutation that has destroyed the family's meaning -- in mode=vllm the correct child IS ok, it does move, and http_error is legitimately frozen. N2 is what catches it. Twin R (wstwinr-u24 sha256:4a9e9be54966, the outcome decided on the STATUS LINE alone so a 200 is always ok, default hot-path branch only, diff 16 lines) 131P/3F: N2, N3, N5 and N6 all passed in full and only N4 went red, which is what shows N4 is not redundant with N3 -- same status code, same transport, one field of the body changed. Each twin's tag image id and a docker inspect of what llb1 actually ran were recorded separately and matched; each mutation was proven landed by a non-empty diff before anything was built from it. FOUND WHILE BUILDING THIS, filed as D-4: no cicd scenario has ever served this scraper a parseable body -- all three P/D mocks fall through to 404 -- and OnSample is the sole writer of the Go-side WorkerMetrics cache, the C-side queue depth and the C-side advertised KV capacity. So every prefill-selection assert in the suite, port 2023's pd_cache_aware arm included, has only ever been scored against sockproxy_pd.c's staleness fill-in. Phase N's vllm arm is the first committed drive of the success path; it scores the counter, not the selection, and restores the 404 fixture, so it fixes none of that."
   },
   {
+   "name": "loxilb_audit_delegation_lookups_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:98",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditDelegationLookupsDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_last_heartbeat_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:70",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditLastHeartbeatDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_last_write_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:66",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditLastWriteDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_mgmt_timeouts_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:54",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditMgmtTimeoutsDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_originator_dropped_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:94",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditOriginatorDroppedDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_orphaned_intents_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:78",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditOrphanedIntentsDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_records_dropped_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [
+    "stream",
+    "reason"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:38",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditRecordsDroppedDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_records_unattributed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:74",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditUnattributedDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_records_written_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [
+    "stream"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:34",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditRecordsWrittenDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_reserve_breached",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:90",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditReserveBreachedDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_result_write_failures_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:42",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditResultWriteFailuresDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_segment_seal_failures_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:82",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditSealFailuresDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_segments_pruned_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:86",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditSegmentsPrunedDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_sync_failures_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:50",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditSyncFailuresDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_write_failures_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:46",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditWriteFailuresDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_writer_panics_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:58",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditWriterPanicsDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_writer_restarts_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:62",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditWriterRestartsDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
+   "name": "loxilb_audit_writer_up",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/restapi/handler/audit_metrics.go:30",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "auditCollector",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 126,
+     "writes": "auditWriterUpDesc",
+     "note": "read from the audit writer's Stats snapshot and the gate's own counters at scrape time; nothing on the write path touches a metric. Emitted from start, at zero, so absence and quiet are distinguishable"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/restapi/handler/audit_metrics.go",
+     "def_line": 173,
+     "call_line": 174,
+     "calls": "auditCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+  },
+  {
    "name": "loxilb_autopersist_consecutive_failures",
    "owner": "loxilb",
    "class": "default",
@@ -3750,16 +4493,16 @@
      "symbol": "autoPersistFire",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 605,
-     "call_line": 623,
+     "def_line": 659,
+     "call_line": 677,
      "calls": "RecordAutoPersistFailure"
     },
     {
      "symbol": "InitAutoPersist",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 584,
-     "call_line": 589,
+     "def_line": 638,
+     "call_line": 643,
      "calls": "autoPersistFire",
      "note": "registration, not a call: autoPersistFire is handed to NewAutoPersister as the debouncer callback. Returns early when --config-auto-persist=off, which is the one configuration that stops this writer entirely"
     },
@@ -3767,8 +4510,8 @@
      "symbol": "configureAPI",
      "kind": "func",
      "file": "api/restapi/configure_loxilb_rest_api.go",
-     "def_line": 71,
-     "call_line": 468,
+     "def_line": 72,
+     "call_line": 472,
      "calls": "InitAutoPersist"
     },
     {
@@ -4060,7 +4803,7 @@
      "symbol": "BootConfigConflictInc",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 181,
+     "def_line": 192,
      "writes": "bootConfigConflict"
     },
     {
@@ -4366,8 +5109,8 @@
      "symbol": "AutoPersistMiddleware",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 678,
-     "call_line": 687,
+     "def_line": 732,
+     "call_line": 741,
      "calls": "MarkConfigMutated",
      "entry_point": "http-handler",
      "note": "called on every 2xx eligible mutation, including when auto-persist is off -- there the gauge staying at 1 is the operational signal"
@@ -6135,7 +6878,7 @@
      "symbol": "observeRestore",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 170,
+     "def_line": 181,
      "writes": "lastRestoreTimestamp",
      "note": "advanced only when committed is true, so dry-runs deliberately leave it unchanged"
     },
@@ -6152,8 +6895,8 @@
      "symbol": "ConfigPostRestore",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 271,
-     "call_line": 320,
+     "def_line": 286,
+     "call_line": 335,
      "calls": "Restore",
      "entry_point": "http-handler"
     }
@@ -9116,8 +9859,8 @@
      "symbol": "writeThroughWithConfigWritesHeld",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 107,
-     "call_line": 110,
+     "def_line": 108,
+     "call_line": 111,
      "calls": "WriteThrough",
      "note": "holds configWrites exclusively around the write-through so mutating calls wait for the capture instead of racing it"
     },
@@ -9125,8 +9868,8 @@
      "symbol": "ConfigPostPersist",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 411,
-     "call_line": 417,
+     "def_line": 456,
+     "call_line": 462,
      "calls": "writeThroughWithConfigWritesHeld",
      "entry_point": "http-handler",
      "note": "also reached from the boot write-through (api/loxinlp/nlp.go:1941), from restore/import commits, and from the auto-persist debouncer (:615)"
@@ -11709,7 +12452,7 @@
      "symbol": "observeRestore",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 170,
+     "def_line": 181,
      "writes": "restoreDuration"
     },
     {
@@ -11725,8 +12468,8 @@
      "symbol": "ConfigPostRestore",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 271,
-     "call_line": 320,
+     "def_line": 286,
+     "call_line": 335,
      "calls": "Restore",
      "entry_point": "http-handler"
     }
@@ -11762,7 +12505,7 @@
      "symbol": "observeRestore",
      "kind": "func",
      "file": "pkg/snapshot/metrics.go",
-     "def_line": 170,
+     "def_line": 181,
      "writes": "restoreTotal",
      "note": "result label comes from restoreResultLabel, which folds a nil result to \"rejected\" and an error to \"error\"; the mode/result children are pre-created in init at :139 so the series exist at 0 from the first scrape"
     },
@@ -11780,8 +12523,8 @@
      "symbol": "ConfigPostRestore",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 271,
-     "call_line": 320,
+     "def_line": 286,
+     "call_line": 335,
      "calls": "Restore",
      "entry_point": "http-handler",
      "note": "boot replay reaches the same writer through applySnapshotBoot (api/loxinlp/nlp.go:1821)"
@@ -12903,8 +13646,8 @@
      "symbol": "ConfigGetSnapshot",
      "kind": "func",
      "file": "api/restapi/handler/snapshot.go",
-     "def_line": 220,
-     "call_line": 236,
+     "def_line": 221,
+     "call_line": 237,
      "calls": "Capture",
      "entry_point": "http-handler",
      "note": "also reached from ConfigGetExport (api/restapi/handler/backup.go:100) and from WriteThrough (pkg/snapshot/persist.go:189) on the persist path"

@@ -147,6 +147,35 @@ run_scenario ai-jwtauth -- './config.sh' './validation.sh'
 # suite's README for the reference green counts.
 run_scenario ai-authsep -- './config.sh' './validation.sh' './tiers.sh' './backcompat.sh'
 
+# audit-mgmt: the management-plane audit trail, container-only (no GPU) —
+# the same suite the audit-sanity workflow runs. The gate fails closed with
+# the state unchanged, actors are attributed or honestly auth=none, canary
+# secrets reach no segment, a crash between intent and result is reported
+# at the next boot, a full audit filesystem is visible on /metrics and in
+# the log before the retroactive record, and the delegated originator is
+# recorded and trusted only for accounts marked delegation_allowed. Needs
+# jq on the host; config.sh pulls postgres:18.6 for the two stores. The
+# coverage manifest next to it names which assertion proves which event
+# type (cicd/audit-mgmt/gen-coverage-manifest.py --check).
+run_scenario audit-mgmt -- './config.sh' './validation.sh'
+
+# audit-data: the inference path's own trail, container-only (no GPU) — the
+# data-stream half of the same workflow. A request's completion, its token
+# settle and any refusal carry one correlation key and are joined by it; the
+# tokens recorded are the tokens charged, including a body split across
+# segments; every refusal names the identity its arm resolved, and no segment
+# carries a raw credential. The saturation arms stall the writer on purpose,
+# so the image MUST carry the audit_faults tag:
+#
+#   make HAVE_AUDIT_FAULTS=1 && make docker-cp HAVE_AUDIT_FAULTS=1 dock=<name>
+#
+# A bare docker-cp re-runs build without the tag and ships a writer that
+# cannot be stalled; validation.sh reads the tag off --version and fails
+# rather than skipping, so it will say so. Allow about 25 minutes: the stall
+# costs a second a record, and its budget is spent before the backlog drains.
+# Needs jq on the host; config.sh pulls postgres:18.6 for the key store.
+run_scenario audit-data -- './config.sh' './validation.sh'
+
 # AI QoS on the mock topology (no GPU): rule-attached ingress policing,
 # full-proxy payload shaping, and egress-direction policing. The per-engine
 # QoS acceptance (token quotas end-to-end against real inference engines)
