@@ -33,8 +33,8 @@ credentials. Paths passed to REST are on the Gateway; paths passed to CLI `-f`
 are on the machine running the CLI.
 
 ```sh
-API=http://172.30.88.10:11111/netlox/v1
-loxicmd -s 172.30.88.10 --token-file ./admin.token get loadbalancer -o json
+API=http://172.30.89.10:11111/netlox/v1
+loxicmd -s 172.30.89.10 --token-file ./admin.token get loadbalancer -o json
 curl -sS --config ./admin.curl "$API/status/ready"
 ```
 
@@ -50,10 +50,10 @@ endpoint; inspect their boot log, restored rule and service port together.
 ```sh
 curl -sS --config ./admin.curl "$API/config/snapshot" -o backup.private.json
 curl -sS --config ./admin.curl -X POST "$API/config/persist"
-loxicmd -s 172.30.88.10 --token-file ./admin.token get snapshot \
+loxicmd -s 172.30.89.10 --token-file ./admin.token get snapshot \
   -f cli-backup.private.json --strict -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token create persist --strict -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token save --api -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token create persist --strict -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token save --api -o json
 ```
 
 Read the returned checksum, schema, generation and included/excluded domains.
@@ -64,7 +64,7 @@ can return to the last disk state. Do not promise recovery of unsaved changes.
 ```sh
 curl -sS --config ./admin.curl -X POST "$API/config/restore?mode=dry-run" \
   -H 'Content-Type: application/json' --data-binary @backup.private.json
-loxicmd -s 172.30.88.10 --token-file ./admin.token create restore \
+loxicmd -s 172.30.89.10 --token-file ./admin.token create restore \
   -f cli-backup.private.json --strict -o json
 curl -sS --config ./admin.curl -X POST \
   "$API/config/restore?mode=dry-run&components=loadbalancer" \
@@ -72,7 +72,7 @@ curl -sS --config ./admin.curl -X POST \
 curl -sS --config ./admin.curl -X POST \
   "$API/config/restore?mode=commit&components=loadbalancer" \
   -H 'Content-Type: application/json' --data-binary @backup.private.json
-loxicmd -s 172.30.88.10 --token-file ./admin.token create restore \
+loxicmd -s 172.30.89.10 --token-file ./admin.token create restore \
   -f cli-backup.private.json --commit --strict -o json
 ```
 
@@ -89,14 +89,14 @@ verify unchanged configuration or compensating rollback after failure.
 curl -sS --max-time 5 --config ./key.curl -H 'Content-Type: application/json' \
   -H 'X-Test-Nonce: restored-normal' --data-binary @request-normal.json \
   -D normal.headers -o normal.body \
-  http://172.30.88.10:2420/v1/chat/completions
+  http://172.30.89.10:2420/v1/chat/completions
 curl -sS --max-time 10 --config ./key.curl -H 'Content-Type: application/json' \
   -H 'X-Test-Nonce: restored-sse' --data-binary @request-sse.json \
-  -D sse.headers -o sse.body http://172.30.88.10:2421/v1/chat/completions
+  -D sse.headers -o sse.body http://172.30.89.10:2421/v1/chat/completions
 curl -sS --http1.1 --max-time 10 --cacert ./ca.pem --config ./key.curl \
   -H 'Content-Type: application/json' -H 'X-Test-Nonce: restored-tls' \
   --data-binary @request-normal.json -D tls.headers -o tls.body \
-  https://172.30.88.10:2422/v1/chat/completions
+  https://172.30.89.10:2422/v1/chat/completions
 ```
 
 Require 200, curl exit 0, complete JSON/SSE `[DONE]`, and exactly one corresponding
@@ -111,31 +111,36 @@ not TLS, delivery or request-completion proof.
 Use the scenario's actual IDs. Generated IDs are not stable across environments.
 
 ```sh
-loxicmd -s 172.30.88.10 --token-file ./admin.token get apikey "$KEY_ID" -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token get apikey --tenant-id uc5s-cli -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token set apikey "$KEY_ID" --enabled=false
-loxicmd -s 172.30.88.10 --token-file ./admin.token set apikey "$KEY_ID" --enabled=true
+loxicmd -s 172.30.89.10 --token-file ./admin.token get apikey "$KEY_ID" -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token get apikey --tenant-id uc5t-cli -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token set apikey "$KEY_ID" --enabled=false
+loxicmd -s 172.30.89.10 --token-file ./admin.token set apikey "$KEY_ID" --enabled=true
 curl -sS --config ./admin.curl -X PATCH "$API/config/ai/apikey/$KEY_ID" \
   -H 'Content-Type: application/json' -d '{"rate_limit_rps":0,"burst_size":0}'
-loxicmd -s 172.30.88.10 --token-file ./admin.token delete apikey "$KEY_ID"
+loxicmd -s 172.30.89.10 --token-file ./admin.token delete apikey "$KEY_ID"
 curl -sS --config ./admin.curl "$API/config/ai/apikey/$KEY_ID"
 ```
 
 Run the RPS PATCH while the key still exists, before deletion. Verify enabled →
 disabled → re-enabled → deleted as 200 → 401 → 200 → 401 with backend receipts
 1 → 0 → 1 → 0. Deleted GET must return 404 (CLI exit 4); lists must omit the key.
-Keep the five-second bound when repeating RPS-clear and denial requests.
+Run the RPS-clear repetitions immediately after PATCH, while the key and service
+rules still exist. Run disabled-key requests after disable and before delete;
+write their HTTP status, curl exit and nonce receipt before consuming those files.
+Keep the five-second bound. Test wrong backend CA before deleting the baseline
+CA or service rules. For CLI traffic checks, create a separate live key and service,
+then send a request at each state transition before deleting that service.
 
 ```sh
 curl -sS --config ./admin.curl "$API/auth/users"
 curl -sS --config ./admin.curl -X DELETE "$API/auth/users/$USER_ID"
-loxicmd -s 172.30.88.10 --token-file ./admin.token get loadbalancer -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token delete lb --name=uc5s-cli-http -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token get cert "$CERT_ID" -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token delete cert "$CERT_ID"
-loxicmd -s 172.30.88.10 --token-file ./admin.token get audit-sink -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token get audit-status -o json
-loxicmd -s 172.30.88.10 --token-file ./admin.token set audit-sink --disable -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token get loadbalancer -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token delete lb --name=uc5t-cli-http -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token get cert "$CERT_ID" -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token delete cert "$CERT_ID"
+loxicmd -s 172.30.89.10 --token-file ./admin.token get audit-sink -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token get audit-status -o json
+loxicmd -s 172.30.89.10 --token-file ./admin.token set audit-sink --disable -o json
 curl -sS --config ./admin.curl "$API/audit/sinks/$SINK_NAME"
 curl -sS --config ./admin.curl -X DELETE "$API/audit/sinks/$SINK_NAME"
 ```
@@ -180,8 +185,8 @@ failure and distinguish it from “nothing was saved.”
 
 ## Quality acceptance and defect handoff
 
-Fresh mock-backed author verification covers 181 passing evidence assertions,
-nine recovery phases, 56 matching received Audit MSG hashes, RPS-clear 30/30,
+Fresh latest-main mock-backed author verification covers 208 passing evidence assertions,
+12 recovery phases, 74 matching received Audit MSG hashes, RPS-clear 30/30,
 disabled key 20/20, burst 2 accepted/10 rejected, CRUD, effective wrong-CA rejection,
 and image migration/refusal/backup rollback. Independent QA, release and
 certification remain separate gates.
@@ -190,3 +195,12 @@ The eBPF component's `common/UC5-RECOVERY-REGRESSIONS.md` records the observed L
 reflection/FDB poisoning root cause, split-horizon fix, explicit denial framing,
 C sanitizer regressions, and actual-kernel red/fixed replay. Original failed
 captures are retained privately; later success does not erase failed evidence.
+
+The fresh build used Gateway `865d99f9`, eBPF `36a01412` (including the merged
+listener/model/path lookup change), CLI `28832f0c`, and libbpf `48989015`.
+The original Gateway main gitlink was `33f52a12`; this update pins the reviewed
+latest eBPF revision exercised by the new build. C sanitizer, Gateway recovery/auth
+unit tests, listener routing sanitizer, and installed-kernel foreign-drop/routed-
+hairpin checks passed. No additional product defect was observed in this scope.
+The private manual's ordering, missing disabled-request evidence, CLI lifecycle,
+startup waits and source identity were corrected; previous failures remain retained.
