@@ -190,7 +190,7 @@ func init() {
           "type": "string"
         },
         "tokens_per_min": {
-          "description": "Stored per-key token-quota metadata; enforcement is not connected in the reviewed token-accounting consumer. Tenant and tenant/model quotas are separate.",
+          "description": "Per-key token quota in the supported token-accounting data plane. Positive values participate in admission reservation and usage settlement; nonpositive values leave this dimension unlimited. Insufficient reservation capacity returns 429 token_quota_would_exceed with Retry-After before backend delivery. Tenant, model, user and service quotas are separate dimensions. Readback alone does not prove effective enforcement for a particular service or protocol.",
           "format": "int64",
           "type": "integer"
         }
@@ -219,7 +219,7 @@ func init() {
       "type": "object"
     },
     "ApiKeySummary": {
-      "description": "Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Per-key token-quota enforcement is not connected.",
+      "description": "Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Positive per-key token quotas participate in the supported data-plane admission and usage-accounting path; readback alone does not establish effective enforcement for every service or protocol.",
       "properties": {
         "allowed_models": {
           "description": "List of model identifiers this key may access",
@@ -265,7 +265,7 @@ func init() {
           "type": "string"
         },
         "tokens_per_min": {
-          "description": "Stored metadata, not an enforced per-key token quota in the reviewed consumer. Tenant and tenant/model token limits are separate.",
+          "description": "Positive per-key token quota used by the supported data-plane reservation and settlement path; nonpositive means unlimited for this dimension. Other quota dimensions remain separate. Readback is desired configuration, not runtime delivery proof.",
           "format": "int64",
           "type": "integer"
         }
@@ -5848,7 +5848,7 @@ func init() {
       "type": "object"
     },
     "LoginResponse": {
-      "description": "Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Known logout limitation: its handler forwards the full Authorization header to a raw-token hash lookup, so a successful Bearer logout response is not verified session revocation.",
+      "description": "Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Logout revokes the raw session token after removing the Bearer prefix used by authentication; a revoked token is rejected on subsequent protected management requests.",
       "properties": {
         "token": {
           "type": "string"
@@ -8683,7 +8683,7 @@ func init() {
         "consumes": [
           "application/json"
         ],
-        "description": "Authenticates a user and returns a JWT token if the credentials are valid.",
+        "description": "Authenticates a Gateway management user and returns an opaque, store-backed session token if the credentials are valid. Send the token as Authorization Bearer. It is separate from an OAM product-login JWT and from inference API keys or data-plane JWT admission profiles.",
         "parameters": [
           {
             "description": "User credentials",
@@ -21638,7 +21638,7 @@ func init() {
     "/auth/login": {
       "post": {
         "security": [],
-        "description": "Authenticates a user and returns a JWT token if the credentials are valid.",
+        "description": "Authenticates a Gateway management user and returns an opaque, store-backed session token if the credentials are valid. Send the token as Authorization Bearer. It is separate from an OAM product-login JWT and from inference API keys or data-plane JWT admission profiles.",
         "consumes": [
           "application/json"
         ],
@@ -34691,7 +34691,7 @@ func init() {
           "type": "string"
         },
         "tokens_per_min": {
-          "description": "Stored per-key token-quota metadata; enforcement is not connected in the reviewed token-accounting consumer. Tenant and tenant/model quotas are separate.",
+          "description": "Per-key token quota in the supported token-accounting data plane. Positive values participate in admission reservation and usage settlement; nonpositive values leave this dimension unlimited. Insufficient reservation capacity returns 429 token_quota_would_exceed with Retry-After before backend delivery. Tenant, model, user and service quotas are separate dimensions. Readback alone does not prove effective enforcement for a particular service or protocol.",
           "type": "integer",
           "format": "int64"
         }
@@ -34716,7 +34716,7 @@ func init() {
       }
     },
     "ApiKeySummary": {
-      "description": "Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Per-key token-quota enforcement is not connected.",
+      "description": "Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Positive per-key token quotas participate in the supported data-plane admission and usage-accounting path; readback alone does not establish effective enforcement for every service or protocol.",
       "type": "object",
       "required": [
         "enabled"
@@ -34766,7 +34766,7 @@ func init() {
           "type": "string"
         },
         "tokens_per_min": {
-          "description": "Stored metadata, not an enforced per-key token quota in the reviewed consumer. Tenant and tenant/model token limits are separate.",
+          "description": "Positive per-key token quota used by the supported data-plane reservation and settlement path; nonpositive means unlimited for this dimension. Other quota dimensions remain separate. Readback is desired configuration, not runtime delivery proof.",
           "type": "integer",
           "format": "int64"
         }
@@ -42448,7 +42448,7 @@ func init() {
       }
     },
     "LoginResponse": {
-      "description": "Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Known logout limitation: its handler forwards the full Authorization header to a raw-token hash lookup, so a successful Bearer logout response is not verified session revocation.",
+      "description": "Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Logout revokes the raw session token after removing the Bearer prefix used by authentication; a revoked token is rejected on subsequent protected management requests.",
       "type": "object",
       "properties": {
         "token": {

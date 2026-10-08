@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LoginResponse Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Known logout limitation: its handler forwards the full Authorization header to a raw-token hash lookup, so a successful Bearer logout response is not verified session revocation.
+// LoginResponse Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Logout revokes the raw session token after removing the Bearer prefix used by authentication; a revoked token is rejected on subsequent protected management requests.
 //
 // swagger:model LoginResponse
 type LoginResponse struct {
