@@ -144,7 +144,9 @@ func AuthPostLogin(params auth.PostAuthLoginParams) middleware.Responder {
 // AuthPostLogout function
 // This function is used to logout the user
 func AuthPostLogout(params auth.PostAuthLogoutParams, principal interface{}) middleware.Responder {
-	token := params.HTTPRequest.Header.Get("Authorization")
+	// Match the credential passed to validation: the store/cache hash the
+	// raw token, never the Authorization header including its scheme.
+	token := strings.TrimPrefix(params.HTTPRequest.Header.Get("Authorization"), "Bearer ")
 	err := ApiHooks.NetUserLogout(token)
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
