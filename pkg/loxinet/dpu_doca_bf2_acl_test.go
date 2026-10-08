@@ -109,38 +109,58 @@ func counterValue(t *testing.T, c interface {
 	return 0
 }
 
+// aclStateForTest observes teardown state under the production lock order.
+type aclTestState struct {
+	up          bool
+	deny, allow int
+}
+
+func aclStateForTest(d *DpDocaBf2) aclTestState {
+	d.aclLifecycleMu.Lock()
+	defer d.aclLifecycleMu.Unlock()
+	d.fdbMtx.Lock()
+	defer d.fdbMtx.Unlock()
+	return aclTestState{d.aclPipesUp, len(d.aclDenyEntries), len(d.aclAllowEntries)}
+}
+
+func assertAclState(t *testing.T, d *DpDocaBf2, want aclTestState) {
+	t.Helper()
+	if got := aclStateForTest(d); got != want {
+		t.Fatalf("ACL state = %+v, want %+v", got, want)
+	}
+}
+
+// Async deletion must reach the expected state; elapsed sleeps do not
+// synchronize with the debounce callback or teardown goroutine.
+func waitForAclState(t *testing.T, d *DpDocaBf2, want aclTestState) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := aclStateForTest(d)
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ACL state did not converge: got %+v, want %+v", got, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestAclLazyLifecycle(t *testing.T) {
 	d := newTestBf2()
+	assertAclState(t, d, aclTestState{})
 
-	if d.aclPipesUp {
-		t.Fatal("expected aclPipesUp=false at fresh init")
-	}
-
-	// First add — should flip aclPipesUp=true via ensureAclPipesUp.
 	w := mkAclWork(t, "10.0.0.0/24", "192.168.1.0/24", 0, 80, DpFwDrop, true)
 	if err := d.FwRuleAdd(w); err != nil {
 		t.Fatalf("FwRuleAdd: %v", err)
 	}
-	if !d.aclPipesUp {
-		t.Fatal("expected aclPipesUp=true after first HwOffload=true add")
-	}
+	assertAclState(t, d, aclTestState{up: true, deny: 1})
 
-	// Del — pipes should tear down via async maybeTearDownAclPipes.
 	if err := d.FwRuleDel(w); err != nil {
 		t.Fatalf("FwRuleDel: %v", err)
 	}
-	// FwRuleDel enqueues into aclPendingDel and arms scheduleAclFlush; wait
-	// for the debounce window + the goroutine that maybeTearDownAclPipes spawns.
-	time.Sleep(2 * aclDebounceMs)
-	// Drain anything that's still pending (defence in depth — the timer may
-	// have fired but we want a deterministic state for the assertion).
-	d.flushAclPending()
-	// Give the spawned maybeTearDownAclPipes goroutine a chance to run.
-	time.Sleep(20 * time.Millisecond)
-	if d.aclPipesUp {
-		t.Fatalf("expected aclPipesUp=false after last HwOffload=true del; got true (maps: deny=%d allow=%d)",
-			len(d.aclDenyEntries), len(d.aclAllowEntries))
-	}
+	waitForAclState(t, d, aclTestState{})
 }
 
 func TestAclEntryMap(t *testing.T) {
@@ -467,51 +487,26 @@ func TestAclMetricsLabelChildrenPreInstantiated(t *testing.T) {
 func TestAclLifecycleIdempotent(t *testing.T) {
 	d := newTestBf2()
 
-	// Add #1: triggers ensureAclPipesUp; aclPipesUp flips true.
 	w1 := mkAclWork(t, "10.0.0.0/24", "192.168.1.0/24", 0, 80, DpFwDrop, true)
 	if err := d.FwRuleAdd(w1); err != nil {
 		t.Fatalf("FwRuleAdd #1: %v", err)
 	}
-	if !d.aclPipesUp {
-		t.Fatal("expected aclPipesUp=true after first HwOffload=true Add")
-	}
+	assertAclState(t, d, aclTestState{up: true, deny: 1})
 
-	// Add #2 (allow this time): aclPipesUp stays true; ensureAclPipesUp
-	// is idempotent (no-op).
 	w2 := mkAclWork(t, "10.1.0.0/24", "192.168.2.0/24", 0, 443, DpFwFwd, true)
 	if err := d.FwRuleAdd(w2); err != nil {
 		t.Fatalf("FwRuleAdd #2: %v", err)
 	}
-	if !d.aclPipesUp {
-		t.Fatal("expected aclPipesUp=true after second HwOffload=true Add (idempotent)")
-	}
-	if len(d.aclDenyEntries) != 1 || len(d.aclAllowEntries) != 1 {
-		t.Fatalf("expected 1 deny + 1 allow entry, got deny=%d allow=%d",
-			len(d.aclDenyEntries), len(d.aclAllowEntries))
-	}
+	assertAclState(t, d, aclTestState{up: true, deny: 1, allow: 1})
 
-	// Del #1 (the deny entry): aclPipesUp STAYS true because allow map is
-	// non-empty.
+	// Pipes must survive while the allow entry remains.
 	if err := d.FwRuleDel(w1); err != nil {
 		t.Fatalf("FwRuleDel #1: %v", err)
 	}
-	time.Sleep(2 * aclDebounceMs)
-	d.flushAclPending()
-	time.Sleep(20 * time.Millisecond)
-	if !d.aclPipesUp {
-		t.Fatal("expected aclPipesUp=true after Del #1 (allow map still non-empty)")
-	}
+	waitForAclState(t, d, aclTestState{up: true, allow: 1})
 
-	// Del #2 (the allow entry): now both maps empty → maybeTearDownAclPipes
-	// flips aclPipesUp=false.
 	if err := d.FwRuleDel(w2); err != nil {
 		t.Fatalf("FwRuleDel #2: %v", err)
 	}
-	time.Sleep(2 * aclDebounceMs)
-	d.flushAclPending()
-	time.Sleep(20 * time.Millisecond)
-	if d.aclPipesUp {
-		t.Fatalf("expected aclPipesUp=false after last Del (both maps empty); maps: deny=%d allow=%d",
-			len(d.aclDenyEntries), len(d.aclAllowEntries))
-	}
+	waitForAclState(t, d, aclTestState{})
 }

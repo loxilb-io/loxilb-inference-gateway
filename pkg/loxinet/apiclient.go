@@ -982,6 +982,20 @@ func (na *NetAPIStruct) NetSecurityRateSet(config *cmn.SecurityRateConfig) (int,
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 
+	if mh.disBPF {
+		// Proxy-only has no kernel security-rate maps. Its zero/disabled
+		// singleton is still valid desired state during snapshot wipe and
+		// replay; do not program a nonexistent datapath for that state.
+		// Any actual kernel setting must fail rather than appear enforced.
+		if config.SYNEnabled || config.ConnRateEnabled || config.UDPEnabled ||
+			config.SYNThreshold != 0 || config.CookieThreshold != 0 || config.RatePerSec != 0 ||
+			config.UDPPktThreshold != 0 || config.UDPBandwidthMB != 0 || len(config.WhitelistIPs) != 0 {
+			return RuleErrBase, errors.New("security rate limiting is unavailable in proxy-only mode")
+		}
+		mh.securityRateConfig = cmn.SecurityRateConfig{}
+		return 0, nil
+	}
+
 	tk.LogIt(tk.LogInfo, "[API] Security rate limiting: SYN=%v (threshold=%d, cookie=%d), ConnRate=%v (rate=%d), UDP=%v (pkt=%d, bw=%dMB)\n",
 		config.SYNEnabled, config.SYNThreshold, config.CookieThreshold,
 		config.ConnRateEnabled, config.RatePerSec,
