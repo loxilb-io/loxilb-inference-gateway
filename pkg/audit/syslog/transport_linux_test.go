@@ -134,6 +134,7 @@ func stalledReceiverWithReset(t *testing.T, cert tls.Certificate) (addr string, 
 func TestUnconfirmedCountsWhatTheReceiverHasNotAcknowledged(t *testing.T) {
 	caCert, caKey, caPEM := genCAFull(t)
 	addr, release := stalledReceiver(t, serverCert(t, caCert, caKey))
+	defer release()
 	s := sinkFor(t, addr, caPEM)
 
 	const frames = 600
@@ -142,8 +143,9 @@ func TestUnconfirmedCountsWhatTheReceiverHasNotAcknowledged(t *testing.T) {
 			t.Fatalf("submit %d: %v", i, err)
 		}
 	}
-	// Whatever the receiver's buffer took has been acknowledged by now or
-	// never will be while it is stalled.
+	// Wait for actual partial acknowledgement before accepting a stable
+	// count. Two equal samples can occur before Linux sends a delayed ACK,
+	// while every submitted frame is still unconfirmed.
 	var held int
 	eventually(t, "the count to settle", func() bool {
 		n, ok := s.Unconfirmed()
@@ -152,7 +154,7 @@ func TestUnconfirmedCountsWhatTheReceiverHasNotAcknowledged(t *testing.T) {
 		}
 		settled := n == held
 		held = n
-		return settled && n > 0
+		return settled && n > 0 && n < frames
 	})
 	if held >= frames {
 		t.Fatalf("%d of %d frames unconfirmed: the receiver's buffer took none", held, frames)
@@ -167,7 +169,6 @@ func TestUnconfirmedCountsWhatTheReceiverHasNotAcknowledged(t *testing.T) {
 	if n, ok := s.Unconfirmed(); !ok || n != held {
 		t.Fatalf("after the session ended: %d unconfirmed (known %v), want the %d it left", n, ok, held)
 	}
-	release()
 }
 
 func TestUnconfirmedGoesWhenAStalledReceiverTakesTheFrames(t *testing.T) {
