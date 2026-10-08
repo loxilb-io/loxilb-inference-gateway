@@ -45,7 +45,7 @@ type APIKeyCreateRequest struct {
 	// Required: true
 	TenantID *string `json:"tenant_id"`
 
-	// Stored per-key token-quota metadata; enforcement is not connected in the reviewed token-accounting consumer. Tenant and tenant/model quotas are separate.
+	// Per-key token quota in the supported token-accounting data plane. Positive values participate in admission reservation and usage settlement; nonpositive values leave this dimension unlimited. Insufficient reservation capacity returns 429 token_quota_would_exceed with Retry-After before backend delivery. Tenant, model, user and service quotas are separate dimensions. Readback alone does not prove effective enforcement for a particular service or protocol.
 	TokensPerMin int64 `json:"tokens_per_min,omitempty"`
 }
 

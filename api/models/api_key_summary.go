@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// APIKeySummary Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Per-key token-quota enforcement is not connected.
+// APIKeySummary Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Positive per-key token quotas participate in the supported data-plane admission and usage-accounting path; readback alone does not establish effective enforcement for every service or protocol.
 //
 // swagger:model ApiKeySummary
 type APIKeySummary struct {
@@ -49,7 +49,7 @@ type APIKeySummary struct {
 	// Tenant that owns this key
 	TenantID string `json:"tenant_id,omitempty"`
 
-	// Stored metadata, not an enforced per-key token quota in the reviewed consumer. Tenant and tenant/model token limits are separate.
+	// Positive per-key token quota used by the supported data-plane reservation and settlement path; nonpositive means unlimited for this dimension. Other quota dimensions remain separate. Readback is desired configuration, not runtime delivery proof.
 	TokensPerMin int64 `json:"tokens_per_min,omitempty"`
 }
 
