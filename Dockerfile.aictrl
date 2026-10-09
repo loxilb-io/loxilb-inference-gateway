@@ -10,7 +10,7 @@
 # ============================================================================
 
 # ── builder: match the go.mod toolchain (go 1.25.x) ─────────────────────────
-FROM golang:1.25 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /src
 
 # Module graph first (layer-cacheable), then ONLY the pure-Go packages the
