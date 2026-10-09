@@ -29,6 +29,7 @@ fullproxy P/D rule with `kvExactMode=1` fed by the synthetic ZMQ publisher), plu
 | C2 | ipfilter blacklist (XDP) | SYN never answered; `loxilb_ipfilter_blacklist_packets_total` moves | unchanged |
 | C3 | securityrate SYN/conn-rate (XDP) | `loxilb_security_{syn,conn}_blocked_total` move | unchanged, during the flood |
 | C4 | `allowedSources` on the fullproxy rule (TC fence) | SYN dropped, `loxilb_fw_drop_packets_total` moves; the gateway log shows the allow (pref 65000) + drop (pref 64999) install and, on a replace without sources, both deletes; the other client is served again right after (the delete reached the kernel table); `GET /config/firewall/all` hides the pair like every source-check rule; snapshot does not carry them | unchanged |
+| C4b | operator firewall drop rules over the VIP with a port RANGE and with no port (the two port encodings C4 does not drive) | the other client is dropped at TC while the rule is installed; after `DELETE /config/firewall` with the same tuple the rule is gone from `GET /config/firewall/all` AND the other client is served again (the delete reached `fw_v4_map`, not only the control plane) | unchanged |
 | C5 | `connectionLimit=2` (sockproxy gauge) | 3rd connection reset at accept, from either client; `/stats` `activeConnections` = 2 then 0 (holders = idle keep-alive connections that sent one complete routed request) | unchanged after the holders close |
 | C6 | `api_key_auth=required`, no store (policy denial) | 401/403/503 before selection: no tier selection, no Tier-1.5 hit | unchanged after lift |
 | C7 | fc role cap after selection (capacity 429) | no `[PD_LOAD] … never taken` canary (L-D1) | unchanged after lift |
@@ -36,7 +37,7 @@ fullproxy P/D rule with `kvExactMode=1` fed by the synthetic ZMQ publisher), plu
 | C9 | proxy-only instance | ipfilter / firewall / allowedSources POST → 400, never a silent Success | — |
 | C10 | XDP attach mode | every attach logs its mode; `XDP_NATIVE=<if|all>` asks for native and logs the fallback (on a veth bed such as llbigw-2 only `eth0` takes native; every veth refuses flags 0x4 and falls back to generic with a WARN line, counted as `fallback=`) | — |
 | C11 | snapshot persist → restore | rule reads back `connectionLimit` + sources, fence re-installed; `kvexactstatus` reports `REQUIRES_MIGRATION` (the documented recovery contract for a profile-less KV-exact rule: served through the normal tiers, exact tier fenced); a fresh create (hosturl DELETE + POST) lifts it | flat while fenced (by contract), Tier-1.5 again after the fresh create |
-| C12 | C unit layers | `make test_felimit test_fc test_kv` | — |
+| C12 | C unit layers | `make test_felimit test_hdrdl test_pdi test_fc test_kv` | — |
 
 Hard asserts gate the sentinel `SCENARIO-security-kv-coexist [OK]`; timing-sensitive
 observations are `soft`.

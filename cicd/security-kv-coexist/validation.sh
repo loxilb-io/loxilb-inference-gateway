@@ -115,6 +115,36 @@ snap=$(llb_curl "${API}/config/snapshot?components=firewall" 2>/dev/null)
 soft "C4: snapshot firewall domain carries no fence rule" "$([[ "$snap" != *"${VIP}/32"* ]] && echo 1 || echo 0)"
 rule_replace "" >/dev/null; sleep 2
 
+# ── C4b operator firewall rules over the VIP with the two other port encodings ─────────────────
+# K-P0b: the firewall rule-table lookup used by insert and delete compares the two encodings of
+# a port match member for member. C4 proves the exact-port encoding (the fence), this leg drives
+# the two the operator API also installs — a port RANGE (minDestinationPort < maxDestinationPort)
+# and the portless wildcard (0..0) — through the same REST -> rule table -> fw_v4_map path. The
+# oracle is the kernel's: the other client must be served again once the rule is deleted; a
+# delete that only the control plane remembers leaves the drop live in fw_v4_map.
+echo "### C4b operator fw rules with a port range and with no port: enforced, then the delete reaches the kernel"
+c4b_fw() {   # c4b_fw <label> <preference> <port-args JSON fragment | ""> <port query fragment | "">
+    local label="$1" pref="$2" pjson="$3" pquery="$4" c oc rows
+    c=$(rest_code POST /config/firewall "{\"ruleArguments\":{\"sourceIP\":\"${CLIENT_B_IP}/32\",\"destinationIP\":\"${VIP}/32\",\"protocol\":6,\"preference\":${pref}${pjson}},\"opts\":{\"drop\":true}}")
+    assert "C4b ${label}: drop rule ${CLIENT_B_IP}->${VIP} installed (got $c)" "$([[ $c == 200 ]] && echo 1 || echo 0)"
+    sleep 2
+    oc=$(req_outcome l3h2 "${KV_PID}")
+    assert "C4b ${label}: other client dropped at TC (outcome=${oc})" "$([[ "$oc" == timeout ]] && echo 1 || echo 0)"
+    kv_probe_a "C4b ${label}"
+    c=$(rest_code DELETE "/config/firewall?sourceIP=${CLIENT_B_IP}/32&destinationIP=${VIP}/32&protocol=6&preference=${pref}${pquery}")
+    assert "C4b ${label}: delete accepted (got $c)" "$([[ $c == 200 ]] && echo 1 || echo 0)"
+    sleep 2
+    rows=$(llb_curl "${API}/config/firewall/all" 2>/dev/null | grep -c "\"preference\":${pref}[,}]")
+    assert "C4b ${label}: rule gone from GET /config/firewall/all (rows=${rows})" "$([[ "$rows" == 0 ]] && echo 1 || echo 0)"
+    oc=$(req_outcome l3h2 "${KV_PID}")
+    assert "C4b ${label}: other client served again — the delete reached fw_v4_map (outcome=${oc})" "$([[ "$oc" == served ]] && echo 1 || echo 0)"
+}
+# portless first: a range rule whose delete never reached the kernel would keep dropping the
+# other client (the range covers the VIP port) and mask the portless verdict that follows it
+c4b_fw "portless" 4243 "" ""
+c4b_fw "port-range" 4242 ",\"minDestinationPort\":$((VPORT - 10)),\"maxDestinationPort\":$((VPORT + 10))" \
+    "&minDestinationPort=$((VPORT - 10))&maxDestinationPort=$((VPORT + 10))"
+
 # ── C5 connectionLimit on the fullproxy rule (sockproxy gauge) ─────────────────────────────────
 echo "### C5 connectionLimit=2 on the fullproxy rule: third client connection reset at accept"
 c=$(rule_replace '"connectionLimit":2')
@@ -274,13 +304,13 @@ assert "C11: a fresh create (delete/create=${rc}) lifts the fence (status '${st}
 kv_probe_a "C11 (fresh rule after the restore)"
 
 # ── C12 regression: the C unit layers of the touched code ──────────────────────────────────────
-echo "### C12 unit layers: fe_limit + fc + kv-exact C units"
+echo "### C12 unit layers: fe_limit + hdr-deadline + pdi + fc + kv-exact C units"
 REPO_ROOT="$(cd "${CFGDIR}/../.." && pwd)"
 if [[ "${SKIP_C_LAYERS:-0}" == 1 ]]; then
     soft "C12: C units skipped (SKIP_C_LAYERS=1)" 1
 else
     ok=1
-    for t in test_felimit test_fc test_kv; do
+    for t in test_felimit test_hdrdl test_pdi test_fc test_kv; do
         if ( cd "${REPO_ROOT}/loxilb-ebpf/common" && make "$t" ) >"${CFGDIR}/.${t}.log" 2>&1; then
             echo "  make ${t} [OK]"
         else
