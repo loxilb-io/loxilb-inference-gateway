@@ -96,6 +96,19 @@ jobs:
         run: |
           sudo python3 -m pip install --upgrade pip || sudo python3 -m pip install --break-system-packages --upgrade pip || true
           sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages --ignore-installed pyzmq msgpack cbor2 xxhash transformers
+      # The runner's kernel can be newer than the linux-tools packages in its archive
+      # (ubuntu-24.04: 6.17 azure, no linux-tools for it), and then the bpftool wrapper
+      # has no binary to run while the eBPF build needs one for vmlinux.h. Build the same
+      # bpftool the container images carry (libbpf's v7.2.0 release) when that happens.
+      - name: bpftool for the running kernel
+        run: |
+          if ! bpftool version >/dev/null 2>&1; then
+            sudo apt-get -y install zlib1g-dev
+            wget -q https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz -O /tmp/bpftool.tar.gz
+            tar -xzf /tmp/bpftool.tar.gz -C /tmp && make -s -C /tmp/bpftool/src -j "$(nproc)" && sudo cp -f /tmp/bpftool/src/bpftool /usr/local/sbin/bpftool
+            rm -rf /tmp/bpftool /tmp/bpftool.tar.gz
+          fi
+          bpftool version
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
