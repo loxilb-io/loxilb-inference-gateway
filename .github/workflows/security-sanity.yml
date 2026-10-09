@@ -1,0 +1,165 @@
+name: Security-Sanity-CI
+
+# The security controls of the gateway, built from THIS change (Go + eBPF overlaid
+# onto the container image, as ai-gateway-sanity does) and driven against the KV-exact
+# fullproxy service with local echo backends. No GPU, no cloud, no third-party service:
+#
+#   cicd/secfilter             ipfilter / firewall / securityrate on a NAT service
+#   cicd/security-kv-coexist   every control switched on in front of a KV-exact P/D
+#                              fullproxy service — validation.sh (coexistence matrix)
+#                              and validation-ddos.sh (DDoS option matrix), generic-XDP
+#                              arm and the accept-valve arm
+#   cicd/qos-fullproxy         the L7 byte shaper on fullproxy rules
+#
+# Hosted runners attach XDP in generic (skb) mode on veth: the native-XDP arm is
+# workflow_dispatch only and needs a self-hosted runner with a real NIC. The burst
+# a hosted runner can generate is ~10 SYN/s through docker exec, which the scenario
+# thresholds are sized for.
+#
+# Paths: a datapath-only change arrives as a submodule pointer bump ('loxilb-ebpf'),
+# so the pointer is a trigger path here — a workflow that filters on pkg/** and api/**
+# alone never sees it.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'loxilb-ebpf'
+      - 'pkg/**'
+      - 'api/**'
+      - 'options/**'
+      - 'cicd/common.sh'
+      - 'cicd/common/**'
+      - 'cicd/secfilter/**'
+      - 'cicd/security-kv-coexist/**'
+      - 'cicd/qos-fullproxy/**'
+      - 'cicd/vllm-kvcache-routing-cpu/kv_event_publisher.py'
+      - '.github/workflows/security-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'loxilb-ebpf'
+      - 'pkg/**'
+      - 'api/**'
+      - 'options/**'
+      - 'cicd/common.sh'
+      - 'cicd/common/**'
+      - 'cicd/secfilter/**'
+      - 'cicd/security-kv-coexist/**'
+      - 'cicd/qos-fullproxy/**'
+      - 'cicd/vllm-kvcache-routing-cpu/kv_event_publisher.py'
+      - '.github/workflows/security-sanity.yml'
+  schedule:
+    # nightly on main: catches drift from runner kernels and image rebuilds
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+    inputs:
+      runsOn:
+        description: 'Runner label; a self-hosted label such as "large" for the native-XDP arm (real NIC)'
+        required: false
+        default: ''
+      xdpNative:
+        description: 'XDP_NATIVE value for the native arm (empty = generic only)'
+        required: false
+        default: ''
+
+jobs:
+  security-sanity:
+    name: security-sanity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ github.event.inputs.runsOn || matrix.os }}
+    timeout-minutes: 90
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (KV-router HF backend)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - name: Install KV publisher python deps
+        run: |
+          sudo python3 -m pip install --upgrade pip || sudo python3 -m pip install --break-system-packages --upgrade pip
+          sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages pyzmq msgpack cbor2 xxhash transformers
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      # The :latest image is the base; the binary built from this change is overlaid
+      # (make docker-cp) so every scenario below runs the change, not the published image.
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: bash cicd/common/reflect-echo/docker-build.sh
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: C unit layers of the security controls
+        run: |
+          make -C loxilb-ebpf/common test_felimit test_fc test_kv test_aisec test_pdi
+
+      - name: ipfilter / firewall / securityrate (NAT service)
+        run: |
+          cd cicd/secfilter/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+
+      - name: Security controls x KV-exact routing — coexistence + DDoS matrices (generic XDP)
+        env:
+          XDP_NATIVE: ${{ github.event.inputs.xdpNative }}
+        run: |
+          cd cicd/security-kv-coexist/
+          ./config.sh
+          ./validation.sh
+          ./validation-ddos.sh
+          ./rmconfig.sh
+          cd -
+
+      - name: Security controls x KV-exact routing — accept-valve arm (LLB_PD_MAX_TOTAL_INFLIGHT)
+        run: |
+          cd cicd/security-kv-coexist/
+          TOTAL_INFLIGHT=4 ./config.sh
+          ./validation-ddos.sh
+          ./rmconfig.sh
+          cd -
+
+      - name: L7 byte shaper on fullproxy rules
+        run: |
+          cd cicd/qos-fullproxy/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+
+      - name: Collect loxilb logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/ci-logs
+          for c in $(docker ps -a --format '{{.Names}}' | grep -E '^llb'); do
+            docker logs "$c" > "/tmp/ci-logs/$c.log" 2>&1 || true
+            docker exec "$c" sh -c 'cat /var/log/loxilb*.log 2>/dev/null' > "/tmp/ci-logs/$c-dp.log" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: security-sanity-logs-${{ matrix.os }}
+          path: /tmp/ci-logs
+      - run: echo "Security sanity complete"

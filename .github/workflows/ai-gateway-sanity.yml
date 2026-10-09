@@ -11,6 +11,8 @@ on:
     branches:
       - main
     paths:
+      # a datapath-only change arrives as the submodule pointer bump
+      - 'loxilb-ebpf'
       - 'cicd/vllm-**'
       - 'cicd/sglang-**'
       - 'cicd/trtllm-**'
@@ -24,6 +26,8 @@ on:
   pull_request:
     branches: [ "main" ]
     paths:
+      # a datapath-only change arrives as the submodule pointer bump
+      - 'loxilb-ebpf'
       - 'cicd/vllm-**'
       - 'cicd/sglang-**'
       - 'cicd/trtllm-**'
