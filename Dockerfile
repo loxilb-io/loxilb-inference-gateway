@@ -42,7 +42,7 @@ RUN mkdir -p /opt/loxilb && \
     apt-get update && apt-get install -y wget && \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && echo $arch && if [ "$arch" = "arm64" ] ; then apt-get install -y gcc-arm-linux-gnueabihf; else apt-get update && apt-get install -y gcc-multilib; fi && if [ "$OPENSSL_BUILD_CPUS" != "0" ] ; then cpus=$OPENSSL_BUILD_CPUS; else cpus=$(nproc); fi && \
     # Arch specific packages - GoLang
-    wget https://go.dev/dl/go1.25.12.linux-${arch}.tar.gz && tar -xzf go1.25.12.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.25.12.linux-${arch}.tar.gz && \
+    wget https://go.dev/dl/go1.26.9.linux-${arch}.tar.gz && tar -xzf go1.26.9.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.26.9.linux-${arch}.tar.gz && \
     # Dev and util packages
     apt-get install -y clang-14 llvm libelf-dev libpcap-dev vim net-tools ca-certificates \
     elfutils dwarves git libbsd-dev bridge-utils wget unzip build-essential \
