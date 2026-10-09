@@ -12,156 +12,16 @@
 source ../common.sh
 echo SCENARIO-security-kv-coexist
 
-CFGDIR="$(cd "$(dirname "$0")" && pwd)"
-KVCPU="${CFGDIR}/../vllm-kvcache-routing-cpu"
-VIP="10.10.10.254"; VPORT="8080"
-API="http://localhost:11111/netlox/v1"
-LBBASE="${API}/config/loadbalancer"
-METRICS="${API}/metrics"
-KVINV="${API}/config/ai/kv/inventory"
-KV_ZMQ_PORT=5557; KV_HASH_ALGO="sha256_cbor"; KV_BLOCK_SIZE=16; KV_WARMUP_SEC=20
-KV_MODEL="${KV_MODEL:-Qwen/Qwen3-0.6B}"
-KV_MODEL_SLUG="${KV_MODEL//\//__}"
-TOKENIZER_SRC="${CFGDIR}/../common/kv_hash/fixtures/tokenizers/${KV_MODEL_SLUG}/tokenizer.json"
-VECTORS_SRC="${CFGDIR}/../common/kv_hash/fixtures/kv_hash_vectors.json"
-PUBLISHER="${KVCPU}/kv_event_publisher.py"
-CORPUS="${KVCPU}/prompts/corpus.json"
-PUB_TAG="${PUB_TAG:-kvpubsec}"
-PY_USER_SITE="$(python3 -m site --user-site 2>/dev/null || echo '')"
-EP_A_IP="31.31.31.1"; EP_A_IDX=0   # serverP0
-EP_B_IP="33.33.33.1"; EP_B_IDX=2   # serverP1
-CLIENT_A_IP="10.10.10.1"           # l3h1, allowed
-CLIENT_B_IP="11.11.11.2"           # l3h2, the other one
+# Shared helpers and topology constants (validation-ddos.sh sources the same file).
+source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
-code=0
-hard_fail=0
-assert() {   # assert <label> <0|1>
-    if [[ "$2" == 1 ]]; then echo "  [OK] $1"; else echo "  [FAILED] $1"; code=1; hard_fail=1; fi
-}
-soft() {     # soft <label> <0|1>  — recorded, never fails the gate
-    if [[ "$2" == 1 ]]; then echo "  [OK] $1"; else echo "  [SOFT-FAIL] $1"; fi
-}
-
-llb_curl() { $hexec llb1 curl -s --max-time 10 "$@"; }
-rest_code() {  # rest_code <method> <path> [json]
-    if [[ -n "$3" ]]; then
-        llb_curl -o /dev/null -w "%{http_code}" -X"$1" "${API}$2" -H "Content-Type: application/json" -d "$3"
-    else
-        llb_curl -o /dev/null -w "%{http_code}" -X"$1" "${API}$2"
-    fi
-}
-metric_val() {   # summed over every series matching the regex
-    local v; v=$(llb_curl "${METRICS}" 2>/dev/null | grep -E "$1" | awk '{s+=$NF} END{printf "%d", s}'); echo "${v:-0}"
-}
-tier15_hits() {
-    llb_curl "${METRICS}" 2>/dev/null | grep -E "loxilb_pd_kv_tier15_hits_total\{[^}]*ep_idx=\"$1\"" \
-        | awk '{print $NF}' | tail -1 | grep -Eo '^[0-9]+' || echo 0
-}
-inv_total() {
-    llb_curl "${KVINV}?service_id=${SERVICE_ID}&ep_idx=$1" 2>/dev/null \
-        | python3 -c "import sys,json
-try: d=json.load(sys.stdin); print(int(d.get('total_blocks', d.get('Size', d.get('size',0)))))
-except Exception: print(0)" 2>/dev/null || echo 0
-}
-loxilb_log_count() {
-    local n; n=$(docker exec llb1 sh -c 'cat /var/log/loxilb*.log 2>/dev/null' 2>/dev/null | grep -cE "$1"); echo "${n:-0}"
-}
-lb_stats_active() {   # activeConnections of the VIP rule (Octavia stats quad)
-    llb_curl "${LBBASE}/externalipaddress/${VIP}/port/${VPORT}/protocol/tcp/stats" 2>/dev/null \
-        | python3 -c "import sys,json
-try: d=json.load(sys.stdin); print(int(d.get('activeConnections', d.get('ActiveConnections',0))))
-except Exception: print(-1)" 2>/dev/null || echo -1
-}
-prompt_text() {
-    python3 -c "import json,sys
-d=json.load(open('${CORPUS}'))
-for p in d['prompts']:
-    if p['id']==sys.argv[1]:
-        sys.stdout.write(p['prompt']); break" "$1"
-}
-body_for() {   # body_for <prompt-id> [user]
-    python3 -c "import json,sys
-d=json.load(open('${CORPUS}'))
-for p in d['prompts']:
-    if p['id']==sys.argv[1]:
-        b={'model':'${KV_MODEL}','prompt':p['prompt'],'max_tokens':8}
-        if len(sys.argv)>2 and sys.argv[2]: b['user']=sys.argv[2]
-        print(json.dumps(b)); break" "$1" "${2:-}"
-}
-# request from a client netns; echoes the backend banner (serverP*/serverD*) or ""
-req_banner() {   # req_banner <netns> <prompt-id> [curl extra args...]
-    local ns="$1" pid="$2"; shift 2
-    $hexec "$ns" curl -s --max-time 10 -o - -w '' -X POST "http://${VIP}:${VPORT}/v1/completions" \
-        -H 'Content-Type: application/json' --data-binary "$(body_for "$pid")" "$@" 2>/dev/null \
-        | grep -Eo 'server[PD][0-9]' | head -1
-}
-# connect-level outcome from a client: prints "served", "timeout" (no SYN-ACK — dropped
-# in XDP/TC), "reset" (connection refused/reset after the handshake) or "error:<rc>"
-req_outcome() {  # req_outcome <netns> <prompt-id>
-    local ns="$1" pid="$2" rc out
-    out=$($hexec "$ns" curl -s --max-time 4 --connect-timeout 3 -o /dev/null -w '%{http_code}' \
-        -X POST "http://${VIP}:${VPORT}/v1/completions" -H 'Content-Type: application/json' \
-        --data-binary "$(body_for "$pid")" 2>/dev/null); rc=$?
-    case "$rc" in
-        0) [[ "$out" == 200 ]] && echo served || echo "http:$out" ;;
-        28) echo timeout ;;
-        7|56|52) echo reset ;;
-        *) echo "error:$rc" ;;
-    esac
-}
-netns_for_ep_ip() { case "$1" in "${EP_A_IP}") echo l3ep1;; "${EP_B_IP}") echo l3ep3;; *) echo "";; esac; }
-publish_prompt_to_ep() {   # publish_prompt_to_ep <prompt-id> <ep-ip>
-    local pid="$1" ep_ip="$2" one="${CFGDIR}/.kvpub-${1}-${2}.json" ns
-    python3 -c "import json,sys
-d=json.load(open('${CORPUS}'))
-for p in d['prompts']:
-    if p['id']==sys.argv[1]:
-        json.dump([{'prompt':p['prompt']}], open(sys.argv[2],'w')); break" "$pid" "$one"
-    ns="$(netns_for_ep_ip "$ep_ip")"
-    for _pp in $(pgrep -f "${PUB_TAG}" 2>/dev/null); do kill "${_pp}" >/dev/null 2>&1 || true; done
-    sleep 1
-    setsid $hexec "${ns}" bash -c "export PYTHONPATH='${PY_USER_SITE}' PYTHONHASHSEED=0; exec -a ${PUB_TAG} python3 '${PUBLISHER}' \
-        --corpus '${one}' --tokenizer '${TOKENIZER_SRC}' --vectors '${VECTORS_SRC}' \
-        --bind '${ep_ip}' --port ${KV_ZMQ_PORT} --algo ${KV_HASH_ALGO} \
-        --block-size ${KV_BLOCK_SIZE} --repeat 3 --repeat-interval 6 --no-vocabulary" >"${CFGDIR}/.kvpub-${pid}-${ep_ip}.log" 2>&1 &
-    sleep 10
-}
-rule_replace() {   # rule_replace <extra service-args JSON fragment> -> http code
-    local extra="$1"; [[ -n "$extra" ]] && extra="${extra},"
-    rest_code POST /config/loadbalancer "$(cat <<JSON
-{"serviceArguments":{"externalIP":"${VIP}","port":${VPORT},"protocol":"tcp","sel":0,"mode":4,
- "host":"${VIP}","model_name":"${KV_MODEL}",${extra}
- "pd_disagg_mode":true,"probeRetries":1,"kvExactMode":1,"kvZmqPort":${KV_ZMQ_PORT},
- "kvHashAlgo":"${KV_HASH_ALGO}","kvWarmupSec":${KV_WARMUP_SEC},"kvBlockSize":${KV_BLOCK_SIZE}},
- "endpoints":[{"endpointIP":"31.31.31.1","targetPort":80,"weight":1,"ep_role":1},
-  {"endpointIP":"32.32.32.1","targetPort":80,"weight":1,"ep_role":2},
-  {"endpointIP":"33.33.33.1","targetPort":80,"weight":1,"ep_role":1},
-  {"endpointIP":"34.34.34.1","targetPort":80,"weight":1,"ep_role":2},
-  {"endpointIP":"35.35.35.1","targetPort":80,"weight":1,"ep_role":1},
-  {"endpointIP":"36.36.36.1","targetPort":80,"weight":1,"ep_role":2}]}
-JSON
-)"
-}
-sec_reset='{"synEnabled":false,"synThreshold":100,"cookieThreshold":50,"connRateEnabled":false,"ratePerSec":50,"udpEnabled":false,"udpPktThreshold":1000,"udpBandwidthMB":100}'
-fence_rules() {   # the fw rules of the VIP fence as GET /config/firewall/all shows them: "<pref> <src>" per line
-    llb_curl "${API}/config/firewall/all" 2>/dev/null | python3 -c "import sys,json
-try:
-    d=json.load(sys.stdin)
-    for r in d.get('fwAttr', d.get('fwRules', [])):
-        a=r.get('ruleArguments',{})
-        if a.get('destinationIP','').startswith('${VIP}/'):
-            print(a.get('preference',0), a.get('sourceIP',''))
-except Exception: pass" 2>/dev/null
-}
-# a routed probe from l3h1 that must land on EP-A with a Tier-1.5 hit
-kv_probe_a() {   # kv_probe_a <label>
-    local before after banner
-    before=$(tier15_hits "${EP_A_IDX}")
-    banner=$(req_banner l3h1 "${KV_PID}")
-    after=$(tier15_hits "${EP_A_IDX}")
-    assert "$1: allowed client routed Tier-1.5 to EP-A (banner=${banner:-none}, hits ${before}->${after})" \
-        "$([[ "$banner" == serverP0 && "$after" -gt "$before" ]] && echo 1 || echo 0)"
-}
+# The fence rules carry the source-check mark, and GET /config/firewall/all hides every
+# marked (auto-generated) rule — exactly as it hides the allowedSources rules of NAT rules —
+# so the read-back of the fence is the gateway's own install/delete log lines, and the
+# operator-facing list must NOT show them.
+FENCE_ALLOW_LOG="fw-rule added - [0-9]+:dst-${VIP}/32,src-${CLIENT_A_IP}/32,proto-6,dport-${VPORT},-allow"
+FENCE_DROP_LOG="fw-rule added - [0-9]+:dst-${VIP}/32,src-0.0.0.0/0,proto-6,dport-${VPORT},-drop"
+FENCE_DEL_LOG="fw-rule deleted dst-${VIP}/32,src-(${CLIENT_A_IP}/32|0.0.0.0/0),proto-6,dport-${VPORT},-(allow|drop)"
 
 # ── readiness ──────────────────────────────────────────────────────────────────────────────────
 SERVICE_ID=""
@@ -201,7 +61,8 @@ assert "C2: other client served again after delete (del=$c outcome=${oc})" "$([[
 
 # ── C3 securityrate (XDP) ──────────────────────────────────────────────────────────────────────
 echo "### C3 securityrate: SYN/conn-rate flood from the other client blocked at XDP; KV routing unchanged"
-c=$(rest_code POST /config/securityrate '{"synEnabled":true,"synThreshold":20,"cookieThreshold":50,"connRateEnabled":true,"ratePerSec":5,"udpEnabled":false,"udpPktThreshold":1000,"udpBandwidthMB":100}')
+# cookieThreshold must be below synThreshold (handler: 400 otherwise)
+c=$(rest_code POST /config/securityrate '{"synEnabled":true,"synThreshold":20,"cookieThreshold":10,"connRateEnabled":true,"ratePerSec":5,"udpEnabled":false,"udpPktThreshold":1000,"udpBandwidthMB":100}')
 assert "C3: securityrate set -> 200 (got $c)" "$([[ $c == 200 ]] && echo 1 || echo 0)"
 sleep 1
 cb_before=$(metric_val loxilb_security_conn_blocked_total)
@@ -213,21 +74,24 @@ cb_after=$(metric_val loxilb_security_conn_blocked_total)
 sb_after=$(metric_val loxilb_security_syn_blocked_total)
 assert "C3: XDP conn-rate/SYN block counters moved (conn ${cb_before}->${cb_after}, syn ${sb_before}->${sb_after})" \
     "$([[ "$cb_after" -gt "$cb_before" || "$sb_after" -gt "$sb_before" ]] && echo 1 || echo 0)"
-rest_code POST /config/securityrate "$sec_reset" >/dev/null
+# a POST with every protection off is refused (400) by design; DELETE is the off switch
+rest_code DELETE /config/securityrate >/dev/null
 sleep 2
 oc=$(req_outcome l3h2 "${KV_PID}")
 assert "C3: other client served again after reset (outcome=${oc})" "$([[ "$oc" == served ]] && echo 1 || echo 0)"
 
 # ── C4 allowedSources on the fullproxy rule (TC fence) ─────────────────────────────────────────
 echo "### C4 allowedSources on the fullproxy rule: TC fence drops the other client's SYN; KV routing unchanged"
-c=$(rule_replace "\"allowedSources\":[{\"prefix\":\"${CLIENT_A_IP}/32\"}]" )
+fa_b=$(loxilb_log_count "$FENCE_ALLOW_LOG"); fd_b=$(loxilb_log_count "$FENCE_DROP_LOG"); fx_b=$(loxilb_log_count "$FENCE_DEL_LOG")
+c=$(rule_replace "" "\"allowedSources\":[{\"prefix\":\"${CLIENT_A_IP}/32\"}]")
 assert "C4: replace with allowedSources -> 200 (got $c)" "$([[ $c == 200 ]] && echo 1 || echo 0)"
 sleep 3
+fa_a=$(loxilb_log_count "$FENCE_ALLOW_LOG"); fd_a=$(loxilb_log_count "$FENCE_DROP_LOG")
+assert "C4: fence installed (allow ${CLIENT_A_IP}/32->${VIP}:${VPORT} +$((fa_a - fa_b)), drop 0/0->${VIP}:${VPORT} +$((fd_a - fd_b)))" \
+    "$([[ $((fa_a - fa_b)) == 1 && $((fd_a - fd_b)) == 1 ]] && echo 1 || echo 0)"
 fr=$(fence_rules)
-n_allow=$(printf '%s\n' "$fr" | grep -c "^65000 ${CLIENT_A_IP}/32")
-n_drop=$(printf '%s\n' "$fr" | grep -c "^64999 0.0.0.0/0")
-assert "C4: fence installed in fw (allow ${CLIENT_A_IP}/32 pref 65000 x${n_allow}, drop 0/0 pref 64999 x${n_drop})" \
-    "$([[ "$n_allow" == 1 && "$n_drop" == 1 ]] && echo 1 || echo 0)"
+assert "C4: fence hidden from GET /config/firewall/all like every source-check rule ($(printf '%s' "$fr" | grep -c .) rows)" \
+    "$([[ -z "$fr" ]] && echo 1 || echo 0)"
 fw_before=$(metric_val loxilb_fw_drop_packets_total)
 oc=$(req_outcome l3h2 "${KV_PID}")
 assert "C4: other client fenced out at TC (outcome=${oc})" "$([[ "$oc" == timeout ]] && echo 1 || echo 0)"
@@ -238,13 +102,15 @@ assert "C4: fw drop counter moved (${fw_before}->${fw_after})" "$([[ "$fw_after"
 # the fence follows the rule: replace without allowedSources removes it entirely
 c=$(rule_replace "")
 sleep 3
-fr=$(fence_rules)
-assert "C4: fence removed with the sources (replace=$c, fence rows left: $(printf '%s' "$fr" | grep -c . ))" \
-    "$([[ -z "$fr" ]] && echo 1 || echo 0)"
+fx_a=$(loxilb_log_count "$FENCE_DEL_LOG")
+assert "C4: fence removed with the sources (replace=$c, fence deletes +$((fx_a - fx_b)))" \
+    "$([[ $((fx_a - fx_b)) == 2 ]] && echo 1 || echo 0)"
+# the delete must reach the kernel: a stale drop row in fw_v4_map kept the other client out
+# for the rest of the run before the pdi port-match fix (campaign finding K-P0b)
 oc=$(req_outcome l3h2 "${KV_PID}")
 assert "C4: other client served again (outcome=${oc})" "$([[ "$oc" == served ]] && echo 1 || echo 0)"
 # fence rules carry the source-check mark, so a snapshot must not contain them
-c=$(rule_replace "\"allowedSources\":[{\"prefix\":\"${CLIENT_A_IP}/32\"}]"); sleep 2
+c=$(rule_replace "" "\"allowedSources\":[{\"prefix\":\"${CLIENT_A_IP}/32\"}]"); sleep 2
 snap=$(llb_curl "${API}/config/snapshot?components=firewall" 2>/dev/null)
 soft "C4: snapshot firewall domain carries no fence rule" "$([[ "$snap" != *"${VIP}/32"* ]] && echo 1 || echo 0)"
 rule_replace "" >/dev/null; sleep 2
@@ -254,19 +120,18 @@ echo "### C5 connectionLimit=2 on the fullproxy rule: third client connection re
 c=$(rule_replace '"connectionLimit":2')
 assert "C5: replace with connectionLimit=2 -> 200 (got $c)" "$([[ $c == 200 ]] && echo 1 || echo 0)"
 sleep 3
-# two idle keep-alive holders (headers never completed, so the connections stay open)
-hold_conn() { $hexec l3h1 bash -c "exec 3<>/dev/tcp/${VIP}/${VPORT}; printf 'POST /v1/completions HTTP/1.1\r\nHost: x\r\n' >&3; sleep 25" >/dev/null 2>&1 & echo $!; }
-H1=$(hold_conn)
-H2=$(hold_conn)
-sleep 2
-act=$(lb_stats_active)
+# two idle keep-alive holders: each sends one complete routed request and then stays
+# silent (a partial-header holder is dropped by the header-completion deadline instead)
+H1=$(hold_request_conn l3h1)
+H2=$(hold_request_conn l3h1)
+act=$(wait_active 2)
 assert "C5: activeConnections reads the listener gauge (=2, got ${act})" "$([[ "$act" == 2 ]] && echo 1 || echo 0)"
 oc=$(req_outcome l3h1 "${KV_PID}")
 assert "C5: third connection refused at accept with a reset (outcome=${oc})" "$([[ "$oc" == reset ]] && echo 1 || echo 0)"
 oc2=$(req_outcome l3h2 "${KV_PID}")
 assert "C5: the limit is per rule, not per source (other client also refused: ${oc2})" "$([[ "$oc2" == reset ]] && echo 1 || echo 0)"
-pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1; kill $H1 $H2 >/dev/null 2>&1; sleep 3
-act=$(lb_stats_active)
+pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1; kill $H1 $H2 >/dev/null 2>&1; sleep 1
+act=$(wait_active 0)
 assert "C5: gauge released with the holders (=0, got ${act})" "$([[ "$act" == 0 ]] && echo 1 || echo 0)"
 kv_probe_a "C5 (after the holders closed, under the limit)"
 rule_replace "" >/dev/null; sleep 2
@@ -288,7 +153,8 @@ h_after=$(tier15_hits "${EP_A_IDX}")
 sel_after=$(metric_val 'loxilb_ai_pd_tier_selected_total')
 assert "C6: no tier selection and no Tier-1.5 hit for denied requests (sel ${sel_before}->${sel_after}, hits ${h_before}->${h_after})" \
     "$([[ "$h_after" == "$h_before" && "$sel_after" == "$sel_before" ]] && echo 1 || echo 0)"
-rule_replace "" >/dev/null; sleep 3
+# api_key_auth is kept by a replace that omits it (apiKeyAuthOnReplace): lift it explicitly
+rule_replace '"api_key_auth":"disabled"' >/dev/null; sleep 3
 kv_probe_a "C6 (after the policy is lifted)"
 
 # ── C7 capacity admission after selection (fc role gate) ───────────────────────────────────────
@@ -309,7 +175,8 @@ codes=$(cat "${CFGDIR}"/.c7-*.code | tr '\n' ' ')
 echo "  C7 concurrent codes: ${codes}"
 n429=$(grep -c '^429' "${CFGDIR}"/.c7-*.code 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')
 soft "C7: at least one capacity 429 observed (${n429})" "$([[ "$n429" -ge 1 ]] && echo 1 || echo 0)"
-rule_replace "" >/dev/null; sleep 3
+# fc_* fields are kept by a replace that omits them: lift explicitly (0 = process default)
+rule_replace '"fc_mode":"off","fc_prefill_max_inflight":0,"fc_max_queue_depth":0,"fc_max_queue_wait_ms":0' >/dev/null; sleep 3
 kv_probe_a "C7 (after the cap is lifted)"
 # a decode unit handed back that was never taken shows up as the >0 guard masking it
 n_spur=$(loxilb_log_count "PD_LOAD\] decode EP[0-9]+ unit release with zero gauge")
@@ -321,14 +188,19 @@ echo "### C8 keep-alive: request 2 with another user key does not inherit reques
 # must be routed by its own key. Before the fix, request 2's missing/different user was
 # overwritten by request 1's (has_user_id never reset) and bob rode alice's pin.
 sess_before=$(metric_val 'loxilb_ai_pd_tier_selected_total\{[^}]*tier="0"')
+# --next separates the two transfers: without it curl joins both -d bodies into one
+# (invalid JSON -> 503 no_route) and the test never exercises the keep-alive switch
 $hexec l3h1 curl -s --max-time 10 -o "${CFGDIR}/.c8.out" -w '%{http_code} ' \
     -X POST "http://${VIP}:${VPORT}/v1/completions" -H 'Content-Type: application/json' --data-binary "$(body_for "${KV_PID}" alice)" \
+    --next -s --max-time 10 -o "${CFGDIR}/.c8b.out" -w '%{http_code} ' \
     -X POST "http://${VIP}:${VPORT}/v1/completions" -H 'Content-Type: application/json' --data-binary "$(body_for "${KV_PID}" bob)" \
     >"${CFGDIR}/.c8.code" 2>/dev/null
 sess_after=$(metric_val 'loxilb_ai_pd_tier_selected_total\{[^}]*tier="0"')
 echo "  C8 codes: $(cat "${CFGDIR}/.c8.code")  tier0 selections ${sess_before}->${sess_after}"
 # bob's first request has no session of its own, so at most alice's second-request-free
 # count applies: a Tier-0 selection for bob (tier0 delta == 2) means bob inherited alice's key
+c8codes="$(cat "${CFGDIR}/.c8.code")"
+assert "C8: both keep-alive requests served (codes: ${c8codes})" "$([[ "$c8codes" == "200 200 " ]] && echo 1 || echo 0)"
 assert "C8: second user did not ride the first user's session (tier0 delta=$((sess_after - sess_before)) <= 1)" \
     "$([[ $((sess_after - sess_before)) -le 1 ]] && echo 1 || echo 0)"
 
@@ -351,7 +223,7 @@ docker rm -f llbpo >/dev/null 2>&1
 echo "### C10 XDP mode: the attach mode is logged and visible on the link"
 n_gen=$(loxilb_log_count "xdp: .* attached in generic \(skb\) mode")
 n_nat=$(loxilb_log_count "xdp: .* attached in native \(driver\) mode")
-n_fb=$(loxilb_log_count "native \(driver\) mode attach failed\|xdp attach with flags .* refused")
+n_fb=$(loxilb_log_count "(native \(driver\) mode attach failed|xdp attach with flags .* refused)")
 echo "  C10 attach log: generic=${n_gen} native=${n_nat} fallback=${n_fb} (XDP_NATIVE=${XDP_NATIVE:-unset})"
 assert "C10: every XDP attach reported its mode (generic+native >= 1)" "$([[ $((n_gen + n_nat)) -ge 1 ]] && echo 1 || echo 0)"
 if [[ -n "${XDP_NATIVE:-}" ]]; then
@@ -365,7 +237,8 @@ assert "C10: no silent attach failure (NOT attached lines=${n_fail})" "$([[ "$n_
 
 # ── C11 snapshot round trip ────────────────────────────────────────────────────────────────────
 echo "### C11 snapshot: persist -> restore keeps the rule's limits and fence"
-c=$(rule_replace "\"allowedSources\":[{\"prefix\":\"${CLIENT_A_IP}/32\"}],\"connectionLimit\":3"); sleep 2
+c=$(rule_replace '"connectionLimit":3' "\"allowedSources\":[{\"prefix\":\"${CLIENT_A_IP}/32\"}]"); sleep 2
+fa_b=$(loxilb_log_count "$FENCE_ALLOW_LOG"); fd_b=$(loxilb_log_count "$FENCE_DROP_LOG")
 c_p=$(rest_code POST /config/persist '{}')
 snapdoc="${CFGDIR}/.snapshot.json"
 llb_curl "${API}/config/snapshot" >"${snapdoc}" 2>/dev/null
@@ -378,13 +251,27 @@ for r in d.get('lbAttr',[]):
     s=r.get('serviceArguments',{})
     if s.get('externalIP')=='${VIP}' and s.get('port')==${VPORT}:
         print(s.get('connectionLimit',0), len(r.get('allowedSources') or [])); break" 2>/dev/null)
-fr=$(fence_rules)
-assert "C11: after persist(${c_p})/restore(${c_r}) rule reads connectionLimit=3 + 1 source (got '${rb}') and the fence is back ($(printf '%s' "$fr" | grep -c .) rows)" \
-    "$([[ "$rb" == "3 1" && $(printf '%s' "$fr" | grep -c .) == 2 ]] && echo 1 || echo 0)"
+fa_a=$(loxilb_log_count "$FENCE_ALLOW_LOG"); fd_a=$(loxilb_log_count "$FENCE_DROP_LOG")
+assert "C11: after persist(${c_p})/restore(${c_r}) rule reads connectionLimit=3 + 1 source (got '${rb}') and the fence was re-installed (allow +$((fa_a - fa_b)), drop +$((fd_a - fd_b)))" \
+    "$([[ "$rb" == "3 1" && $((fa_a - fa_b)) -ge 1 && $((fd_a - fd_b)) -ge 1 ]] && echo 1 || echo 0)"
 oc=$(req_outcome l3h2 "${KV_PID}")
 soft "C11: other client still fenced after restore (outcome=${oc})" "$([[ "$oc" == timeout ]] && echo 1 || echo 0)"
 rule_replace "" >/dev/null; sleep 2
-kv_probe_a "C11 (after restore, sources lifted)"
+# The restore contract for a profile-less KV-exact rule (see rule_recreate_fresh in lib.sh):
+# the rule comes back REQUIRES_MIGRATION — served through the normal tiers, exact tier fenced
+# (tokenize bridge answers NOT_READY, Tier-1.5 hits stay flat) — and a replace does not lift it.
+st=$(kv_status_states)
+assert "C11: restored profile-less rule reports REQUIRES_MIGRATION on kvexactstatus (got '${st}')" \
+    "$([[ "$st" == "REQUIRES_MIGRATION REQUIRES_MIGRATION" ]] && echo 1 || echo 0)"
+hb=$(tier15_hits "${EP_A_IDX}"); banner=$(req_banner l3h1 "${KV_PID}"); ha=$(tier15_hits "${EP_A_IDX}")
+assert "C11: restored rule still serves the allowed client through the normal tiers with the exact tier fenced (banner=${banner:-none}, hits ${hb}->${ha})" \
+    "$([[ "$banner" == serverD* && "$ha" -eq "$hb" ]] && echo 1 || echo 0)"
+rc=$(rule_recreate_fresh); sleep "${KV_WARMUP_SEC}"
+publish_prompt_to_ep "${KV_PID}" "${EP_A_IP}"
+st=$(kv_status_states)
+assert "C11: a fresh create (delete/create=${rc}) lifts the fence (status '${st}')" \
+    "$([[ "$st" != *REQUIRES_MIGRATION* && "$st" != unreadable* ]] && echo 1 || echo 0)"
+kv_probe_a "C11 (fresh rule after the restore)"
 
 # ── C12 regression: the C unit layers of the touched code ──────────────────────────────────────
 echo "### C12 unit layers: fe_limit + fc + kv-exact C units"
@@ -404,7 +291,7 @@ else
 fi
 
 for _pp in $(pgrep -f "${PUB_TAG}" 2>/dev/null); do kill "${_pp}" >/dev/null 2>&1 || true; done
-rest_code POST /config/securityrate "$sec_reset" >/dev/null 2>&1
+rest_code DELETE /config/securityrate >/dev/null 2>&1
 if [[ $code == 0 ]]; then
     echo "SCENARIO-security-kv-coexist [OK]"
 else

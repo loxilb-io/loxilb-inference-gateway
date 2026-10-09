@@ -70,19 +70,53 @@ POST /config/loadbalancer
 For a fullproxy rule this installs a per-VIP fence in the TC firewall (allow rules for the
 listed sources at preference 65000 and a catch-all drop at 64999, both scoped to
 `VIP/32:port`), so a SYN from any other source is dropped before the kernel socket. The
-fence is listed by `GET /config/firewall/all`, follows the rule's sources on replace,
-goes with the rule on delete, and is not part of configuration snapshots. User firewall
-rules at preference 64999 or above are evaluated before the fence; keep operator rules
-below that band.
+fence follows the rule's sources on replace, goes with the rule on delete, and is not
+part of configuration snapshots. Like every rule the gateway installs for a source check,
+it is hidden from `GET /config/firewall/all`; its install and delete are in the gateway
+log (`fw-rule added ... dst-<VIP>/32,...,dport-<port>,-allow|-drop`) and its drops count
+in `loxilb_fw_drop_packets_total`. User firewall rules at preference 64999 or above are
+evaluated before the fence; keep operator rules below that band.
 
 ## connectionLimit on a fullproxy rule
 
 `connectionLimit: N` on a fullproxy rule is enforced by the listener at accept: the
 (N+1)th concurrent client connection is reset immediately (an LLM client sees a refused
 connection in one round trip instead of a timeout) and counted in the loxilb log as
-`[FE_CONN_LIMIT]`. `GET .../stats` reports `activeConnections` from the same gauge. `0`
-is unlimited. Pair it with `fc_max_outstanding` / `fc_max_queue_depth` for request-level
+`[FE_CONN_LIMIT]`. `GET .../stats` reports `activeConnections` from the same gauge, with
+or without a limit (the gauge is kept for every fullproxy listener; a NAT rule has
+conntrack for this, a proxied flow has nothing else). `0` is unlimited: nothing is ever
+refused. Pair it with `fc_max_outstanding` / `fc_max_queue_depth` for request-level
 capacity, and with `LLB_PD_MAX_TOTAL_INFLIGHT` for the process-wide valve.
+
+## timeoutTcpInspect (header-completion deadline)
+
+A client that opens a connection and never completes its request headers (slowloris) is
+dropped once `timeoutTcpInspect` (ms, default 10000) has elapsed since its first header
+byte, whether it keeps trickling bytes or goes silent; the drop is counted in
+`loxilb_proxy_header_deadline_drops_total`. The deadline measures the header block only:
+it is keyed on the request's headers being complete, not on the `Host` header having been
+seen, so sending `Host:` first does not disarm it. It never bounds a body upload.
+
+## inactiveTimeOut (idle reap)
+
+A fullproxy rule's `inactiveTimeOut` (seconds) reaps a client connection that has been
+silent that long: the clock is armed at accept and restarted by every client byte and by
+every backend byte relayed to the client, so an idle keep-alive connection that completed
+its last request is closed by the gateway, not only by the client's own timer (log line
+`[IDLE_TIMEOUT] fd=<n>: idle=<s>s >= timeout=<s>s`). It is independent of the sticky-
+session / L7 member-data clock (`timeoutMemberData`), which only a routed request arms.
+`activeConnections` reflects the reap at the next stats refresh (10 s). When an L7 policy
+with `timeoutMemberData` is attached, that deadline governs the rule's connections instead
+of `inactiveTimeOut`.
+
+## KV-exact rules and `POST /config/restore`
+
+A KV-exact rule restored without a `kvModelProfile` comes back `REQUIRES_MIGRATION`
+(`GET .../kvexactstatus`): it is served through the normal routing tiers with the exact
+tier fenced, by contract. Attach a profile, or re-create the rule (the hosturl `DELETE`
+with `model_name`, then `POST`), to bring the exact tier back; a replace keeps the
+restored identity. Security settings (`securityrate`, ipfilter, firewall rules, the
+`allowedSources` fence) are re-applied to the datapath by the restore.
 
 ## Proxy-only mode
 

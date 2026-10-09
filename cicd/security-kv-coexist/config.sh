@@ -37,8 +37,9 @@ KV_MODEL="${KV_MODEL:-Qwen/Qwen3-0.6B}"
 export KV_MODEL
 
 # Prometheus collector on: the ipfilter / securityrate / firewall series are what the XDP
-# and TC halves of the checks read.
-extra_opts="-p"
+# and TC halves of the checks read. (--extra-args REPLACES extra_opts in spawn_docker_host,
+# so the -p rides in the same argument as the XDP flag below.)
+LLB_PROM_ARGS="-p"
 
 echo "#########################################"
 echo "Building the reflect-echo backend image"
@@ -55,7 +56,16 @@ LLB_XDP_ARGS=""
 if [[ -n "${XDP_NATIVE:-}" ]]; then
     LLB_XDP_ARGS="--xdp-native ${XDP_NATIVE}"
 fi
-spawn_docker_host --dock-type loxilb --dock-name llb1 --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -e LLB_KV_HASH_DEBUG=1" --extra-args "${LLB_XDP_ARGS}"
+# TOTAL_INFLIGHT=<n> arms the process-wide accept valve (LLB_PD_MAX_TOTAL_INFLIGHT) for
+# validation-ddos.sh D9; unset leaves the valve off (the default).
+LLB_VALVE_ENV=""
+if [[ -n "${TOTAL_INFLIGHT:-}" ]]; then
+    LLB_VALVE_ENV="-e LLB_PD_MAX_TOTAL_INFLIGHT=${TOTAL_INFLIGHT}"
+fi
+# Record the arm options for validation.sh / validation-ddos.sh (C10 native branch, D8 holder
+# count, D9): the validation scripts are usually started without the caller's env.
+printf 'XDP_NATIVE=%s\nTOTAL_INFLIGHT=%s\n' "${XDP_NATIVE:-}" "${TOTAL_INFLIGHT:-}" >"${CFGDIR}/.arm-env"
+spawn_docker_host --dock-type loxilb --dock-name llb1 --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -e LLB_KV_HASH_DEBUG=1 ${LLB_VALVE_ENV}" --extra-args "${LLB_PROM_ARGS} ${LLB_XDP_ARGS}"
 spawn_docker_host --dock-type host   --dock-name l3h1
 spawn_docker_host --dock-type host   --dock-name l3h2
 spawn_docker_host --dock-type reflect-echo --dock-name l3ep1 --docker-args "-e ECHO_NAME=serverP0"

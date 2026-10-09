@@ -16,8 +16,8 @@ delete_docker_host l3h1
 delete_docker_host l3h2
 for ep in l3ep1 l3ep2 l3ep3 l3ep4 l3ep5 l3ep6; do delete_docker_host $ep; done
 
-rm -f "$(dirname "$0")"/.kvpub-* "$(dirname "$0")"/.c7-* "$(dirname "$0")"/.c8.* \
-      "$(dirname "$0")"/.test_*.log >/dev/null 2>&1 || true
+rm -f "$(dirname "$0")"/.kvpub-* "$(dirname "$0")"/.c7-* "$(dirname "$0")"/.c8*.out "$(dirname "$0")"/.c8.* \
+      "$(dirname "$0")"/.test_*.log "$(dirname "$0")"/.arm-env >/dev/null 2>&1 || true
 
 echo "#########################################"
 echo "Deleted security-kv-coexist testbed (llb1, l3h1, l3h2, 6 EPs; publisher tag=${PUB_TAG} killed)"
