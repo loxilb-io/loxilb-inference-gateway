@@ -84,7 +84,10 @@ jobs:
         with:
           go-version: '>=1.18.0'
       - run: sudo apt-get update
-      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      # clang-14 explicitly: the eBPF build prefers it when present (common.mk), the
+      # container images are built with it, and the objects clang 18 (ubuntu-24.04's
+      # default) produces are refused by the runner's 6.17 kernel verifier (E2BIG).
+      - run: sudo apt-get -y install clang clang-14 llvm llvm-14 libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
       - name: Install libtokenizers (KV-router HF backend)
         run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - name: Install KV publisher python deps
