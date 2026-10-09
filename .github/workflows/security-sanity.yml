@@ -88,11 +88,14 @@ jobs:
       - name: Install libtokenizers (KV-router HF backend)
         run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - name: Install KV publisher python deps
-        # The pip self-upgrade is best-effort: on ubuntu-24.04 the Debian-managed pip has
-        # no RECORD file and refuses to uninstall itself, and the deps install fine with it.
+        # On ubuntu-24.04 the Debian-managed packages (pip itself, typing_extensions, ...)
+        # have no RECORD file, so pip cannot uninstall them for an upgrade: the self-upgrade
+        # is best-effort and the deps are overlaid with --ignore-installed. A venv is no
+        # answer here: the scenarios reach python3 through "sudo ip netns exec", which
+        # resets PATH to the system interpreter.
         run: |
           sudo python3 -m pip install --upgrade pip || sudo python3 -m pip install --break-system-packages --upgrade pip || true
-          sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages pyzmq msgpack cbor2 xxhash transformers
+          sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages --ignore-installed pyzmq msgpack cbor2 xxhash transformers
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
