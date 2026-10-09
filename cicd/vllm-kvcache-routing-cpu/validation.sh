@@ -2851,12 +2851,15 @@ else
     for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" hang >/dev/null || pd_pto_ok=0; done
     sleep 2
 
+    # `code` is the scenario's global exit accumulator (exit $code at the end); the POST helper
+    # echoes an HTTP status, so the stage's own result is kept in pto_code — an unprefixed
+    # `code=$(pd_pto_post ...)` left 200 in the exit status with every assertion green.
     for arm in "A:5" "B:" "C:7"; do
         label="${arm%%:*}"; sec="${arm#*:}"; want="${sec:-30}"
-        code=$(pd_pto_post "${sec}")
+        pto_code=$(pd_pto_post "${sec}")
         rb=$(pd_pto_readback)
-        echo "  ${label}: POST pd_prefill_timeout_sec=${sec:-<dropped>} -> HTTP ${code} ; read-back ${rb} (want ${sec:-absent})"
-        [[ "${code}" =~ ^2 ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} ${label}: POST answered ${code};"; }
+        echo "  ${label}: POST pd_prefill_timeout_sec=${sec:-<dropped>} -> HTTP ${pto_code} ; read-back ${rb} (want ${sec:-absent})"
+        [[ "${pto_code}" =~ ^2 ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} ${label}: POST answered ${pto_code};"; }
         [[ "${rb}" == "${sec:-absent}" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} ${label}: read-back ${rb};"; }
         b_this=$(dplog_count "timeout=${want}s"); b_all=$(dplog_count "${PD_PTO_LINE}")
         pd_pto_drive "${label}" "${pd_pto_out}"
@@ -2865,10 +2868,10 @@ else
     done
 
     # ---- D: a value over the bound is refused and the 7 stays in force -----
-    code=$(pd_pto_post 3601)
+    pto_code=$(pd_pto_post 3601)
     rb=$(pd_pto_readback)
-    echo "  D: POST pd_prefill_timeout_sec=3601 -> HTTP ${code} (want 400 or 422) ; read-back ${rb} (want 7)"
-    [[ "${code}" == "400" || "${code}" == "422" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} D: an out-of-range value answered ${code};"; }
+    echo "  D: POST pd_prefill_timeout_sec=3601 -> HTTP ${pto_code} (want 400 or 422) ; read-back ${rb} (want 7)"
+    [[ "${pto_code}" == "400" || "${pto_code}" == "422" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} D: an out-of-range value answered ${pto_code};"; }
     [[ "${rb}" == "7" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} D: the refused POST changed the rule (read-back ${rb});"; }
     b_this=$(dplog_count "timeout=7s"); b_all=$(dplog_count "${PD_PTO_LINE}")
     pd_pto_drive "D" "${pd_pto_out}"
@@ -2876,7 +2879,7 @@ else
     pd_pto_score "D" 7 "${pd_pto_out}" "${b_this}" "${b_all}"
 
     # ---- restore: default declaration, healthy backends, and it serves -----
-    code=$(pd_pto_post "")
+    pto_code=$(pd_pto_post "")
     for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
     sleep 3
     rb=$(pd_pto_readback)
@@ -2884,8 +2887,8 @@ else
         -H 'Content-Type: application/json' \
         -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"prefill timeout restore ${PD_PTO_STAMP}\",\"max_tokens\":8}" \
         "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null)
-    echo "  restore: POST -> HTTP ${code} ; read-back ${rb} (want absent) ; a request on healthy backends -> ${r_code} (want 200)"
-    [[ "${code}" =~ ^2 && "${rb}" == "absent" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} restore left the argument at ${rb} (HTTP ${code});"; }
+    echo "  restore: POST -> HTTP ${pto_code} ; read-back ${rb} (want absent) ; a request on healthy backends -> ${r_code} (want 200)"
+    [[ "${pto_code}" =~ ^2 && "${rb}" == "absent" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} restore left the argument at ${rb} (HTTP ${pto_code});"; }
     [[ "${r_code}" == "200" ]] || { pd_pto_ok=0; pd_pto_note="${pd_pto_note} the service did not serve after the restore (${r_code});"; }
 fi
 rm -f "${pd_pto_out}" 2>/dev/null || true

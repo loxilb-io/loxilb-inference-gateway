@@ -286,6 +286,7 @@ import (
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
+	opts "github.com/loxilb-io/loxilb/options"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
 	nlp "github.com/vishvananda/netlink"
@@ -653,6 +654,19 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 		cfg.have_noebpf = 1
 	} else {
 		cfg.have_noebpf = 0
+	}
+
+	// --xdp-native: native (driver) XDP on the listed interfaces, generic
+	// (skb) everywhere else. Set before any link is attached (NlpInit runs
+	// after this), so the first attach already honours it.
+	if !disBPF && opts.Opts.XdpNative != "" {
+		ifs := C.CString(opts.Opts.XdpNative)
+		if C.llb_dp_xdp_native_set(ifs) != 0 {
+			tk.LogIt(tk.LogError, "[DP] --xdp-native list too long, ignored\n")
+		} else {
+			tk.LogIt(tk.LogInfo, "[DP] xdp native (driver) mode requested on: %s\n", opts.Opts.XdpNative)
+		}
+		C.free(unsafe.Pointer(ifs))
 	}
 
 	cfg.nodenum = C.int(nodeNum)

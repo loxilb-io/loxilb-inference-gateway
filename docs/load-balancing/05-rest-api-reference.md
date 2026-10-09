@@ -48,10 +48,10 @@ IPv6 in the path: bracket the literal — `…/externalipaddress/[2001:db8:aa::1
 | `name` | string | ✅ | |
 | `sel` | int | ✅ | LB algorithm: `0` rr · `3` persist · `8` CHWBL · `10` wrr-hash (weighted CHWBL) |
 | `adminStateUp` | `*bool` | ✅ | absent→enabled; `false`→drain |
-| `connectionLimit` | uint32 | ✅ | per-rule concurrent ceiling; `0`=unlimited |
+| `connectionLimit` | uint32 | ✅ | per-rule concurrent ceiling; `0`=unlimited. NAT rules: refused by drop at SYN time in the datapath. Fullproxy (`mode:4`) rules: enforced by the listener at accept — the (N+1)th client connection is reset immediately — and read back as `activeConnections` in `/stats` from the same gauge |
 | `inactiveTimeOut` | uint32 | ✅ | seconds |
 | `probeRetries`, `probeTimeout`, `probereq`, `proberesp` | — | ✅ | health probe (`probereq`/`proberesp` are lowercase here; the camelCase `probeReq`/`probeResp` forms belong to the `/config/endpoint` model only) |
-| `allowedSources` | array | ✅ | |
+| `allowedSources` | array | ✅ | `[{"prefix":"<cidr>"}]`. NAT rules: fw mark + source check in the datapath. Fullproxy (`mode:4`) rules: a per-VIP TC firewall fence (`allow <cidr>→VIP/32:port` pref 65000 per source, `drop 0.0.0.0/0→VIP/32:port` pref 64999) so a non-allowed SYN never reaches the kernel socket; the fence follows the rule's sources on replace and goes with the rule on delete, and is excluded from snapshots like every auto-generated source-check rule. Refused with 400 in proxy-only mode (no datapath to enforce it) |
 | `projectId` | string | — | tenant/project; filterable |
 | `annotations` | map | — | opaque; ≤32 keys / ≤256-char values |
 | `timeoutMemberConnect` | uint32 (ms) | ✅ | |

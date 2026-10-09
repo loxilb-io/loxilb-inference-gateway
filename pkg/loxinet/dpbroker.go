@@ -1195,6 +1195,21 @@ func (dp *DpH) DpCtStatsRollup() {
 		}
 	}
 
+	// A fullproxy rule never enters nat_map, so nat_ep_map has nothing for it:
+	// the listener's own client gauge is its live count, and the count its
+	// connectionLimit is enforced against at accept (sockproxy fe_conns).
+	if mh.dpEbpf != nil {
+		for _, rule := range mh.zr.Rules.tables[RtLB].eMap {
+			if !lbRuleIsFullProxy(rule) {
+				continue
+			}
+			if st, ok := mh.dpEbpf.DpFeConnStatsGet(rule.tuples.l3Dst.addr.IP,
+				rule.tuples.l4Dst.valMin, uint8(rule.tuples.l4Prot.val)); ok {
+				rule.activeConns = uint64(st.conns)
+			}
+		}
+	}
+
 	// In-flight refinement: add the bytes of currently-live CTs on top of the cumulative totals so
 	// long-lived connections report progress before they tear down (closed flows are already in
 	// cum_bytes_in/out; live ones are not yet, so there is no double count).

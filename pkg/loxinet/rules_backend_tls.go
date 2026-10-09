@@ -227,6 +227,9 @@ func (R *RuleH) lbReplaceUndo(r *ruleEnt, u *lbReplaceUndo, activateProbe bool) 
 		R.deleteAllowedLbSrc(src.srcPref.String(), uint32(r.ruleNum))
 	}
 	r.srcList = srcs
+	if ferr := R.syncProxySrcFence(r); ferr != nil {
+		tk.LogIt(tk.LogError, "lb-rule %s proxy src-fence not restored: %v\n", r.tuples.String(), ferr)
+	}
 
 	if r.id != u.ent.id {
 		R.unregisterOpaqueID(r)
