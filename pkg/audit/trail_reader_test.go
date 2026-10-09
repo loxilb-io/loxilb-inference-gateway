@@ -447,10 +447,7 @@ func TestTrailReaderNeverReturnsATornLine(t *testing.T) {
 	}
 	want := recordLine("u1", 3, 40)
 	appendRaw(t, active, append(append([]byte(nil), want...), '\n'))
-	got := drain(t, r)
-	if len(got) != 1 || !bytes.Equal(got[0].Raw, want) {
-		t.Fatalf("after the cut-back: got %d records %q, want the one rewritten line", len(got), got)
-	}
+	sameLines(t, "after the cut-back", drain(t, r), [][]byte{want})
 }
 
 func TestTrailReaderLineLongerThanTheChunk(t *testing.T) {
