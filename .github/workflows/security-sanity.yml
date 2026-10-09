@@ -14,7 +14,9 @@ name: Security-Sanity-CI
 # Hosted runners attach XDP in generic (skb) mode on veth: the native-XDP arm is
 # workflow_dispatch only and needs a self-hosted runner with a real NIC. The burst
 # a hosted runner can generate is ~10 SYN/s through docker exec, which the scenario
-# thresholds are sized for.
+# thresholds are sized for. The scenarios run as root (their holders live under
+# "sudo ip netns exec"), bpftool is built from the libbpf release when the runner's
+# kernel has no linux-tools package, and the eBPF objects are built with clang-14.
 #
 # Paths: a datapath-only change arrives as a submodule pointer bump ('loxilb-ebpf'),
 # so the pointer is a trigger path here — a workflow that filters on pkg/** and api/**
@@ -55,6 +57,10 @@ on:
     - cron: '17 18 * * *'
   workflow_dispatch:
     inputs:
+      os:
+        description: 'Hosted runner image for the matrix (ubuntu-22.04 or ubuntu-24.04)'
+        required: false
+        default: 'ubuntu-22.04'
       runsOn:
         description: 'Runner label; a self-hosted label such as "large" for the native-XDP arm (real NIC)'
         required: false
@@ -70,7 +76,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        # ubuntu-24.04 is out of the push/PR/nightly matrix until the datapath program
+        # fits that runner's 6.17 azure kernel verifier: it is refused with E2BIG there
+        # even when built with clang-14, while the same objects load on 22.04 (6.8) and
+        # on real 24.04 hosts (6.8). A dispatch with os=ubuntu-24.04 still runs the leg.
+        os: ${{ fromJSON(github.event.inputs.os && format('["{0}"]', github.event.inputs.os) || '["ubuntu-22.04"]') }}
     runs-on: ${{ github.event.inputs.runsOn || matrix.os }}
     timeout-minutes: 90
     if: github.actor != 'dependabot[bot]'
