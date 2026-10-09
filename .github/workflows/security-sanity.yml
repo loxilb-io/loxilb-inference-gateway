@@ -88,8 +88,10 @@ jobs:
       - name: Install libtokenizers (KV-router HF backend)
         run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - name: Install KV publisher python deps
+        # The pip self-upgrade is best-effort: on ubuntu-24.04 the Debian-managed pip has
+        # no RECORD file and refuses to uninstall itself, and the deps install fine with it.
         run: |
-          sudo python3 -m pip install --upgrade pip || sudo python3 -m pip install --break-system-packages --upgrade pip
+          sudo python3 -m pip install --upgrade pip || sudo python3 -m pip install --break-system-packages --upgrade pip || true
           sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages pyzmq msgpack cbor2 xxhash transformers
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
@@ -114,12 +116,16 @@ jobs:
         run: |
           make -C loxilb-ebpf/common test_felimit test_fc test_kv test_aisec test_pdi
 
+      # The scenario scripts run as root, as their READMEs prescribe: their connection
+      # holders run under "sudo ip netns exec" and the scripts end them with pkill, which
+      # the unprivileged runner user cannot do to a root process (the holder then outlives
+      # the gauge wait and the next client is still refused).
       - name: ipfilter / firewall / securityrate (NAT service)
         run: |
           cd cicd/secfilter/
-          ./config.sh
-          ./validation.sh
-          ./rmconfig.sh
+          sudo -E env "PATH=$PATH" ./config.sh
+          sudo -E env "PATH=$PATH" ./validation.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
           cd -
 
       - name: Security controls x KV-exact routing — coexistence + DDoS matrices (generic XDP)
@@ -127,26 +133,26 @@ jobs:
           XDP_NATIVE: ${{ github.event.inputs.xdpNative }}
         run: |
           cd cicd/security-kv-coexist/
-          ./config.sh
-          ./validation.sh
-          ./validation-ddos.sh
-          ./rmconfig.sh
+          sudo -E env "PATH=$PATH" ./config.sh
+          sudo -E env "PATH=$PATH" ./validation.sh
+          sudo -E env "PATH=$PATH" ./validation-ddos.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
           cd -
 
       - name: Security controls x KV-exact routing — accept-valve arm (LLB_PD_MAX_TOTAL_INFLIGHT)
         run: |
           cd cicd/security-kv-coexist/
-          TOTAL_INFLIGHT=4 ./config.sh
-          ./validation-ddos.sh
-          ./rmconfig.sh
+          sudo -E env "PATH=$PATH" TOTAL_INFLIGHT=4 ./config.sh
+          sudo -E env "PATH=$PATH" ./validation-ddos.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
           cd -
 
       - name: L7 byte shaper on fullproxy rules
         run: |
           cd cicd/qos-fullproxy/
-          ./config.sh
-          ./validation.sh
-          ./rmconfig.sh
+          sudo -E env "PATH=$PATH" ./config.sh
+          sudo -E env "PATH=$PATH" ./validation.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
           cd -
 
       - name: Collect loxilb logs on failure
