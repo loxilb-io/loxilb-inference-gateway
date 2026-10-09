@@ -105,10 +105,14 @@ jobs:
           if ! bpftool version >/dev/null 2>&1; then
             sudo apt-get -y install zlib1g-dev
             wget -q https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz -O /tmp/bpftool.tar.gz
-            tar -xzf /tmp/bpftool.tar.gz -C /tmp && make -s -C /tmp/bpftool/src -j "$(nproc)" && sudo cp -f /tmp/bpftool/src/bpftool /usr/local/sbin/bpftool
+            tar -xzf /tmp/bpftool.tar.gz -C /tmp && make -s -C /tmp/bpftool/src -j "$(nproc)"
+            # where the Ubuntu wrapper looks for the running kernel's binary, and first on PATH
+            sudo install -D -m 0755 /tmp/bpftool/src/bpftool "/usr/lib/linux-tools/$(uname -r)/bpftool"
+            sudo install -m 0755 /tmp/bpftool/src/bpftool /usr/local/sbin/bpftool
             rm -rf /tmp/bpftool /tmp/bpftool.tar.gz
+            hash -r
           fi
-          bpftool version
+          command -v bpftool && bpftool version
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
