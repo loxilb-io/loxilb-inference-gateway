@@ -222,6 +222,11 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		"failed to add cors", "failed to delete cors", "filename is required", "file is empty",
 		"no configuration file provided", "invalid json format",
 		"is required",
+		// A kernel-enforced security control asked for in proxy-only mode
+		// (securityrate, ipfilter, firewall, allowedSources): the mode is the
+		// operator's choice and the control cannot be enforced in it, so the
+		// answer is a 400 that names the mode, never a silent "Success".
+		"unavailable in proxy-only mode",
 		// Create-time rule-validation rejections. These are addressed to the
 		// operator who wrote the rule — the reason ("pd-bootstrap-port
 		// requires pd_disagg_mode=true and kv-engine-type sglang") IS the

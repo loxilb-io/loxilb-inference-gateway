@@ -43,6 +43,7 @@ var Opts struct {
 	PassiveEPProbe     bool   `long:"passive-probe" description:"Enable passive liveness probes(experimental)"`
 	RssEnable          bool   `long:"rss-enable" description:"Enable rss optimization(experimental)"`
 	EgrHooks           bool   `long:"egr-hooks" description:"Enable eBPF egress hooks(experimental)"`
+	XdpNative          string `long:"xdp-native" description:"Interfaces to attach the XDP program in native (driver) mode on, comma-separated or 'all'; the default generic (skb) mode needs no driver support. An interface whose driver refuses native mode falls back to generic with a warning" default:"" env:"LOXILB_XDP_NATIVE"`
 	BgpPeerMode        bool   `short:"r" long:"peer" description:"Run loxilb with goBGP only, no Datapath"`
 	BlackList          string `long:"blacklist" description:"Regex string of blacklisted ports" default:"none"`
 	RPC                string `long:"rpc" description:"RPC mode for syncing - netrpc or grpc" default:"netrpc"`

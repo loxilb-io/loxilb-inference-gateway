@@ -661,6 +661,7 @@ type ruleEnt struct {
 	mtlsFrontend                *cmn.MTLSFrontendConfig // mTLS frontend configuration
 	mtlsBackend                 *cmn.MTLSBackendConfig  // mTLS backend configuration
 	srcList                     []*allowedSrcElem
+	proxySrcFw                  []cmn.FwRuleArg // fullproxy per-VIP source fence currently installed in the TC firewall (see syncProxySrcFence)
 	locIPs                      map[string]struct{}
 	hwOffload                   bool              // FwRuleArg.HwOffload mirror, plumbed through Fw2DP to FwDpWorkQ.HwOffload
 	id                          string            // stable opaque id (client-supplied verbatim, or minted UUIDv4)
@@ -2094,6 +2095,145 @@ func (R *RuleH) deleteAllowedLbSrc(CIDR string, lbMark uint32) error {
 	}
 
 	return nil
+}
+
+// Fullproxy source fence
+//
+// A mode=4 (fullproxy) rule never enters nat_map: llb_add_map_elem sends
+// DP_SET_FULLPROXY to proxy_add_entry() and the sockproxy terminates the
+// connection in userspace. The allowedSources check of a NAT rule is a two-step
+// mechanism — the pref-0 "allow src→0/0" fw rule installed by addAllowedLbSrc
+// marks the packet, and dp_do_nat refuses an unmarked packet under
+// NAT_LB_OP_CHKSRC — whose second step a fullproxy rule can never reach, so the
+// field was accepted and silently not enforced. Admission has to stay in front
+// of the kernel socket (a non-allowed source must not consume listen backlog,
+// syncookies, accept, a TLS handshake or a proxy context), so a fullproxy rule
+// carries a per-VIP fence in the TC firewall instead:
+//
+//	allow src=<cidr> dst=<vip>/32 dport=<port> proto=<p>  pref 65000  (one per CIDR)
+//	drop  src=0/0    dst=<vip>/32 dport=<port> proto=<p>  pref 64999
+//
+// pdi_rule_insert orders by descending pref (equal pref FIFO) and the datapath
+// takes the first match, so the fence always precedes the pref-0 generic allow
+// rules NAT rules use and never affects them (the destination differs). The
+// pair carries SrcChkFwMark so snapshots skip it like every other auto-generated
+// source-check rule (pkg/snapshot filterSrcChkRules). NAT rules keep the mark +
+// CHKSRC path untouched. The datapath proxies IPv4 only, so a v6 rule gets no
+// fence. Every fw add/delete flushes the conntrack table, exactly as the
+// existing allowedSources plumbing does.
+const (
+	lbProxySrcFenceAllowPref uint32 = 65000
+	lbProxySrcFenceDropPref  uint32 = 64999
+)
+
+func lbRuleIsFullProxy(r *ruleEnt) bool {
+	at, ok := r.act.action.(*ruleLBActs)
+	return ok && at.mode == cmn.LBModeFullProxy
+}
+
+// lbProxySrcFenceWanted lists the fence a rule needs as it stands now: nothing
+// unless it is a fullproxy rule with allowed sources.
+func lbProxySrcFenceWanted(r *ruleEnt) []cmn.FwRuleArg {
+	if !lbRuleIsFullProxy(r) || len(r.srcList) == 0 {
+		return nil
+	}
+	vip := r.tuples.l3Dst.addr.IP
+	if vip == nil || tk.IsNetIPv6(vip.String()) {
+		return nil
+	}
+	dst := vip.String() + "/32"
+	pmin, pmax := r.tuples.l4Dst.valMin, r.tuples.l4Dst.valMax
+	if pmax < pmin {
+		pmax = pmin
+	}
+	proto := r.tuples.l4Prot.val
+	want := make([]cmn.FwRuleArg, 0, len(r.srcList)+1)
+	for _, src := range r.srcList {
+		want = append(want, cmn.FwRuleArg{SrcIP: src.srcPref.String(), DstIP: dst,
+			DstPortMin: pmin, DstPortMax: pmax, Proto: proto, Pref: lbProxySrcFenceAllowPref})
+	}
+	want = append(want, cmn.FwRuleArg{SrcIP: "0.0.0.0/0", DstIP: dst,
+		DstPortMin: pmin, DstPortMax: pmax, Proto: proto, Pref: lbProxySrcFenceDropPref})
+	return want
+}
+
+// lbProxySrcFencePlan turns the installed fence and the wanted one into the
+// firewall calls that get from one to the other: adds come allows first and
+// the drop last, deletes come the drop first and the allows last, so a source
+// that is allowed throughout is never fenced out in between.
+func lbProxySrcFencePlan(have, want []cmn.FwRuleArg) (adds, dels []cmn.FwRuleArg) {
+	in := func(fw cmn.FwRuleArg, set []cmn.FwRuleArg) bool {
+		for _, h := range set {
+			if h == fw {
+				return true
+			}
+		}
+		return false
+	}
+	isDrop := func(fw cmn.FwRuleArg) bool { return fw.Pref == lbProxySrcFenceDropPref }
+	for pass := 0; pass < 2; pass++ {
+		for _, fw := range want {
+			if isDrop(fw) == (pass == 0) || in(fw, have) {
+				continue
+			}
+			adds = append(adds, fw)
+		}
+		for _, fw := range have {
+			if isDrop(fw) != (pass == 0) || in(fw, want) {
+				continue
+			}
+			dels = append(dels, fw)
+		}
+	}
+	return adds, dels
+}
+
+// syncProxySrcFence makes the installed fence of a rule match what it needs
+// now (lbProxySrcFenceWanted), in the order lbProxySrcFencePlan gives. It
+// returns the first error; the fence is left as far as it got and
+// r.proxySrcFw records exactly what is installed, so a retry or the rule's
+// deletion finishes the job.
+func (R *RuleH) syncProxySrcFence(r *ruleEnt) error {
+	want := lbProxySrcFenceWanted(r)
+	adds, dels := lbProxySrcFencePlan(r.proxySrcFw, want)
+	have := append([]cmn.FwRuleArg(nil), r.proxySrcFw...)
+	var firstErr error
+
+	for _, fw := range adds {
+		isDrop := fw.Pref == lbProxySrcFenceDropPref
+		opts := cmn.FwOptArg{Allow: !isDrop, Drop: isDrop, Mark: SrcChkFwMark}
+		if _, err := R.AddFwRule(fw, opts); err != nil && !strings.Contains(err.Error(), "fwrule-exists") {
+			tk.LogIt(tk.LogError, "lb-rule %s proxy src-fence add %s->%s pref %d failed: %v\n",
+				r.tuples.String(), fw.SrcIP, fw.DstIP, fw.Pref, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("proxy src-fence add failed: %w", err)
+			}
+			continue
+		}
+		have = append(have, fw)
+	}
+	for _, fw := range dels {
+		if _, err := R.DeleteFwRule(fw); err != nil {
+			tk.LogIt(tk.LogError, "lb-rule %s proxy src-fence del %s->%s pref %d failed: %v\n",
+				r.tuples.String(), fw.SrcIP, fw.DstIP, fw.Pref, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("proxy src-fence del failed: %w", err)
+			}
+			continue
+		}
+		for i := range have {
+			if have[i] == fw {
+				have = append(have[:i], have[i+1:]...)
+				break
+			}
+		}
+	}
+	r.proxySrcFw = have
+	if len(want) > 0 && firstErr == nil {
+		tk.LogIt(tk.LogInfo, "lb-rule %s proxy src-fence: %d allow + drop on %s\n",
+			r.tuples.String(), len(want)-1, want[0].DstIP)
+	}
+	return firstErr
 }
 
 func (R *RuleH) addLbRuleWithFW(Dst string, dPortMin, dPortMax uint16, proto uint8, lbMark uint32) error {
@@ -3922,6 +4062,12 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	if err := lbTLSCiphersErr(&serv); err != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
 	}
+	// allowedSources is enforced by the eBPF datapath (NAT: fw mark +
+	// CHKSRC; fullproxy: the TC source fence). Proxy-only has neither, and a
+	// restriction that is stored but not enforced must not look configured.
+	if mh.disBPF && len(allowedSources) > 0 {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: errors.New("allowedSources is unavailable in proxy-only mode (no eBPF datapath to enforce it)")}
+	}
 
 	// Validate service args
 	service := ""
@@ -4611,6 +4757,24 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			R.deleteAllowedLbSrc(srcElem.srcPref.String(), uint32(eRule.ruleNum))
 		}
 
+		// The fullproxy fence follows the new source list. A fence the
+		// firewall refuses is as fatal as a source it refuses: the rule goes
+		// back to the sources it had, fence included.
+		if ferr := R.syncProxySrcFence(eRule); ferr != nil {
+			for _, src := range eRule.srcList {
+				R.deleteAllowedLbSrc(src.srcPref.String(), uint32(eRule.ruleNum))
+			}
+			eRule.srcList = nil
+			for _, src := range eSrcList {
+				if srcElem, serr := R.addAllowedLbSrc(src.srcPref.String(), uint32(eRule.ruleNum)); serr == nil {
+					eRule.srcList = append(eRule.srcList, srcElem)
+				}
+			}
+			R.syncProxySrcFence(eRule)
+			tk.LogIt(tk.LogError, "lb-rule - %s:%s proxy src-fence error\n", eRule.tuples.String(), eRule.act.String())
+			return RuleAllocErr, fmt.Errorf("rule-allowed-src error: %w", ferr)
+		}
+
 		// A probe is registered under the rule's probe settings and the
 		// endpoint's probe address. The endpoints for which either changes
 		// are noted as the rule has them now, with the settings they were
@@ -5120,6 +5284,16 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 		r.srcList = append(r.srcList, srcElem)
 	}
+	if ferr := R.syncProxySrcFence(r); ferr != nil {
+		R.tables[RtLB].Mark.ReleaseMarker(r.ruleNum)
+		for _, src := range r.srcList {
+			R.deleteAllowedLbSrc(src.srcPref.String(), uint32(r.ruleNum))
+		}
+		r.srcList = nil
+		R.syncProxySrcFence(r)
+		tk.LogIt(tk.LogError, "lb-rule - %s:%s proxy src-fence error\n", r.tuples.String(), r.act.String())
+		return RuleAllocErr, fmt.Errorf("rule-allowed-src error: %w", ferr)
+	}
 	r.sT = time.Now()
 	r.iTO = serv.InactiveTimeout
 	r.bgp = serv.Bgp
@@ -5517,6 +5691,8 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 		R.deleteAllowedLbSrc(srcElem.srcPref.String(), uint32(rule.ruleNum))
 	}
 	rule.srcList = nil
+	// drop first, then the allows: the fence never closes on its own
+	R.syncProxySrcFence(rule)
 
 	delete(R.tables[RtLB].eMap, rt.ruleKey())
 	// drop the opaque-id index entry alongside the rule.

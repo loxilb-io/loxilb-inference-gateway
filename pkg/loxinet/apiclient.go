@@ -837,6 +837,12 @@ func (na *NetAPIStruct) NetFwRuleAdd(fm *cmn.FwRuleMod) (int, error) {
 	if na.BgpPeerMode {
 		return RuleTupleErr, errors.New("running in bgp only mode")
 	}
+	// Proxy-only attaches no TC program: the datapath add is a no-op that
+	// used to report success while the rule was listed as if it enforced.
+	// Refuse, as securityrate already does, rather than look configured.
+	if mh.disBPF {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: errors.New("firewall rules are unavailable in proxy-only mode (no eBPF datapath to enforce them)")}
+	}
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 
@@ -860,6 +866,12 @@ func (na *NetAPIStruct) NetFwRuleDel(fm *cmn.FwRuleMod) (int, error) {
 func (na *NetAPIStruct) NetIPFilterAdd(fm *cmn.IPFilterMod) (int, error) {
 	if na.BgpPeerMode {
 		return -1, errors.New("running in bgp only mode")
+	}
+	// Proxy-only attaches no XDP program and never attaches the filter maps:
+	// the datapath add returned 0 without programming anything and GET then
+	// showed an empty list. Refuse, as securityrate already does.
+	if mh.disBPF {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: errors.New("ip filter rules are unavailable in proxy-only mode (no eBPF datapath to enforce them)")}
 	}
 
 	// Validate filter type
