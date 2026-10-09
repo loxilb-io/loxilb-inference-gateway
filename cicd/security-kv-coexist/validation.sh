@@ -160,7 +160,7 @@ oc=$(req_outcome l3h1 "${KV_PID}")
 assert "C5: third connection refused at accept with a reset (outcome=${oc})" "$([[ "$oc" == reset ]] && echo 1 || echo 0)"
 oc2=$(req_outcome l3h2 "${KV_PID}")
 assert "C5: the limit is per rule, not per source (other client also refused: ${oc2})" "$([[ "$oc2" == reset ]] && echo 1 || echo 0)"
-pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1; kill $H1 $H2 >/dev/null 2>&1; sleep 1
+end_holders l3h1 $H1 $H2; sleep 1
 act=$(wait_active 0)
 assert "C5: gauge released with the holders (=0, got ${act})" "$([[ "$act" == 0 ]] && echo 1 || echo 0)"
 kv_probe_a "C5 (after the holders closed, under the limit)"

@@ -184,7 +184,7 @@ hd_a=$(wait_metric_ge loxilb_proxy_header_deadline_drops_total $((hd_b + n_hold)
 assert "D8: header deadline drops moved by >=${n_hold} ($(delta $hd_b $hd_a))" "$([[ $(delta $hd_b $hd_a) -ge "$n_hold" ]] && echo 1 || echo 0)"
 act=$(wait_active 0)
 assert "D8: holders gone from the listener gauge (activeConnections=${act})" "$([[ "$act" == 0 ]] && echo 1 || echo 0)"
-pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1
+end_holders l3h2
 rule_replace "" >/dev/null; sleep 2
 
 # ── D9 process accept valve (only when armed) ──────────────────────────────────────────────────
@@ -200,7 +200,7 @@ if [[ -n "${TOTAL_INFLIGHT:-}" ]]; then
     sleep 11
     ab_a=$(metric_val loxilb_proxy_accept_blocked_total)
     assert "D9: accept_blocked moved ($(delta $ab_b $ab_a))" "$([[ $ab_a -gt $ab_b ]] && echo 1 || echo 0)"
-    pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1; sleep 3
+    end_holders l3h2; sleep 3
     kv_probe_a "D9 (valve released)"
 else
     soft "D9: skipped — run config.sh with TOTAL_INFLIGHT=4 for this arm" 1
@@ -222,7 +222,7 @@ act1=$(wait_active 1 25); act2=$(wait_active 0 40)
 it_a=$(dp_log_count "IDLE_TIMEOUT")
 assert "D10: keep-alive connection counted then reaped after 22s idle (${act1} -> ${act2}; gateway IDLE_TIMEOUT lines +$((it_a - it_b)))" \
     "$([[ "$act1" -ge 1 && "$act2" == 0 && $((it_a - it_b)) -ge 1 ]] && echo 1 || echo 0)"
-pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1; kill "$H10" >/dev/null 2>&1
+end_holders l3h2 "$H10"
 rule_replace "" >/dev/null; sleep 2
 
 # ── D11 oversize body ──────────────────────────────────────────────────────────────────────────
@@ -265,7 +265,7 @@ sec_off
 kv_probe_a "D13 (after the flood)"
 
 for _pp in $(pgrep -f "${PUB_TAG}" 2>/dev/null); do kill "${_pp}" >/dev/null 2>&1 || true; done
-pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1
+end_holders l3h1; end_holders l3h2
 sec_off
 if [[ $code == 0 ]]; then echo "SCENARIO-security-kv-coexist-ddos [OK]"; else echo "SCENARIO-security-kv-coexist-ddos [FAILED]"; fi
 exit $code
