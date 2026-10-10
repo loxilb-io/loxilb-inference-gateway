@@ -148,7 +148,27 @@ create_lb_rule llb1 10.10.10.254 --tcp=2024:8081 --endpoints=32.32.32.1:1 --name
 $hexec l3h1 curl -s -X POST http://10.10.10.254:11111/netlox/v1/config/metrics >/dev/null
 
 ## ── Prometheus + Grafana (CI profile) ───────────────────────────────────────
-LLB1_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' llb1)
+# llb1's address on docker's default bridge, which Prometheus on the host
+# network can reach. The top-level .NetworkSettings.IPAddress is that same
+# address, but Docker 29 (API 1.52) no longer reports it, and an empty answer
+# here used to become the scrape target ":11111". The per-network field has
+# carried it since Docker 1.9 (API 1.21), so read that first; then the first
+# address of any network the container is on (a daemon whose default network is
+# not "bridge"); then the legacy field. Only a dotted quad counts: Docker 29
+# prints a network that has no address as "invalid IP", older daemons as an
+# empty string. Nothing at all is a hard stop.
+first_ipv4() { tr ' ' '\n' | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
+LLB1_IP=$(docker inspect -f '{{with index .NetworkSettings.Networks "bridge"}}{{.IPAddress}}{{end}}' llb1 2>/dev/null | first_ipv4)
+if [ -z "$LLB1_IP" ]; then
+  LLB1_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' llb1 2>/dev/null | first_ipv4)
+fi
+if [ -z "$LLB1_IP" ]; then
+  LLB1_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' llb1 2>/dev/null | first_ipv4)
+fi
+if [ -z "$LLB1_IP" ]; then
+  echo "FATAL: docker inspect gives no address for llb1; Prometheus would have no scrape target"
+  exit 1
+fi
 echo "llb1 bridge IP: $LLB1_IP"
 
 # CI scrape config = the shipped one with the target repointed at llb1.
