@@ -1,0 +1,204 @@
+name: Security-Sanity-CI
+
+# The security controls of the gateway, built from THIS change (Go + eBPF overlaid
+# onto the container image, as ai-gateway-sanity does) and driven against the KV-exact
+# fullproxy service with local echo backends. No GPU, no cloud, no third-party service:
+#
+#   cicd/secfilter             ipfilter / firewall / securityrate on a NAT service
+#   cicd/security-kv-coexist   every control switched on in front of a KV-exact P/D
+#                              fullproxy service — validation.sh (coexistence matrix)
+#                              and validation-ddos.sh (DDoS option matrix), generic-XDP
+#                              arm and the accept-valve arm
+#   cicd/qos-fullproxy         the L7 byte shaper on fullproxy rules
+#
+# Hosted runners attach XDP in generic (skb) mode on veth: the native-XDP arm is
+# workflow_dispatch only and needs a self-hosted runner with a real NIC. The burst
+# a hosted runner can generate is ~10 SYN/s through docker exec, which the scenario
+# thresholds are sized for. The scenarios run as root (their holders live under
+# "sudo ip netns exec"), bpftool is built from the libbpf release when the runner's
+# kernel has no linux-tools package, and the eBPF objects are built with clang-14.
+#
+# Paths: a datapath-only change arrives as a submodule pointer bump ('loxilb-ebpf'),
+# so the pointer is a trigger path here — a workflow that filters on pkg/** and api/**
+# alone never sees it.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'loxilb-ebpf'
+      - 'pkg/**'
+      - 'api/**'
+      - 'options/**'
+      - 'cicd/common.sh'
+      - 'cicd/common/**'
+      - 'cicd/secfilter/**'
+      - 'cicd/security-kv-coexist/**'
+      - 'cicd/qos-fullproxy/**'
+      - 'cicd/vllm-kvcache-routing-cpu/kv_event_publisher.py'
+      - '.github/workflows/security-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'loxilb-ebpf'
+      - 'pkg/**'
+      - 'api/**'
+      - 'options/**'
+      - 'cicd/common.sh'
+      - 'cicd/common/**'
+      - 'cicd/secfilter/**'
+      - 'cicd/security-kv-coexist/**'
+      - 'cicd/qos-fullproxy/**'
+      - 'cicd/vllm-kvcache-routing-cpu/kv_event_publisher.py'
+      - '.github/workflows/security-sanity.yml'
+  schedule:
+    # nightly on main: catches drift from runner kernels and image rebuilds
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'Hosted runner image for the matrix (ubuntu-22.04 or ubuntu-24.04)'
+        required: false
+        default: 'ubuntu-22.04'
+      runsOn:
+        description: 'Runner label; a self-hosted label such as "large" for the native-XDP arm (real NIC)'
+        required: false
+        default: ''
+      xdpNative:
+        description: 'XDP_NATIVE value for the native arm (empty = generic only)'
+        required: false
+        default: ''
+
+jobs:
+  security-sanity:
+    name: security-sanity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04 is out of the push/PR/nightly matrix until the datapath program
+        # fits that runner's 6.17 azure kernel verifier: it is refused with E2BIG there
+        # even when built with clang-14, while the same objects load on 22.04 (6.8) and
+        # on real 24.04 hosts (6.8). A dispatch with os=ubuntu-24.04 still runs the leg.
+        os: ${{ fromJSON(github.event.inputs.os && format('["{0}"]', github.event.inputs.os) || '["ubuntu-22.04"]') }}
+    runs-on: ${{ github.event.inputs.runsOn || matrix.os }}
+    timeout-minutes: 90
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      # clang-14 explicitly: the eBPF build prefers it when present (common.mk), the
+      # container images are built with it, and the objects clang 18 (ubuntu-24.04's
+      # default) produces are refused by the runner's 6.17 kernel verifier (E2BIG).
+      - run: sudo apt-get -y install clang clang-14 llvm llvm-14 libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (KV-router HF backend)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - name: Install KV publisher python deps
+        # On ubuntu-24.04 the Debian-managed packages (pip itself, typing_extensions, ...)
+        # have no RECORD file, so pip cannot uninstall them for an upgrade: the self-upgrade
+        # is best-effort and the deps are overlaid with --ignore-installed. A venv is no
+        # answer here: the scenarios reach python3 through "sudo ip netns exec", which
+        # resets PATH to the system interpreter.
+        run: |
+          sudo python3 -m pip install --upgrade pip || sudo python3 -m pip install --break-system-packages --upgrade pip || true
+          sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages --ignore-installed pyzmq msgpack cbor2 xxhash transformers
+      # The runner's kernel can be newer than the linux-tools packages in its archive
+      # (ubuntu-24.04: 6.17 azure, no linux-tools for it), and then the bpftool wrapper
+      # has no binary to run while the eBPF build needs one for vmlinux.h. Build the same
+      # bpftool the container images carry (libbpf's v7.2.0 release) when that happens.
+      - name: bpftool for the running kernel
+        run: |
+          if ! bpftool version >/dev/null 2>&1; then
+            sudo apt-get -y install zlib1g-dev
+            wget -q https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz -O /tmp/bpftool.tar.gz
+            tar -xzf /tmp/bpftool.tar.gz -C /tmp && make -s -C /tmp/bpftool/src -j "$(nproc)"
+            # where the Ubuntu wrapper looks for the running kernel's binary, and first on PATH
+            sudo install -D -m 0755 /tmp/bpftool/src/bpftool "/usr/lib/linux-tools/$(uname -r)/bpftool"
+            sudo install -m 0755 /tmp/bpftool/src/bpftool /usr/local/sbin/bpftool
+            rm -rf /tmp/bpftool /tmp/bpftool.tar.gz
+            hash -r
+          fi
+          command -v bpftool && bpftool version
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      # The :latest image is the base; the binary built from this change is overlaid
+      # (make docker-cp) so every scenario below runs the change, not the published image.
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: bash cicd/common/reflect-echo/docker-build.sh
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: C unit layers of the security controls
+        run: |
+          make -C loxilb-ebpf/common test_felimit test_fc test_kv test_aisec test_pdi
+
+      # The scenario scripts run as root, as their READMEs prescribe: their connection
+      # holders run under "sudo ip netns exec" and the scripts end them with pkill, which
+      # the unprivileged runner user cannot do to a root process (the holder then outlives
+      # the gauge wait and the next client is still refused).
+      - name: ipfilter / firewall / securityrate (NAT service)
+        run: |
+          cd cicd/secfilter/
+          sudo -E env "PATH=$PATH" ./config.sh
+          sudo -E env "PATH=$PATH" ./validation.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
+          cd -
+
+      - name: Security controls x KV-exact routing — coexistence + DDoS matrices (generic XDP)
+        env:
+          XDP_NATIVE: ${{ github.event.inputs.xdpNative }}
+        run: |
+          cd cicd/security-kv-coexist/
+          sudo -E env "PATH=$PATH" ./config.sh
+          sudo -E env "PATH=$PATH" ./validation.sh
+          sudo -E env "PATH=$PATH" ./validation-ddos.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
+          cd -
+
+      - name: Security controls x KV-exact routing — accept-valve arm (LLB_PD_MAX_TOTAL_INFLIGHT)
+        run: |
+          cd cicd/security-kv-coexist/
+          sudo -E env "PATH=$PATH" TOTAL_INFLIGHT=4 ./config.sh
+          sudo -E env "PATH=$PATH" ./validation-ddos.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
+          cd -
+
+      - name: L7 byte shaper on fullproxy rules
+        run: |
+          cd cicd/qos-fullproxy/
+          sudo -E env "PATH=$PATH" ./config.sh
+          sudo -E env "PATH=$PATH" ./validation.sh
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
+          cd -
+
+      - name: Collect loxilb logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/ci-logs
+          for c in $(docker ps -a --format '{{.Names}}' | grep -E '^llb'); do
+            docker logs "$c" > "/tmp/ci-logs/$c.log" 2>&1 || true
+            docker exec "$c" sh -c 'cat /var/log/loxilb*.log 2>/dev/null' > "/tmp/ci-logs/$c-dp.log" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: security-sanity-logs-${{ matrix.os }}
+          path: /tmp/ci-logs
+      - run: echo "Security sanity complete"

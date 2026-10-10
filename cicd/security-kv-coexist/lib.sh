@@ -201,6 +201,19 @@ sys.stdout.write('POST /v1/completions HTTP/1.1\\r\\nHost: ${VIP}:${VPORT}\\r\\n
     $hexec "$ns" bash -c "exec 3<>/dev/tcp/${VIP}/${VPORT}; cat '${req}' >&3; sleep ${secs}" >/dev/null 2>&1 &
     echo $!
 }
+# end every connection holder of a client namespace. The holder's bash execs its trailing
+# sleep in place, so a pkill on the "exec 3<>" pattern reaches only the sudo wrapper, and
+# sudo 1.9.9 (ubuntu-22.04) does not pass that signal on to its command: the sleep keeps the
+# socket open until it expires and the listener still counts it. The namespace's pid list
+# reaches the command itself whatever wraps it; a client namespace runs nothing else at
+# these points (the publisher lives in the endpoint namespace).
+end_holders() {   # end_holders <netns> [wrapper pids...]
+    local ns="$1" p; shift
+    for p in $(sudo ip netns pids "$ns" 2>/dev/null); do sudo kill "$p" >/dev/null 2>&1; done
+    [[ $# -gt 0 ]] && kill "$@" >/dev/null 2>&1
+    pkill -f "exec 3<>/dev/tcp/${VIP}/${VPORT}" >/dev/null 2>&1
+    return 0
+}
 fence_rules() {   # the fw rules of the VIP fence as GET /config/firewall/all shows them: "<pref> <src>" per line
     llb_curl "${API}/config/firewall/all" 2>/dev/null | python3 -c "import sys,json
 try:
