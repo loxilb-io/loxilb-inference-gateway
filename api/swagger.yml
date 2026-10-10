@@ -4798,7 +4798,7 @@ paths:
   '/config/securityrate':
     post:
       summary: Configure unified security rate limiting
-      description: "Replace SYN, connection-SYN, and UDP rate configuration and the security-rate whitelist. Supply all required flags and thresholds; at least one protection must be enabled. Omitted whitelist clears the previous list. Numeric and relational limits are described on the configuration model. Programming is not atomic: errors can follow partial datapath changes. Explicit cookieThreshold zero becomes 50 in the datapath, and cookie telemetry does not implement a SYN-cookie exchange."
+      description: "Replace SYN, connection-SYN, and UDP rate configuration and the security-rate whitelist. Supply all required flags and thresholds; at least one per-source protection or positive aggregate budget must be enabled. Omitted whitelist clears the previous list. Numeric and relational limits are described on the configuration model. Programming is not atomic: errors can follow partial datapath changes. Explicit cookieThreshold zero becomes 50 in the datapath, and cookie telemetry does not implement a SYN-cookie exchange."
       parameters:
         - name: attr
           in: body
@@ -4815,6 +4815,15 @@ paths:
           description: Malformed arguments for API call
           schema:
             $ref: '#/definitions/Error'
+        '422':
+          description: Schema validation rejected the request before datapath mutation
+          schema:
+            type: object
+            properties:
+              code:
+                type: integer
+              message:
+                type: string
         '401':
           description: Invalid authentication credentials
           schema:
@@ -12692,7 +12701,7 @@ definitions:
         description: Byte counter (read-only)
 
   SecurityRateConfigMod:
-    description: "Full replacement of rate-limit configuration and security-rate whitelist. All required flags and thresholds must be supplied; schema defaults do not establish omission support. Thresholds are 0..16777216 and UDP bandwidth is 0..4095 MiB/s. Enabled protections require positive applicable thresholds, and enabled SYN protection requires cookieThreshold < synThreshold. At least one protection must be enabled. At most 1024 valid whitelist CIDRs are accepted; omission clears the prior list. Explicit cookieThreshold zero becomes 50 in the datapath. Programming is non-atomic and shares whitelist maps with IP filtering."
+    description: "Full replacement of rate-limit configuration and security-rate whitelist. All required flags and thresholds must be supplied; schema defaults do not establish omission support. Thresholds are 0..16777216 and UDP bandwidth is 0..4095 MiB/s. Enabled protections require positive applicable thresholds, and enabled SYN protection requires cookieThreshold < synThreshold. At least one per-source protection or positive aggregate budget must be enabled. At most 1024 valid whitelist CIDRs are accepted; omission clears the prior list. Explicit cookieThreshold zero becomes 50 in the datapath. Programming is non-atomic and shares whitelist maps with IP filtering."
     type: object
     required:
       - synEnabled
@@ -12704,6 +12713,30 @@ definitions:
       - udpPktThreshold
       - udpBandwidthMB
     properties:
+      aggregateSynThreshold:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 16777216
+        description: "Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. "
+      aggregateConnRatePerSec:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 16777216
+        description: "Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. "
+      aggregateUdpPktThreshold:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 16777216
+        description: "Optional Gateway-wide IPv4/IPv6 UDP packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. "
+      aggregateUdpBandwidthMB:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 4095
+        description: "Optional Gateway-wide IPv4/IPv6 UDP bandwidth budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. Units are MiB using 1024*1024 bytes."
       synEnabled:
         type: boolean
         description: Enable/disable SYN flood protection (P0-5)
@@ -12745,9 +12778,53 @@ definitions:
         description: "Up to 1024 valid IPv4/IPv6 CIDRs. Omission clears the previous security-rate whitelist. These entries share maps with IP-filter whitelist rules."
 
   SecurityRateEntry:
-    description: "Stored configuration with observed security-rate statistics. GET does not establish effective configuration after defaults or partial programming failures, and statistics failures can appear as zeros. Connection counters concern SYN packets, not completed connections. synCookies is threshold telemetry, not proof of a SYN-cookie exchange. uniqueIps is current tracking-map occupancy and is not cleared by counter reset."
+    description: "Stored configuration with observed security-rate statistics. GET does not establish effective configuration after defaults or partial programming failures, and statistics read failures return an error. Connection counters concern SYN packets, not completed connections. synCookies is threshold telemetry, not proof of a SYN-cookie exchange. uniqueIps is current tracking-map occupancy and is not cleared by counter reset."
     type: object
     properties:
+      unsupportedPacketBlocked:
+        type: integer
+        format: int64
+        description: "IPv6 fragment (including atomic fragment), malformed transport, or bounded header-chain rejection under applicable TCP/UDP rate protection. Whitelisted sources bypass rate protection. Extension chains of up to eight headers are inspected; ESP remains opaque."
+      trackingFailures:
+        type: integer
+        format: int64
+        description: "Source tracking-map insertion errors. Protected SYN or UDP packets fail closed on these errors; ordinary established TCP data is not denied by an insertion error."
+      aggregateSynThreshold:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 16777216
+        description: "Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. "
+      aggregateConnRatePerSec:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 16777216
+        description: "Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. "
+      aggregateUdpPktThreshold:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 16777216
+        description: "Optional Gateway-wide IPv4/IPv6 UDP packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. "
+      aggregateUdpBandwidthMB:
+        type: integer
+        format: int64
+        minimum: 0
+        maximum: 4095
+        description: "Optional Gateway-wide IPv4/IPv6 UDP bandwidth budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. Units are MiB using 1024*1024 bytes."
+      aggregateSynBlocked:
+        type: integer
+        format: int64
+        description: "Aggregate budget drops, also included in the corresponding total blocked counter."
+      aggregateConnBlocked:
+        type: integer
+        format: int64
+        description: "Aggregate budget drops, also included in the corresponding total blocked counter."
+      aggregateUdpBlocked:
+        type: integer
+        format: int64
+        description: "Aggregate budget drops, also included in the corresponding total blocked counter."
       synEnabled:
         type: boolean
         description: Whether SYN flood protection is enabled

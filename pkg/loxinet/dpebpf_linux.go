@@ -396,31 +396,21 @@ var (
 )
 
 // SecurityRateConfig - Unified configuration for P0-5 SYN Flood + P0-6 Connection Rate Limiting
-type SecurityRateConfig struct {
-	// P0-5: SYN Flood Protection
-	SYNEnabled      bool   `json:"synEnabled"`
-	SYNThreshold    uint32 `json:"synThreshold"`    // Max SYNs/sec before dropping (default: 100)
-	CookieThreshold uint32 `json:"cookieThreshold"` // Enable SYN cookies above this rate (default: 50)
-
-	// P0-6: Connection Rate Limiting
-	ConnRateEnabled bool   `json:"connRateEnabled"`
-	RatePerSec      uint32 `json:"ratePerSec"` // Max connections/sec (default: 50)
-
-	// P0-7: UDP Flood Protection
-	UDPEnabled      bool   `json:"udpEnabled"`
-	UDPPktThreshold uint32 `json:"udpPktThreshold"` // Max UDP packets/sec before dropping (default: 1000)
-	UDPBandwidthMB  uint32 `json:"udpBandwidthMB"`  // Max UDP bandwidth in MB/sec (default: 100)
-
-	// Shared Configuration
-	WhitelistIPs []string `json:"whitelistIps"` // IPs to bypass all rate limiting
-}
+type SecurityRateConfig = cmn.SecurityRateConfig
 
 // SecurityRateStats - Unified statistics for P0-5 + P0-6 + P0-7 from eBPF maps
 type SecurityRateStats struct {
+	UnsupportedPacketBlocked uint64     `json:"unsupportedPacketBlocked"`
+	ResetGenerations         [16]uint64 `json:"-"`
+	TrackingFailures         uint64     `json:"trackingFailures"`
+	AggregateSYNBlocked      uint64     `json:"aggregateSynBlocked"`
+	AggregateConnBlocked     uint64     `json:"aggregateConnBlocked"`
+	AggregateUDPBlocked      uint64     `json:"aggregateUdpBlocked"`
+
 	// P0-5: SYN Flood Statistics
 	SYNBlocked uint64 `json:"synBlocked"` // SYN packets blocked
 	SYNPassed  uint64 `json:"synPassed"`  // SYN packets passed
-	SYNCookies uint64 `json:"synCookies"` // SYN cookie activations
+	SYNCookies uint64 `json:"synCookies"` // SYN threshold events, not kernel cookie handshakes
 
 	// P0-6: Connection Rate Statistics
 	ConnBlocked uint64 `json:"connBlocked"` // Connections blocked by rate
@@ -451,20 +441,22 @@ type CtErrorStats struct {
 
 // DpEbpfH - context container
 type DpEbpfH struct {
-	ticker  *time.Ticker
-	tDone   chan bool
-	trigGC  chan bool
-	gcTS    time.Time
-	gcTiVal uint
-	ctBcast chan bool
-	nID     uint
-	tbN     uint
-	CtSync  bool
-	RssEn   bool
-	ToMapCh chan interface{}
-	ToFinCh [mapNotifierWorkers]chan int
-	mtx     sync.RWMutex
-	ctMap   map[string]*DpCtInfo
+	securityStatsMu          sync.RWMutex
+	securityStatsGenerations [16]uint64
+	ticker                   *time.Ticker
+	tDone                    chan bool
+	trigGC                   chan bool
+	gcTS                     time.Time
+	gcTiVal                  uint
+	ctBcast                  chan bool
+	nID                      uint
+	tbN                      uint
+	CtSync                   bool
+	RssEn                    bool
+	ToMapCh                  chan interface{}
+	ToFinCh                  [mapNotifierWorkers]chan int
+	mtx                      sync.RWMutex
+	ctMap                    map[string]*DpCtInfo
 
 	// GPU-Aware Load Balancing: Runtime configuration and storage
 	gpuMonitoringEnabled      atomic.Bool            // Runtime enable/disable flag
@@ -3769,6 +3761,9 @@ func (e *DpEbpfH) DpIPFilterGet(filterType IPFilterType) ([]cmn.IPFilterEntry, e
 // Unified SYN-flood + connection-rate + UDP-flood config in a single eBPF map
 // Pattern: Follows P0-7 IP filter map operations (DpIPFilterMod lines 2543-2622)
 func (e *DpEbpfH) DpSecurityRateConfigSet(config SecurityRateConfig) error {
+	if err := cmn.ValidateSecurityRateAggregate(config); err != nil {
+		return err
+	}
 	if !securityRateRuntimeConfig {
 		// Runtime configuration not compiled in (hardcoded mode).
 		tk.LogIt(tk.LogWarning, "[DPEBPF] Security rate runtime config not available (hardcoded mode)\n")
@@ -3783,28 +3778,32 @@ func (e *DpEbpfH) DpSecurityRateConfigSet(config SecurityRateConfig) error {
 
 	// C structure matches: struct dp_security_rate_config (llb_kern_cdefs.h)
 	// CRITICAL: Field order MUST match C struct exactly (byte-for-byte alignment).
-	// 10 x uint32 = 40 bytes packed.
+	// 14 x uint32 = 56 bytes packed.
 	type dpSecurityRateConfig struct {
-		Version               uint32 // Incremented on each config change
-		SynThreshold          uint32 // Max SYNs/sec before dropping (default: 100)
-		CookieThreshold       uint32 // SYNs/sec to trigger cookies (default: 50)
-		SynEnabled            uint32 // 1 = SYN flood protection enabled
-		ConnRateThreshold     uint32 // Max conns/sec before dropping (default: 50)
-		ConnRateEnabled       uint32 // 1 = connection rate limiting enabled
-		UDPPktThreshold       uint32 // Max UDP packets/sec (default: 1000) - P0-7
-		UDPBandwidthThreshold uint32 // Max UDP bytes/sec (default: 100MB) - P0-7
-		UDPEnabled            uint32 // 1 = UDP flood protection enabled - P0-7
-		Reserved              uint32 // Future expansion
+		Version                  uint32 // Incremented on each config change
+		SynThreshold             uint32 // Max SYNs/sec before dropping (default: 100)
+		CookieThreshold          uint32 // SYNs/sec to trigger cookies (default: 50)
+		SynEnabled               uint32 // 1 = SYN flood protection enabled
+		ConnRateThreshold        uint32 // Max conns/sec before dropping (default: 50)
+		ConnRateEnabled          uint32 // 1 = connection rate limiting enabled
+		UDPPktThreshold          uint32 // Max UDP packets/sec (default: 1000) - P0-7
+		UDPBandwidthThreshold    uint32 // Max UDP bytes/sec (default: 100MB) - P0-7
+		UDPEnabled               uint32 // 1 = UDP flood protection enabled - P0-7
+		Reserved                 uint32 // Future expansion
+		AggregateSYNThreshold    uint32
+		AggregateConnRatePerSec  uint32
+		AggregateUDPPktThreshold uint32
+		AggregateUDPBandwidthMB  uint32
 	}
 
 	var currentCfg dpSecurityRateConfig
 	var key C.uint = 0
 
 	// ABI guard (P0-1 bug class): the kernel struct dp_security_rate_config is
-	// 40 packed bytes (_Static_assert in llb_kern_cdefs.h). A size skew makes
+	// 56 packed bytes (_Static_assert in llb_kern_cdefs.h). A size skew makes
 	// the bpf syscalls read/write past this struct on the Go stack.
-	if unsafe.Sizeof(currentCfg) != 40 {
-		return fmt.Errorf("dpSecurityRateConfig size %d != 40: kernel ABI mismatch, refusing to touch sec_rate_cfg",
+	if unsafe.Sizeof(currentCfg) != 56 {
+		return fmt.Errorf("dpSecurityRateConfig size %d != 56: kernel ABI mismatch, refusing to touch sec_rate_cfg",
 			unsafe.Sizeof(currentCfg))
 	}
 
@@ -3820,7 +3819,12 @@ func (e *DpEbpfH) DpSecurityRateConfigSet(config SecurityRateConfig) error {
 
 	// Prepare new configuration
 	cfgData := dpSecurityRateConfig{
-		Version:               newVersion,
+		Version:                  newVersion,
+		AggregateSYNThreshold:    config.AggregateSYNThreshold,
+		AggregateConnRatePerSec:  config.AggregateConnRatePerSec,
+		AggregateUDPPktThreshold: config.AggregateUDPPktThreshold,
+		AggregateUDPBandwidthMB:  config.AggregateUDPBandwidthMB * 1024 * 1024,
+
 		SynThreshold:          config.SYNThreshold,
 		CookieThreshold:       config.CookieThreshold,
 		SynEnabled:            0,
@@ -4054,10 +4058,12 @@ func (e *DpEbpfH) DpSecurityRateConfigSet(config SecurityRateConfig) error {
 // Pattern: Follows DpIPFilterGet patterns
 // Returns combined statistics from eBPF maps
 func (e *DpEbpfH) DpSecurityRateGetStats() (SecurityRateStats, error) {
-	stats := SecurityRateStats{}
+	e.securityStatsMu.RLock()
+	defer e.securityStatsMu.RUnlock()
+	stats := SecurityRateStats{ResetGenerations: e.securityStatsGenerations}
 
 	// Get statistics map file descriptor
-	// Map contains 11 stat indices (see llb_kern_synflood.c):
+	// Map contains 16 stat indices (see llb_kern_synflood.c):
 	// 0: STAT_SYN_BLOCKED
 	// 1: STAT_SYN_PASSED
 	// 2: STAT_SYN_COOKIES
@@ -4074,84 +4080,25 @@ func (e *DpEbpfH) DpSecurityRateGetStats() (SecurityRateStats, error) {
 		return stats, fmt.Errorf("failed to get security rate stats map fd")
 	}
 
-	// Read P0-5: SYN Flood Statistics
-	var key C.uint
-	var val C.ulonglong
-	var ret C.int
-
-	// Index 0: SYN packets blocked
-	key = 0
-	if C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val)) == 0 {
-		stats.SYNBlocked = uint64(val)
-	}
-
-	// Index 1: SYN packets passed
-	key = 1
-	if C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val)) == 0 {
-		stats.SYNPassed = uint64(val)
-	}
-
-	// Index 2: SYN cookie activations
-	key = 2
-	if C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val)) == 0 {
-		stats.SYNCookies = uint64(val)
-	}
-
-	// Read P0-6: Connection Rate Statistics
-	// Index 3: Connections blocked by rate limit
-	key = 3
-	if C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val)) == 0 {
-		stats.ConnBlocked = uint64(val)
-	}
-
-	// Index 4: Connections passed
-	key = 4
-	if C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val)) == 0 {
-		stats.ConnPassed = uint64(val)
-	}
-
-	// Index 5: reserved (concurrent limit removed) - not read
-
-	// Index 6: Unique IPs - NO LONGER READ FROM EBPF STATS MAP
-	// BUG FIX: eBPF counter at index 6 is monotonically increasing (LRU eviction bug)
-	// Calculate by iterating tracking maps instead
-	// This is done below after reading all other stats
-
-	// Read P0-7: UDP Flood Statistics
-	// Index 7: UDP packets blocked
-	key = 7
-	ret = C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val))
-	if ret == 0 {
-		stats.UDPBlocked = uint64(val)
-	} else {
-		tk.LogIt(tk.LogDebug, "[DPEBPF-STATS-DEBUG] UDP blocked lookup FAILED: key=%d ret=%d\n", key, ret)
-	}
-
-	// Index 8: UDP packets passed
-	key = 8
-	ret = C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val))
-	if ret == 0 {
-		stats.UDPPassed = uint64(val)
-	} else {
-		tk.LogIt(tk.LogDebug, "[DPEBPF-STATS-DEBUG] UDP passed lookup FAILED: key=%d ret=%d\n", key, ret)
-	}
-
-	// Index 9: UDP bytes blocked
-	key = 9
-	ret = C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val))
-	if ret == 0 {
-		stats.UDPBytesBlocked = uint64(val)
-	} else {
-		tk.LogIt(tk.LogDebug, "[DPEBPF-STATS-DEBUG] UDP bytes blocked lookup FAILED: key=%d ret=%d\n", key, ret)
-	}
-
-	// Index 10: UDP bytes passed
-	key = 10
-	ret = C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&val))
-	if ret == 0 {
-		stats.UDPBytesPassed = uint64(val)
-	} else {
-		tk.LogIt(tk.LogDebug, "[DPEBPF-STATS-DEBUG] UDP bytes passed lookup FAILED: key=%d ret=%d\n", key, ret)
+	// A missing or incompatible counter is a collection error, not zero drops.
+	// Indices 5 and 6 are reserved; unique IPs comes from tracking-map iteration.
+	for _, c := range []struct {
+		index uint32
+		value *uint64
+	}{
+		{0, &stats.SYNBlocked}, {1, &stats.SYNPassed}, {2, &stats.SYNCookies},
+		{3, &stats.ConnBlocked}, {4, &stats.ConnPassed},
+		{7, &stats.UDPBlocked}, {8, &stats.UDPPassed},
+		{9, &stats.UDPBytesBlocked}, {10, &stats.UDPBytesPassed},
+		{11, &stats.AggregateSYNBlocked}, {12, &stats.AggregateConnBlocked},
+		{13, &stats.AggregateUDPBlocked}, {14, &stats.TrackingFailures}, {15, &stats.UnsupportedPacketBlocked},
+	} {
+		key := C.uint(c.index)
+		var value C.ulonglong
+		if C.bpf_map_lookup_elem(C.int(statsFd), unsafe.Pointer(&key), unsafe.Pointer(&value)) != 0 {
+			return SecurityRateStats{}, fmt.Errorf("failed to read security rate counter index %d", c.index)
+		}
+		*c.value = uint64(value)
 	}
 
 	// BUG FIX: Always count actual map entries for UniqueIPs (don't use eBPF counter at index 6)
@@ -4267,25 +4214,44 @@ func (e *DpEbpfH) DpCtErrorGetStats() (CtErrorStats, error) {
 // Pattern: Follows session reset pattern but for global statistics array
 // Purpose: Clear accumulated counters for testing or monitoring resets
 func (e *DpEbpfH) DpSecurityRateResetStats() error {
+	e.securityStatsMu.Lock()
+	defer e.securityStatsMu.Unlock()
 	// Get statistics map file descriptor
 	statsFd := C.llb_map2fd(C.int(C.LL_DP_SECURITY_RATE_STATS_MAP))
 	if statsFd < 0 {
 		return fmt.Errorf("failed to get security rate stats map fd")
 	}
 
+	faultMask, faultErr := securityRateResetFaultMask()
+	if faultErr != nil {
+		return faultErr
+	}
+	// Readers do not see a partially reset snapshot. Each successfully reset
+	// counter advances its own epoch; failed counters keep their old epoch.
+	var resetErr error
 	// Reset all statistics counters to 0
-	// Statistics indices: 0-10 (P0-5 + P0-6 + P0-7)
+	// Statistics indices: 0-15, including aggregate and tracking failures.
 	var zero C.ulonglong = 0
-	for i := C.uint(0); i <= 10; i++ {
-		ret := C.bpf_map_update_elem(C.int(statsFd), unsafe.Pointer(&i), unsafe.Pointer(&zero), C.BPF_ANY)
+	for i := C.uint(0); i <= 15; i++ {
+		ret := C.int(-1)
+		if faultMask&(uint32(1)<<uint32(i)) == 0 {
+			ret = C.bpf_map_update_elem(C.int(statsFd), unsafe.Pointer(&i), unsafe.Pointer(&zero), C.BPF_ANY)
+		}
 		if ret != 0 {
 			tk.LogIt(tk.LogWarning, "[DPEBPF] Failed to reset security rate stat index %d: ret=%d\n", i, ret)
-			// Continue resetting other counters even if one fails
+			if resetErr == nil {
+				resetErr = fmt.Errorf("failed to reset security rate stat index %d", i)
+			}
+			// Continue, but report a partial reset instead of false success.
+		} else {
+			e.securityStatsGenerations[i]++
 		}
 	}
 
-	tk.LogIt(tk.LogInfo, "[DPEBPF] Security rate statistics reset completed\n")
-	return nil
+	if resetErr == nil {
+		tk.LogIt(tk.LogInfo, "[DPEBPF] Security rate statistics reset completed\n")
+	}
+	return resetErr
 }
 
 // DpSockVIPMod - routine to work on a ebpf local VIP-port rewrite modification

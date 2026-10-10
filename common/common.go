@@ -548,10 +548,16 @@ type IPFilterEntry struct {
 // SecurityRateConfig - Unified configuration for P0-5 SYN Flood + P0-6 Connection Rate Limiting + P0-7 UDP Flood
 // This is the NEW unified approach that combines all three features into single eBPF maps
 type SecurityRateConfig struct {
+	// Gateway-wide IPv4/IPv6 budgets; zero disables each budget. Whitelisted sources bypass them.
+	AggregateSYNThreshold    uint32 `json:"aggregateSynThreshold"`
+	AggregateConnRatePerSec  uint32 `json:"aggregateConnRatePerSec"`
+	AggregateUDPPktThreshold uint32 `json:"aggregateUdpPktThreshold"`
+	AggregateUDPBandwidthMB  uint32 `json:"aggregateUdpBandwidthMB"`
+
 	// P0-5: SYN Flood Protection
 	SYNEnabled      bool   `json:"synEnabled"`
 	SYNThreshold    uint32 `json:"synThreshold"`    // Max SYNs/sec before dropping (default: 100)
-	CookieThreshold uint32 `json:"cookieThreshold"` // Enable SYN cookies above this rate (default: 50)
+	CookieThreshold uint32 `json:"cookieThreshold"` // SYN threshold telemetry only; no cookie exchange (default: 50)
 
 	// P0-6: Connection Rate Limiting
 	ConnRateEnabled bool   `json:"connRateEnabled"`
@@ -568,10 +574,17 @@ type SecurityRateConfig struct {
 
 // SecurityRateStats - Unified statistics for P0-5 + P0-6 + P0-7 from eBPF maps
 type SecurityRateStats struct {
+	UnsupportedPacketBlocked uint64     `json:"unsupportedPacketBlocked"`
+	ResetGenerations         [16]uint64 `json:"-"` // Internal exporter epoch; not a public metric or API field.
+	TrackingFailures         uint64     `json:"trackingFailures"`
+	AggregateSYNBlocked      uint64     `json:"aggregateSynBlocked"`
+	AggregateConnBlocked     uint64     `json:"aggregateConnBlocked"`
+	AggregateUDPBlocked      uint64     `json:"aggregateUdpBlocked"`
+
 	// P0-5: SYN Flood Statistics
 	SYNBlocked uint64 `json:"synBlocked"` // SYN packets blocked
 	SYNPassed  uint64 `json:"synPassed"`  // SYN packets passed
-	SYNCookies uint64 `json:"synCookies"` // SYN cookie activations
+	SYNCookies uint64 `json:"synCookies"` // SYN threshold events, not kernel cookie handshakes
 
 	// P0-6: Connection Rate Statistics
 	ConnBlocked uint64 `json:"connBlocked"` // Connections blocked by rate

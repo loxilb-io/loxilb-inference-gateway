@@ -147,7 +147,7 @@ jobs:
 
       - name: C unit layers of the security controls
         run: |
-          make -C loxilb-ebpf/common test_felimit test_fc test_kv test_aisec test_pdi
+          make -C loxilb-ebpf/common test_felimit test_fc test_kv test_aisec test_pdi test_security_aggregate test_security_ipv6
 
       # The scenario scripts run as root, as their READMEs prescribe: their connection
       # holders run under "sudo ip netns exec" and the scripts end them with pkill, which

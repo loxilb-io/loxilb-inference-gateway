@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "5e36fc44f7bcae7588611893ef158e68e0f26c2a0e67d0a9fc719ab3c026c3bc",
-    "swagger.yml": "982467b0ac9a49610833bba7749c1af4885e8432efed38fac0fb5063605ec466"
+    "swagger.yml": "b5acf37512be50d7cd0fc16571743080aef57d29ec969dae49b5056889b271b6"
   },
   "fields": [
     {
@@ -39,7 +39,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/allowedSources",
       "required": false,
       "contract": {
-        "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.",
+        "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. FullProxy rules sharing an address, port and protocol must declare the same normalized source-prefix set (including empty); conflicting creates and updates are rejected with 400 before changing existing policy. Overlapping port ranges must also agree. Deleting one pool preserves the fence required by remaining pools. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.",
         "type": "array"
       }
     },
@@ -564,7 +564,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/connectionLimit",
       "required": false,
       "contract": {
-        "description": "Concurrent-connection ceiling for the rule, counted across all of its endpoints; zero or absent means unlimited. Distinct from the per-source-IP security limits. POST stores it, PATCH overlays it when present (an explicit zero clears it) and GET reports it (omitted when zero); null is rejected. Enforced by the conntrack selector on DNAT-mode rules: once the rule's live connection count has reached the ceiling, further SYNs are dropped without a reset and without a conntrack entry, and a slot frees when a connection is torn down. A FullProxy rule is not gated by this field, and HTTP/2 streams are not counted as connections.",
+        "description": "Concurrent-connection ceiling for the rule, counted across all of its endpoints; zero or absent means unlimited. Distinct from the per-source-IP security limits. POST stores it, PATCH overlays it when present (an explicit zero clears it) and GET reports it (omitted when zero); null is rejected. Enforced by the conntrack selector on DNAT-mode rules: once the rule's live connection count has reached the ceiling, further SYNs are dropped without a reset and without a conntrack entry, and a slot frees when a connection is torn down. FullProxy listeners enforce the ceiling at accept: excess connections are closed before request processing. HTTP/2 streams are not counted as separate connections.",
         "format": "uint32",
         "type": "integer"
       }

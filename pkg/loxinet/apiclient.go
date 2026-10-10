@@ -987,6 +987,12 @@ func (na *NetAPIStruct) NetIPFilterGet() ([]cmn.IPFilterEntry, error) {
 
 // NetSecurityRateSet - Set unified security rate limiting configuration (P0-5 + P0-6)
 func (na *NetAPIStruct) NetSecurityRateSet(config *cmn.SecurityRateConfig) (int, error) {
+	if config == nil {
+		return RuleErrBase, errors.New("security rate configuration is required")
+	}
+	if err := cmn.ValidateSecurityRateAggregate(*config); err != nil {
+		return RuleErrBase, err
+	}
 	if na.BgpPeerMode {
 		return RuleErrBase, errors.New("running in bgp only mode")
 	}
@@ -1001,7 +1007,11 @@ func (na *NetAPIStruct) NetSecurityRateSet(config *cmn.SecurityRateConfig) (int,
 		// Any actual kernel setting must fail rather than appear enforced.
 		if config.SYNEnabled || config.ConnRateEnabled || config.UDPEnabled ||
 			config.SYNThreshold != 0 || config.CookieThreshold != 0 || config.RatePerSec != 0 ||
-			config.UDPPktThreshold != 0 || config.UDPBandwidthMB != 0 || len(config.WhitelistIPs) != 0 {
+			config.UDPPktThreshold != 0 || config.UDPBandwidthMB != 0 || len(config.WhitelistIPs) != 0 ||
+			config.AggregateSYNThreshold != 0 ||
+			config.AggregateConnRatePerSec != 0 ||
+			config.AggregateUDPPktThreshold != 0 ||
+			config.AggregateUDPBandwidthMB != 0 {
 			return RuleErrBase, errors.New("security rate limiting is unavailable in proxy-only mode")
 		}
 		mh.securityRateConfig = cmn.SecurityRateConfig{}
@@ -1016,6 +1026,11 @@ func (na *NetAPIStruct) NetSecurityRateSet(config *cmn.SecurityRateConfig) (int,
 	// Apply configuration to eBPF datapath
 	if mh.dpEbpf != nil {
 		dpConfig := SecurityRateConfig{
+			AggregateSYNThreshold:    config.AggregateSYNThreshold,
+			AggregateConnRatePerSec:  config.AggregateConnRatePerSec,
+			AggregateUDPPktThreshold: config.AggregateUDPPktThreshold,
+			AggregateUDPBandwidthMB:  config.AggregateUDPBandwidthMB,
+
 			SYNEnabled:      config.SYNEnabled,
 			SYNThreshold:    config.SYNThreshold,
 			CookieThreshold: config.CookieThreshold,
@@ -1080,6 +1095,8 @@ func (na *NetAPIStruct) NetSecurityRateGet() (*cmn.SecurityRateState, error) {
 		dpStats, err := mh.dpEbpf.DpSecurityRateGetStats()
 		if err == nil {
 			// Convert eBPF stats to common stats
+			state.Stats.UnsupportedPacketBlocked = dpStats.UnsupportedPacketBlocked
+			state.Stats.ResetGenerations = dpStats.ResetGenerations
 			state.Stats.SYNBlocked = dpStats.SYNBlocked
 			state.Stats.SYNPassed = dpStats.SYNPassed
 			state.Stats.SYNCookies = dpStats.SYNCookies
@@ -1089,9 +1106,14 @@ func (na *NetAPIStruct) NetSecurityRateGet() (*cmn.SecurityRateState, error) {
 			state.Stats.UDPPassed = dpStats.UDPPassed
 			state.Stats.UDPBytesBlocked = dpStats.UDPBytesBlocked
 			state.Stats.UDPBytesPassed = dpStats.UDPBytesPassed
+			state.Stats.TrackingFailures = dpStats.TrackingFailures
 			state.Stats.UniqueIPs = dpStats.UniqueIPs
+			state.Stats.AggregateSYNBlocked = dpStats.AggregateSYNBlocked
+			state.Stats.AggregateConnBlocked = dpStats.AggregateConnBlocked
+			state.Stats.AggregateUDPBlocked = dpStats.AggregateUDPBlocked
+
 		} else {
-			tk.LogIt(tk.LogDebug, "[API] Failed to get security rate stats from eBPF: %v\n", err)
+			return nil, fmt.Errorf("security rate statistics unavailable: %w", err)
 		}
 	}
 
@@ -1113,6 +1135,13 @@ func (na *NetAPIStruct) NetSecurityRateStatsGet() (cmn.SecurityRateStats, error)
 		if err == nil {
 			// Direct assignment from eBPF stats
 			stats = cmn.SecurityRateStats{
+				UnsupportedPacketBlocked: dpStats.UnsupportedPacketBlocked,
+				ResetGenerations:         dpStats.ResetGenerations,
+				TrackingFailures:         dpStats.TrackingFailures,
+				AggregateSYNBlocked:      dpStats.AggregateSYNBlocked,
+				AggregateConnBlocked:     dpStats.AggregateConnBlocked,
+				AggregateUDPBlocked:      dpStats.AggregateUDPBlocked,
+
 				SYNBlocked:      dpStats.SYNBlocked,
 				SYNPassed:       dpStats.SYNPassed,
 				SYNCookies:      dpStats.SYNCookies,

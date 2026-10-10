@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 314,
+  "total": 319,
   "owners": {
-   "loxilb": 291,
+   "loxilb": 296,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 258,
+   "default": 263,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -382,7 +382,12 @@
   "loxilb_audit_sink_poison_total": "C",
   "loxilb_audit_sink_lag_drops_total": "C",
   "loxilb_audit_sink_cursor_lag_bytes": "C",
-  "loxilb_audit_sink_cursor_lag_seconds": "C"
+  "loxilb_audit_sink_cursor_lag_seconds": "C",
+  "loxilb_security_aggregate_conn_blocked_total": "E",
+  "loxilb_security_aggregate_syn_blocked_total": "E",
+  "loxilb_security_aggregate_udp_blocked_total": "E",
+  "loxilb_security_tracking_failures_total": "E",
+  "loxilb_security_unsupported_packet_blocked_total": "E"
  },
  "priority": {
   "default": "diagnostic",
@@ -616,7 +621,12 @@
    "loxilb_ai_admission_warming_endpoints",
    "loxilb_ai_admission_tenants_active",
    "loxilb_ai_admission_queued",
-   "loxilb_ai_admission_queue_wait_seconds"
+   "loxilb_ai_admission_queue_wait_seconds",
+   "loxilb_security_aggregate_conn_blocked_total",
+   "loxilb_security_aggregate_syn_blocked_total",
+   "loxilb_security_aggregate_udp_blocked_total",
+   "loxilb_security_tracking_failures_total",
+   "loxilb_security_unsupported_packet_blocked_total"
   ]
  },
  "coverage_waivers": {
@@ -736,7 +746,7 @@
    "previous hop's symbol."
   ],
   "burndown": {
-   "unverified_max": 64,
+   "unverified_max": 69,
    "unclassified_max": 0,
    "_note": "185 packaged families, all classified: 42 verified-runtime, 10 verified-static, 69 conditional-with-proven-writer, 64 writer-mapped. loxilb_pd_admission_overflow_shed_total is NEW with the D-8 fix (the overflow-valve counter existed in C but was exported by nothing) and enters directly as verified-runtime on the arm-level red/green twin recorded in its own evidence, so unverified_max is unchanged by its arrival. ARITHMETIC CAUTION, because it changed with that arrival: unverified_max is the count of WRITER-MAPPED families, and the shorthand '83 minus the number of promoted pd_* families' no longer reproduces it. A family that enters verified-runtime without ever having been writer-mapped raises the promoted count without lowering the pool, so today 83 - 17 = 66 while the pool is 67. The identity that still holds is 83 minus the number of families promoted OUT of the pool (16). Read 'mapped but unverified' off the generator and require unverified_max to equal it; do not re-derive it from a subtraction. Re-derived 2026-09-15 after WP-11's decode-eof, prefill-died, connect-retry, connect-failover, cb-heal, sessions, kv-t15, trie, cb-flips, admission-shed, admission-queued, sg-oversize, trt-early-exit, sg-room-retry and sg-reject-relay arms. unverified_max 83 -> 67 across sessions 18 through 24: the FIRST time this campaign has lowered this ratchet. Every earlier WP (WP-1, WP-2, WP-4, WP-8) promoted families that were already conditional-with-proven-writer, so the writer-mapped pool never shrank; WP-11 targets that pool itself. loxilb_pd_decode_ep_died_total and loxilb_pd_decode_zero_byte_eof_total came OUT of it on driven runtime evidence with a control arm and a three-way receipt identity (E.5 row 'wp11-decode-eof'), and loxilb_pd_prefill_ep_died_total followed on the same bed (E.5 row 'wp11-prefill-died') scored against the datapath-log oracle rather than the receipt, because that leg's one deferred re-dispatch makes receipts != delta by construction. loxilb_pd_trie_nodes came out on the trie arm (E.5 row 'wp11-trie'), which also OVERTURNED a standing determination that the family was engine-gated like the pd_sg_* six: its gate is a per-rule API field, so it is drivable on a CPU mock, and the arm reads the gauge BEFORE traffic to separate the node created at rule add from the nodes added by inserts. loxilb_pd_cb_flips_total came out on the cb-flips arm (E.5 row 'wp11-cb-flips'), which turned an earlier delta>=sum(six lines) into an exact equality by bounding the measurement inside the breaker's 30s open timeout so the one unlogged site could not fire. loxilb_pd_sg_oversize_reject_total came out on the sg-oversize arm (E.5 row 'wp11-sg-oversize'), which OVERTURNED the standing 'engine-gated, needs the GPU fleet' determination for the pd_sg_* group the same way the trie arm did for pd_trie_nodes: its gate reads only the rule's dialect plus the request's body size, and the reject fires before any backend byte moves, so a CPU mock drives it exactly as a fleet would. loxilb_pd_trt_ctx_early_exit_total came out on the trt-early-exit arm (E.5 row 'wp11-trt-early-exit'), which overturned the same standing label for a THIRD time and for the family that had been held as the one genuinely engine-gated member of the pool: its gate is the rule's dialect plus the status and the finish_reason of the context leg's own reply, so a mock that answers 200 with a terminal finish_reason drives it exactly as a TensorRT-LLM context worker would, and no engine of any dialect took part. Its writer_sources note had also carried the pd_sg_* text verbatim, asserting an SGLang dependency for a family that is not on the SGLang path; that note is corrected on the same row. loxilb_pd_sg_room_retry_total came out on the sg-room-retry arm (E.5 row 'wp11-sg-room-retry', 16/16 on the first run), overturning the label a FOURTH time: the gate is the rule's dialect, the request's phase and saved buffers, a drain leg that dies and a decode leg that has not yet spoken -- backend behaviour, which is why a CPU mock drives it. That arm needed a new 'slowok' backend mode because the decode leg must be silent when the drain leg dies, and against a normally fast mock that condition is a RACE whose loss is indistinguishable from 'this family cannot be driven'. The same run also carries per-SITE evidence for loxilb_pd_connect_failover_total's third increment site, sockproxy_pd_sglang.c:944, which sits one statement after :943 with no branch between them and moved by exactly the same delta; that site's own row had recorded it as engine-gated and unreachable on a CPU mock, and that is now corrected. loxilb_pd_sg_prefill_reject_relay_total came out on the sg-reject-relay arm (E.5 row 'wp11-sg-reject-relay', 23/23), overturning the label a FIFTH time: its gate is the rule's dialect plus the backend's status and framing -- status in 400..499 arriving on the FIRST chunk fed to the drain parser, with the decode leg untouched -- so a mock answering 4xx in one write drives it exactly as a worker rejecting an over-long prompt would. Its control is unusually strong because the ELSE of the same if logs too, so a 5xx control moves a DIFFERENT named line instead of merely failing to move the counter, and the drive and that control differ in a single integer in the backend's status line. The arm also records a PATTERN COLLISION worth carrying: the relay log line contains the abort line's phrase verbatim, so the loose pattern counts both writers, and the arm asserts loose == relay + strict on every stage rather than trusting the discriminator. TWO pd_sg_* families remain in the pool, and a reading of each of their gates says both are bounded by BACKEND BEHAVIOUR rather than engine internals, so neither is known to require the GPU fleet. loxilb_pd_sg_decode_close_drain_total came out on the sg-decode-close-drain arm (E.5 row 'wp11-sg-decode-close-drain', 19/19), taking unverified_max 67 -> 66 and overturning the 'engine-gated' label a SIXTH time. It is the first pd_sg_* family whose ONE increment statement is reached by TWO distinct callers, so the arm owed and paid a per-SITE argument: sockproxy_http.c:4949 (decode EOF, zero bytes relayed) and :4996 (decode EOF mid-stream before [DONE]) were driven in separate stages and told apart by pd_decode_zero_byte_eof, which the first caller ticks on its way to the shared statement and the second does not. Its control is the gate's own else in the strongest available form: a THIRD caller, pd_cleanup at sockproxy_http.c:4408, passes count_close=0 and logs the SAME statement in its other spelling, so the healthy stage shows 3 janitorial closes against 0 coupled ones rather than mere silence. THREE pd_* families remain in the pool: pd_sg_prefill_abort_decode, which has two INCREMENT sites (sockproxy_pd_sglang.c:144 and sockproxy_health.c:711) and so owes a per-site argument of its own; pd_fallback_to_normal, topology-gated on a seventh role-less endpoint; and pd_connect_retry_same_ep_ok, which needs a connect that fails then succeeds inside the retry loop. loxilb_pd_sg_prefill_abort_decode_total came out on the sg-abort-decode arm (E.5 row 'wp11-sg-abort-decode', 30/30), taking unverified_max 66 -> 65. It is the LAST pd_sg_* family and the first with TWO INCREMENT STATEMENTS rather than two callers of one: sockproxy_pd_sglang.c:144 (driven through two of its three self-naming callers) and sockproxy_health.c:711, the reaper's rendezvous wedge, whose control is the literal else of the if that holds it. Its promotion RETIRES the 'engine-gated' label for the whole pd_sg_ group: all six are now driven on a CPU mock with no SGLang engine present, every one of them originally carried as needing the GPU fleet on the strength of a copy-pasted note. TWO pd_* families remain in the pool, neither engine-gated: pd_fallback_to_normal (topology-gated, needs a seventh role-less endpoint) and pd_connect_retry_same_ep_ok (needs a connect that fails then succeeds inside the retry loop). loxilb_pd_connect_retry_same_ep_ok_total came out on the connect-retry-ok arm (E.5 row 'wp11-connect-retry-ok', 13/13), taking unverified_max 65 -> 64. It is the LAST NON-TOPOLOGY pd_* family, and the one whose promotion turned on the HARNESS rather than on the product: the family had worked all along, and the arm that reported it dead had been counting the gateway's own /metrics scraper as the connect under test. A count-based fault on a port the product ALSO dials cannot be assumed to have landed -- the kernel's rule counter agreed with the prediction to the packet while measuring the wrong connections, which is the first time in this campaign that a drive-shape oracle was CONFIRMED and wrong. The drive now arms its parity per request behind a fall-through witness and requires the window to read exactly one refused and one accepted SYN. ONE pd_* family remains in the pool: pd_fallback_to_normal, topology-gated on a seventh role-less endpoint (pd_select_any_healthy accepts only ep_role == 0 and all six fixture EPs are role 1/2), which is a bed change rather than a harness one. unclassified_max stays 0."
   },
@@ -785,55 +795,55 @@
     {"symbol": "llb_ai_ratelimit_check", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 933, "call_line": 967, "calls": "getGlobalRL", "entry_point": "cgo-export"}
    ],
    "prom-init-lbrule-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 796, "calls": "RunGetLBRule", "note": "collector goroutine; one pass per PrometheusDefaultPeriod" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 813, "calls": "RunGetLBRule", "note": "collector goroutine; one pass per PrometheusDefaultPeriod" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-conntrack-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 800, "calls": "RunActiveConntrackCount" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 817, "calls": "RunActiveConntrackCount" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-security-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 814, "calls": "RunSecurityRateStats" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 831, "calls": "RunSecurityRateStats" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-ipfilter-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 815, "calls": "RunIPFilterStats" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 832, "calls": "RunIPFilterStats" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-sysutil-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 798, "calls": "RunSystemUtilization" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 815, "calls": "RunSystemUtilization" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-fwrule-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 795, "calls": "RunGetFwRule" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 812, "calls": "RunGetFwRule" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-endpoint-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 794, "calls": "RunGetEndpoint" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 811, "calls": "RunGetEndpoint" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-sockproxy-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-listen-backlog-main": [
-    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 811, "calls": "RunListenBacklogMetrics" },
+    { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 828, "calls": "RunListenBacklogMetrics" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 170, "call_line": 172, "calls": "Init" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 790, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
@@ -1028,7 +1038,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b, run 'WP-3 QoS' 2026-09-09 on the QoS validation bed: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
    },
@@ -1041,7 +1051,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
    },
@@ -1054,7 +1064,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
    },
@@ -1067,7 +1077,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
    },
@@ -1080,7 +1090,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
    },
@@ -1093,7 +1103,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
    },
@@ -1106,7 +1116,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
    },
@@ -1119,7 +1129,7 @@
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1337, "calls": "refreshQosShaperStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
    },
@@ -1167,7 +1177,7 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "RunL4ErrorStats", "kind": "func", "file": "api/prometheus/l4_error_metrics.go", "def_line": 73, "writes": "l4ErrorEventsTotal", "note": "reads the always-on ct_err_stats eBPF map through hooks.NetCtErrorStatsGet; the first cycle only seeds the baseline, so children appear from the second cycle onward and only for label pairs that actually moved" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 819, "calls": "RunL4ErrorStats" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 836, "calls": "RunL4ErrorStats" },
      { "tail": "loxinet-prometheus-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/l4_error_metrics.go:73-99. No test drives it and no bed run has recorded a delta; scenario M01/M13 owns the runtime proof."
@@ -1276,7 +1286,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmitsLabelledSeries compares the exposition of one pool against the store row by row (per-label oracle: every role and every reason), TestAdmissionCollectorEmptyStore asserts only the anomaly counters remain with no pool, TestSortAndDedupeAdmissionSamples pins first-wins on a duplicate sanitized label. The C side (proxy_get_fc_stats walking every ai_gw_mode pool under the proxy read lock) reads the gate state that loxilb-ebpf/common/test_fc_gate.c drives; runtime proof belongs to cicd/ai-admission."
    },
@@ -1290,7 +1300,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmitsLabelledSeries compares the exposition of one pool against the store row by row (per-label oracle: every role and every reason), TestAdmissionCollectorEmptyStore asserts only the anomaly counters remain with no pool, TestSortAndDedupeAdmissionSamples pins first-wins on a duplicate sanitized label. The C side (proxy_get_fc_stats walking every ai_gw_mode pool under the proxy read lock) reads the gate state that loxilb-ebpf/common/test_fc_gate.c drives; runtime proof belongs to cicd/ai-admission."
    },
@@ -1304,7 +1314,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmitsLabelledSeries compares the exposition of one pool against the store row by row (per-label oracle: every role and every reason), TestAdmissionCollectorEmptyStore asserts only the anomaly counters remain with no pool, TestSortAndDedupeAdmissionSamples pins first-wins on a duplicate sanitized label. The C side (proxy_get_fc_stats walking every ai_gw_mode pool under the proxy read lock) reads the gate state that loxilb-ebpf/common/test_fc_gate.c drives; runtime proof belongs to cicd/ai-admission."
    },
@@ -1318,7 +1328,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmitsLabelledSeries compares the exposition of one pool against the store row by row (per-label oracle: every role and every reason), TestAdmissionCollectorEmptyStore asserts only the anomaly counters remain with no pool, TestSortAndDedupeAdmissionSamples pins first-wins on a duplicate sanitized label. The C side (proxy_get_fc_stats walking every ai_gw_mode pool under the proxy read lock) reads the gate state that loxilb-ebpf/common/test_fc_gate.c drives; runtime proof belongs to cicd/ai-admission."
    },
@@ -1332,7 +1342,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmptyStore asserts both kinds are emitted at zero with no pool configured; the C counters (fc_anomaly_total) are driven by loxilb-ebpf/common/test_fc_gate.c's double-release and unknown-permit cases."
    },
@@ -1380,8 +1390,8 @@
       "symbol": "Init",
       "kind": "func",
       "file": "api/prometheus/prometheus.go",
-      "def_line": 756,
-      "call_line": 806,
+      "def_line": 773,
+      "call_line": 823,
       "calls": "RunSockproxyMetrics",
       "entry_point": "main"
      }
@@ -1432,8 +1442,8 @@
       "symbol": "Init",
       "kind": "func",
       "file": "api/prometheus/prometheus.go",
-      "def_line": 756,
-      "call_line": 806,
+      "def_line": 773,
+      "call_line": 823,
       "calls": "RunSockproxyMetrics",
       "entry_point": "main"
      }
@@ -1484,8 +1494,8 @@
       "symbol": "Init",
       "kind": "func",
       "file": "api/prometheus/prometheus.go",
-      "def_line": 756,
-      "call_line": 806,
+      "def_line": 773,
+      "call_line": 823,
       "calls": "RunSockproxyMetrics",
       "entry_point": "main"
      }
@@ -1536,8 +1546,8 @@
       "symbol": "Init",
       "kind": "func",
       "file": "api/prometheus/prometheus.go",
-      "def_line": 756,
-      "call_line": 806,
+      "def_line": 773,
+      "call_line": 823,
       "calls": "RunSockproxyMetrics",
       "entry_point": "main"
      }
@@ -1588,8 +1598,8 @@
       "symbol": "Init",
       "kind": "func",
       "file": "api/prometheus/prometheus.go",
-      "def_line": 756,
-      "call_line": 806,
+      "def_line": 773,
+      "call_line": 823,
       "calls": "RunSockproxyMetrics",
       "entry_point": "main"
      }
@@ -1640,8 +1650,8 @@
       "symbol": "Init",
       "kind": "func",
       "file": "api/prometheus/prometheus.go",
-      "def_line": 756,
-      "call_line": 806,
+      "def_line": 773,
+      "call_line": 823,
       "calls": "RunSockproxyMetrics",
       "entry_point": "main"
      }
@@ -1658,7 +1668,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmitsLabelledSeries compares the queued gauge and the role=queue limit of one pool against the store (per-label oracle); TestAdmissionCollectorEmptyStore asserts nothing but the anomaly counters remains with no pool. The C side (sp_fc_fill_queue_stat on every ai_gw_mode pool) reads the queue that loxilb-ebpf/common/test_fc_queue.c drives; runtime proof belongs to cicd/ai-admission (rows Q, T, X, D, M)."
    },
@@ -1672,7 +1682,7 @@
     "data_sources": [
      { "symbol": "refreshAdmissionStore", "kind": "func", "file": "api/prometheus/ai_admission_metrics.go", "def_line": 430, "writes": "admissionStore" },
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1090, "call_line": 1338, "calls": "refreshAdmissionStore" },
-     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/ai_admission_metrics_test.go TestAdmissionCollectorEmitsLabelledSeries compares every bucket, the sum in seconds and the count of one pool against the store; TestAdmissionQwaitCumulative pins the per-bucket to cumulative conversion and the reason order against enum fc_reason. The C side (fc_note_wait on every resumed request) is driven by loxilb-ebpf/common/test_fc_queue.c; runtime proof belongs to cicd/ai-admission (row Q)."
    },
@@ -2101,8 +2111,8 @@
    "loxilb_processed_packets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedPackets", "note": "summed across all LB rules in the scan; the per-protocol splits below partition the same total" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedPackets", "note": "summed across all LB rules in the scan; the per-protocol splits below partition the same total" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1071. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2110,8 +2120,8 @@
    "loxilb_processed_bytes_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedBytes", "note": "the PII-detection path (pkg/loxinet/pii_detection.go:1257) increments the same family for payload it inspected" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedBytes", "note": "the PII-detection path (pkg/loxinet/pii_detection.go:1257) increments the same family for payload it inspected" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1070 plus a second writer in pkg/loxinet/pii_detection.go. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2119,8 +2129,8 @@
    "loxilb_processed_tcp_bytes_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedTCPBytes" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedTCPBytes" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1072. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2128,8 +2138,8 @@
    "loxilb_processed_udp_bytes_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedUDPBytes" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedUDPBytes" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1073. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2137,8 +2147,8 @@
    "loxilb_processed_sctp_bytes_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedSCTPBytes" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedSCTPBytes" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1074. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2146,8 +2156,8 @@
    "loxilb_processed_tcp_packets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedTCPPackets" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedTCPPackets" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1075. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2155,8 +2165,8 @@
    "loxilb_processed_udp_packets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedUDPPackets" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedUDPPackets" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1076. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2164,8 +2174,8 @@
    "loxilb_processed_sctp_packets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "processedSCTPPackets" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "processedSCTPPackets" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1077. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2174,8 +2184,8 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a NAMED LB rule carrying traffic: the child is keyed by service name, and unnamed rules are deliberately excluded, so a Gateway with only unnamed rules exposes no children.",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "serviceTrafficBytes" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "serviceTrafficBytes" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1080. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2184,8 +2194,8 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a NAMED LB rule carrying traffic; unnamed rules are excluded from the service-labelled families by design.",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "serviceTrafficPackets" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "serviceTrafficPackets" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1083. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2193,8 +2203,8 @@
    "loxilb_backend_traffic_bytes_total": {
     "status": "verified-static",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "backendTrafficBytes", "note": "first pass seeds baselines and adds nothing; later passes add the delta, and a counter that went backwards (DP restart) is treated as a fresh value rather than a negative delta" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "backendTrafficBytes", "note": "first pass seeds baselines and adds nothing; later passes add the delta, and a counter that went backwards (DP restart) is treated as a fresh value rather than a negative delta" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "api/prometheus/backend_traffic_metrics_test.go TestBackendTrafficExactDeltasPerEndpoint drives collectLbRuleTraffic itself and asserts 6000 bytes / 60 packets on the active endpoint, 0 on the idle one (the red twin), plus seeding, counter-reset and series-reaping behaviour. Scenario M01 owns the runtime proof."
@@ -2202,8 +2212,8 @@
    "loxilb_backend_traffic_packets_total": {
     "status": "verified-static",
     "writer_sources": [
-     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 995, "writes": "backendTrafficPackets" },
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "call_line": 978, "calls": "collectLbRuleTraffic" },
+     { "symbol": "collectLbRuleTraffic", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1012, "writes": "backendTrafficPackets" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "call_line": 995, "calls": "collectLbRuleTraffic" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "api/prometheus/backend_traffic_metrics_test.go TestBackendTrafficExactDeltasPerEndpoint asserts a packet delta of exactly 60 for the endpoint that moved and 0 for the one that did not, driving the production collector. Scenario M01 owns the runtime proof."
@@ -2211,10 +2221,10 @@
    "loxilb_active_conntrack_entries": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "activeConntrackCount" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "activeConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1641. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2222,10 +2232,10 @@
    "loxilb_active_flow_count_tcp": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "activeFlowCountTcp" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "activeFlowCountTcp" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1642. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2233,10 +2243,10 @@
    "loxilb_active_flow_count_udp": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "activeFlowCountUdp" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "activeFlowCountUdp" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1643. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2244,10 +2254,10 @@
    "loxilb_active_flow_count_sctp": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "activeFlowCountSctp" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "activeFlowCountSctp" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1644. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2255,10 +2265,10 @@
    "loxilb_new_flows": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "newFlowCount" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "newFlowCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1645. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2266,10 +2276,10 @@
    "loxilb_requests_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "totalRequests", "note": "the fleet-wide request rollup; loxilb_service_requests_total is the same quantity partitioned by service" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "totalRequests", "note": "the fleet-wide request rollup; loxilb_service_requests_total is the same quantity partitioned by service" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1668. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2277,10 +2287,10 @@
    "loxilb_errors_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "totalErrors", "note": "sampled from connection STATE every collection period, so short-lived error flows can be missed entirely -- loxilb_l4_error_events_total is the event-driven source of truth for L4 error alerting" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "totalErrors", "note": "sampled from connection STATE every collection period, so short-lived error flows can be missed entirely -- loxilb_l4_error_events_total is the event-driven source of truth for L4 error alerting" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1669. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2289,10 +2299,10 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a NAMED LB rule with traffic; the child is keyed by service name. The same counters back the REST surface through GetReqCountSM (api/prometheus/prometheus_sm.go:253).",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "totalRequestsPerService" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "totalRequestsPerService" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1676. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2301,10 +2311,10 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a NAMED LB rule whose flows actually errored; no error, no child. GetErrCountSM (api/prometheus/prometheus_sm.go:282) reads the same counters for the REST surface.",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "totalErrorsPerService" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "totalErrorsPerService" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1679. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -2312,10 +2322,10 @@
    "loxilb_backend_traffic_connections_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1644, "writes": "backendTrafficConnections", "note": "counted from the conntrack rollup rather than the LB rule scan, so it moves on connection establishment, not on byte deltas" },
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "call_line": 1570, "calls": "updateAllMetricSystems" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "updateAllMetricSystems", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1661, "writes": "backendTrafficConnections", "note": "counted from the conntrack rollup rather than the LB rule scan, so it moves on connection establishment, not on byte deltas" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "call_line": 1587, "calls": "updateAllMetricSystems" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1683. api/prometheus/backend_traffic_metrics_test.go:245 asserts values it wrote itself with a hand-copied version of the production loop, so it is not evidence about this writer; scenario M01 owns the proof."
@@ -2323,9 +2333,9 @@
    "loxilb_closed_connections_processed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "writes": "closedConnectionsProcessed", "note": "counts flows finalized on close, which is how byte/packet totals for short flows reach the counters at all" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "writes": "closedConnectionsProcessed", "note": "counts flows finalized on close, which is how byte/packet totals for short flows reach the counters at all" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1352. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2333,9 +2343,9 @@
    "loxilb_conntrack_stat_resets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "writes": "counterResetEvents", "note": "increments when a DP counter went backwards; a rising value means the delta arithmetic is being exercised, not that data was lost" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "writes": "counterResetEvents", "note": "increments when a DP counter went backwards; a rising value means the delta arithmetic is being exercised, not that data was lost" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1477. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2344,9 +2354,9 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "conntrack flows attributed to a client address: children are created per client, so an idle Gateway (or one whose flows are all unattributable) exposes none.",
     "writer_sources": [
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "writes": "clientTrafficPackets" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "writes": "clientTrafficPackets" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1582. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2355,9 +2365,9 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "conntrack flows to a specific endpoint; the child appears only once a flow to that endpoint has been accounted.",
     "writer_sources": [
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "writes": "endpointTrafficBytes" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "writes": "endpointTrafficBytes" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1577. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2366,9 +2376,9 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a flow matched against a specific LB rule; children are per rule, so a Gateway with no matched traffic exposes none.",
     "writer_sources": [
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "writes": "lbRuleInteractionBytes", "note": "two accounting sites: the closed-flow finalization at :1334 and the live-flow delta at :1451" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "writes": "lbRuleInteractionBytes", "note": "two accounting sites: the closed-flow finalization at :1334 and the live-flow delta at :1451" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1334 and :1451. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2377,9 +2387,9 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a flow matched against a specific LB rule; same per-rule child creation as the bytes counter.",
     "writer_sources": [
-     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1218, "writes": "lbRuleInteractionPackets" },
-     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1127, "call_line": 1140, "calls": "processConntrackDataOptimized" },
-     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1119, "call_line": 1121, "calls": "RunOptimizedActiveConntrackCount" },
+     { "symbol": "processConntrackDataOptimized", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1235, "writes": "lbRuleInteractionPackets" },
+     { "symbol": "RunOptimizedActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1144, "call_line": 1157, "calls": "processConntrackDataOptimized" },
+     { "symbol": "RunActiveConntrackCount", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1136, "call_line": 1138, "calls": "RunOptimizedActiveConntrackCount" },
      { "tail": "prom-init-conntrack-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1335 and :1452. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2387,7 +2397,7 @@
    "loxilb_security_syn_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securitySYNBlocked", "note": "read from the DP security-rate maps once per cycle as a delta" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securitySYNBlocked", "note": "read from the DP security-rate maps once per cycle as a delta" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1865. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2395,7 +2405,7 @@
    "loxilb_security_syn_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securitySYNPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securitySYNPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1866. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2403,7 +2413,7 @@
    "loxilb_security_syn_cookies_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securitySYNCookies" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securitySYNCookies" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1867. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2411,7 +2421,7 @@
    "loxilb_security_conn_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityConnBlocked" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityConnBlocked" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1868. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2419,7 +2429,7 @@
    "loxilb_security_conn_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityConnPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityConnPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1869. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2427,7 +2437,7 @@
    "loxilb_security_udp_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityUDPBlocked" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityUDPBlocked" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1870. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2435,7 +2445,7 @@
    "loxilb_security_udp_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityUDPPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityUDPPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1871. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2443,7 +2453,7 @@
    "loxilb_security_udp_bytes_blocked_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityUDPBytesBlocked" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityUDPBytesBlocked" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1872. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2451,7 +2461,7 @@
    "loxilb_security_udp_bytes_passed_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityUDPBytesPassed" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityUDPBytesPassed" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1873. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2459,7 +2469,7 @@
    "loxilb_security_unique_ips": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1830, "writes": "securityUniqueIPs", "note": "a gauge of distinct source addresses seen by the rate limiter in the current window, not a cumulative total" },
+     { "symbol": "RunSecurityRateStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1847, "writes": "securityUniqueIPs", "note": "a gauge of distinct source addresses seen by the rate limiter in the current window, not a cumulative total" },
      { "tail": "prom-init-security-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1876. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2468,7 +2478,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one blacklist entry must exist: children are keyed per filter entry, so an unconfigured Gateway exposes none.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1909, "writes": "ipFilterBlacklistPackets", "note": "two sites, :1934 for the per-entry delta and :1957 for the reap pass" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1916, "writes": "ipFilterBlacklistPackets", "note": "two sites, :1934 for the per-entry delta and :1957 for the reap pass" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1934 and :1957. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2477,7 +2487,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one blacklist entry must exist; same per-entry children as the packets counter.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1909, "writes": "ipFilterBlacklistBytes" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1916, "writes": "ipFilterBlacklistBytes" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1935 and :1958. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2486,7 +2496,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one whitelist entry must exist.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1909, "writes": "ipFilterWhitelistPackets" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1916, "writes": "ipFilterWhitelistPackets" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1938 and :1960. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2495,7 +2505,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "at least one whitelist entry must exist.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1909, "writes": "ipFilterWhitelistBytes" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1916, "writes": "ipFilterWhitelistBytes" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1939 and :1961. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2504,7 +2514,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "the gauge's children are per filter kind and are only set for kinds the Gateway actually has, so with no ipfilter configuration there is nothing to report.",
     "writer_sources": [
-     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1909, "writes": "ipFilterTotalRules" },
+     { "symbol": "RunIPFilterStats", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1916, "writes": "ipFilterTotalRules" },
      { "tail": "prom-init-ipfilter-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1967 and :1968. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2544,7 +2554,7 @@
    "loxilb_firewall_rules": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1762, "writes": "fwRuleCount", "note": "count of configured firewall rules; 0 is a real answer, not an absence" },
+     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1779, "writes": "fwRuleCount", "note": "count of configured firewall rules; 0 is a real answer, not an absence" },
      { "tail": "prom-init-fwrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1796. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2552,7 +2562,7 @@
    "loxilb_fw_drop_packets_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1762, "writes": "totalDropsByFw", "note": "fleet-wide drop total; the per-rule family partitions the same count" },
+     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1779, "writes": "totalDropsByFw", "note": "fleet-wide drop total; the per-rule family partitions the same count" },
      { "tail": "prom-init-fwrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1776. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2561,7 +2571,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a configured firewall rule that actually dropped a packet: children are per rule, so both the rule and a matching packet are required.",
     "writer_sources": [
-     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1762, "writes": "totalDropsByFwPerRule", "note": "two sites, the per-rule delta at :1775 and the reap pass at :1789" },
+     { "symbol": "RunGetFwRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 1779, "writes": "totalDropsByFwPerRule", "note": "two sites, the per-rule delta at :1775 and the reap pass at :1789" },
      { "tail": "prom-init-fwrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1775 and :1789. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
@@ -2569,7 +2579,7 @@
    "loxilb_healthy_endpoints": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetEndpoint", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 905, "writes": "healthyHostCount", "note": "counted from the endpoint health scan; with no endpoints configured it reports 0 rather than disappearing" },
+     { "symbol": "RunGetEndpoint", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 922, "writes": "healthyHostCount", "note": "counted from the endpoint health scan; with no endpoints configured it reports 0 rather than disappearing" },
      { "tail": "prom-init-endpoint-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:925. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2577,7 +2587,7 @@
    "loxilb_unhealthy_endpoints": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetEndpoint", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 905, "writes": "unHealthyHostCount" },
+     { "symbol": "RunGetEndpoint", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 922, "writes": "unHealthyHostCount" },
      { "tail": "prom-init-endpoint-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:926. No test drives the collector and no bed run has checked this family's value; scenario M00/M01 owns the runtime proof."
@@ -2585,7 +2595,7 @@
    "loxilb_ai_keyed_services": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "writes": "keyedServiceCount", "note": "number of LB rules with API-key auth enabled, recomputed each scan" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "writes": "keyedServiceCount", "note": "number of LB rules with API-key auth enabled, recomputed each scan" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:967. api/prometheus/keyed_services_test.go asserts countKeyedServices by setting the gauge itself, so it covers the counting rule but not this writer; scenario M03 owns the proof."
@@ -2593,7 +2603,7 @@
    "loxilb_lb_rules": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 956, "writes": "ruleCount", "note": "a name search for 'ruleCount' also hits pkg/loxinet/rules.go, but those are the endpoint struct's own ruleCount FIELD (data.ruleCount, ep.ruleCount) -- a different symbol in a different scope, exactly the false positive this map exists to settle" },
+     { "symbol": "RunGetLBRule", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 973, "writes": "ruleCount", "note": "a name search for 'ruleCount' also hits pkg/loxinet/rules.go, but those are the endpoint struct's own ruleCount FIELD (data.ruleCount, ep.ruleCount) -- a different symbol in a different scope, exactly the false positive this map exists to settle" },
      { "tail": "prom-init-lbrule-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:966 is the only writer of the gauge. No test drives the collector; scenario M00/M01 owns the runtime proof."
@@ -2602,8 +2612,8 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an eBPF datapath that reports a positive LLB_CT_MAP_ENTRIES: the gauge is registered lazily on the first positive value, so on a build with no datapath capacity the family is absent -- deliberately, because a fake 0 would make every utilization ratio divide by zero.",
     "writer_sources": [
-     { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2284, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
-     { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 624, "call_line": 717, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
+     { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2291, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
+     { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 616, "call_line": 709, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
      { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 359, "call_line": 562, "calls": "DpEbpfInit" },
      { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1337, "call_line": 1338, "calls": "loxiNetInit", "entry_point": "main" }
     ],
@@ -3703,6 +3713,91 @@
      { "symbol": "init", "kind": "func", "file": "api/restapi/handler/audit_metrics.go", "def_line": 245, "call_line": 246, "calls": "auditCollector", "entry_point": "registry-collector", "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect" }
     ],
     "evidence": "api/restapi/handler TestAuditMetricsFollowTheSinks scrapes the collector with two sinks configured, compares the exported count with the tailer's own, and takes one receiver away to see connected, failures and lag move for that sink alone; pkg/audit TestSinkTailerPlaceSaysHowFarBehindTheSinkIs and TestTrailBytesBehind check the place and the byte count against the files."
+   },
+   "loxilb_security_aggregate_syn_blocked_total": {
+    "status": "writer-mapped",
+    "writer_sources": [
+     {
+      "symbol": "RunSecurityRateStats",
+      "kind": "func",
+      "file": "api/prometheus/prometheus.go",
+      "def_line": 1847,
+      "writes": "securityAggregateSYNBlocked",
+      "note": "read security-rate counter from the DP->Go collector chain"
+     },
+     {
+      "tail": "prom-init-security-main"
+     }
+    ],
+    "evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+   },
+   "loxilb_security_aggregate_conn_blocked_total": {
+    "status": "writer-mapped",
+    "writer_sources": [
+     {
+      "symbol": "RunSecurityRateStats",
+      "kind": "func",
+      "file": "api/prometheus/prometheus.go",
+      "def_line": 1847,
+      "writes": "securityAggregateConnBlocked",
+      "note": "read security-rate counter from the DP->Go collector chain"
+     },
+     {
+      "tail": "prom-init-security-main"
+     }
+    ],
+    "evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+   },
+   "loxilb_security_aggregate_udp_blocked_total": {
+    "status": "writer-mapped",
+    "writer_sources": [
+     {
+      "symbol": "RunSecurityRateStats",
+      "kind": "func",
+      "file": "api/prometheus/prometheus.go",
+      "def_line": 1847,
+      "writes": "securityAggregateUDPBlocked",
+      "note": "read security-rate counter from the DP->Go collector chain"
+     },
+     {
+      "tail": "prom-init-security-main"
+     }
+    ],
+    "evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+   },
+   "loxilb_security_tracking_failures_total": {
+    "status": "writer-mapped",
+    "writer_sources": [
+     {
+      "symbol": "RunSecurityRateStats",
+      "kind": "func",
+      "file": "api/prometheus/prometheus.go",
+      "def_line": 1847,
+      "writes": "securityTrackingFailures",
+      "note": "read security-rate counter from the DP->Go collector chain"
+     },
+     {
+      "tail": "prom-init-security-main"
+     }
+    ],
+    "evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+   },
+   "loxilb_security_unsupported_packet_blocked_total": {
+    "status": "writer-mapped",
+    "writer_sources": [
+     {
+      "symbol": "RunSecurityRateStats",
+      "kind": "func",
+      "file": "api/prometheus/prometheus.go",
+      "def_line": 1847,
+      "writes": "securityUnsupportedPacketBlocked",
+      "note": "read security-rate counter from the DP->Go collector chain"
+     },
+     {
+      "tail": "prom-init-security-main"
+     }
+    ],
+    "evidence": "IPv6 malformed/fragment counter source verified; final immutable candidate qualification pending."
    }
   }
  }
