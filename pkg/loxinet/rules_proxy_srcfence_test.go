@@ -155,3 +155,94 @@ func TestAddLbRuleAllowedSourcesRefusedInProxyOnly(t *testing.T) {
 		t.Fatalf("want RuleArgumentError (HTTP 400), got %T: %v", err, err)
 	}
 }
+
+func TestProxySrcFenceSharedOwnership(t *testing.T) {
+	a := fenceRule(t, "10.10.10.254", 8080, cmn.LBModeFullProxy, "192.0.2.0/24")
+	b := fenceRule(t, "10.10.10.254", 8080, cmn.LBModeFullProxy, "192.0.2.0/24")
+	R := &RuleH{}
+	R.tables[RtLB].eMap = map[string]*ruleEnt{"a": a, "b": b}
+	// Delete clears A's sources while B remains live in the table.
+	a.srcList = nil
+	a.proxySrcFw = lbProxySrcFenceWanted(b)
+	// No firewall table is provided: a deletion attempt would fail. This
+	// exercises the production sync path, not only the ownership predicate.
+	if err := R.syncProxySrcFence(a); err != nil {
+		t.Fatalf("shared entries must not be deleted: %v", err)
+	}
+	if len(a.proxySrcFw) != 0 {
+		t.Fatal("deleted pool retained its local interest in the fence")
+	}
+	for _, fw := range lbProxySrcFenceWanted(b) {
+		if !R.proxySrcFenceNeededByPeer(a, fw) {
+			t.Fatalf("deleting A would remove B's fence: %+v", fw)
+		}
+	}
+	delete(R.tables[RtLB].eMap, "a")
+	b.srcList = nil
+	if R.proxySrcFenceNeededByPeer(b, fenceDrop) {
+		t.Fatal("last owner cannot release fence")
+	}
+}
+
+func TestProxySrcFenceListenerPolicyContract(t *testing.T) {
+	a := fenceRule(t, "10.10.10.254", 8080, cmn.LBModeFullProxy, "192.0.2.0/24", "198.51.100.7/32")
+	R := &RuleH{}
+	R.tables[RtLB].eMap = map[string]*ruleEnt{"a": a}
+	same, err := normalizeListenerSources([]cmn.LbAllowedSrcIPArg{{Prefix: "198.51.100.7/32"}, {Prefix: "192.0.2.42/24"}, {Prefix: "192.0.2.0/24"}})
+	if err != nil || len(same) != 2 {
+		t.Fatalf("normalize: %+v %v", same, err)
+	}
+	if R.lbListenerSourcesConflict(nil, &a.tuples, same) != nil {
+		t.Fatal("equivalent policy rejected")
+	}
+	for _, srcs := range [][]cmn.LbAllowedSrcIPArg{nil, {{Prefix: "203.0.113.0/24"}}} {
+		if R.lbListenerSourcesConflict(nil, &a.tuples, srcs) != a {
+			t.Fatal("conflicting shared listener accepted")
+		}
+		if R.lbListenerSourcesConflict(a, &a.tuples, srcs) != nil {
+			t.Fatal("sole owner cannot update policy")
+		}
+	}
+	unrestricted := fenceRule(t, "10.10.10.254", 8080, cmn.LBModeFullProxy)
+	R.tables[RtLB].eMap["empty"] = unrestricted
+	if R.lbListenerSourcesConflict(a, &a.tuples, same) != unrestricted {
+		t.Fatal("unrestricted peer silently restricted")
+	}
+	delete(R.tables[RtLB].eMap, "empty")
+	for name, r := range map[string]*ruleEnt{
+		"port":     fenceRule(t, "10.10.10.254", 8081, cmn.LBModeFullProxy),
+		"address":  fenceRule(t, "10.10.10.253", 8080, cmn.LBModeFullProxy),
+		"protocol": fenceRule(t, "10.10.10.254", 8080, cmn.LBModeFullProxy),
+	} {
+		if name == "protocol" {
+			r.tuples.l4Prot.val = 17
+		}
+		if R.lbListenerSourcesConflict(nil, &r.tuples, nil) != nil {
+			t.Fatalf("independent %s rejected", name)
+		}
+	}
+	ranged := fenceRule(t, "10.10.10.254", 8079, cmn.LBModeFullProxy)
+	ranged.tuples.l4Dst.valMax = 8081
+	if R.lbListenerSourcesConflict(nil, &ranged.tuples, nil) != a {
+		t.Fatal("overlapping port range bypasses policy")
+	}
+	if _, err := normalizeListenerSources([]cmn.LbAllowedSrcIPArg{{Prefix: "not-a-cidr"}}); err == nil {
+		t.Fatal("malformed prefix accepted")
+	}
+}
+
+func TestAddLbRuleListenerSourcesConflictPreservesPeer(t *testing.T) {
+	peer := fenceRule(t, "10.10.10.254", 8080, cmn.LBModeFullProxy, "192.0.2.0/24")
+	peer.tuples.modelName = "existing-model"
+	R := &RuleH{}
+	R.tables[RtLB].eMap = map[string]*ruleEnt{peer.tuples.ruleKey(): peer}
+	serv := cmn.LbServiceArg{ServIP: "10.10.10.254", ServPort: 8080, Proto: "tcp", Mode: cmn.LBModeFullProxy, ModelName: "new-model"}
+	_, err := R.AddLbRule(serv, nil, nil, []cmn.LbAllowedSrcIPArg{{Prefix: "198.51.100.0/24"}}, []cmn.LbEndPointArg{{EpIP: "10.20.0.1", EpPort: 80, Weight: 1}})
+	var argErr *cmn.RuleArgumentError
+	if !errors.As(err, &argErr) {
+		t.Fatalf("want argument rejection, got %v", err)
+	}
+	if len(R.tables[RtLB].eMap) != 1 || R.tables[RtLB].eMap[peer.tuples.ruleKey()] != peer || peer.srcList[0].srcPref.String() != "192.0.2.0/24" {
+		t.Fatal("rejected create changed the existing policy")
+	}
+}

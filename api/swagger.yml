@@ -10312,8 +10312,9 @@ definitions:
               rejected. Enforced by the conntrack selector on DNAT-mode rules: once the
               rule's live connection count has reached the ceiling, further SYNs are
               dropped without a reset and without a conntrack entry, and a slot frees
-              when a connection is torn down. A FullProxy rule is not gated by this
-              field, and HTTP/2 streams are not counted as connections.
+              when a connection is torn down. FullProxy listeners enforce the ceiling at
+              accept: excess connections are closed before request processing.
+              HTTP/2 streams are not counted as separate connections.
           annotations:
             type: object
             additionalProperties:
@@ -11637,7 +11638,7 @@ definitions:
 
       allowedSources:
         type: array
-        description: Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.
+        description: Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization. FullProxy rules sharing an address, port and protocol must declare the same normalized source-prefix set (including empty); conflicting creates and updates are rejected with 400 before changing existing policy. Overlapping port ranges must also agree. Deleting one pool preserves the fence required by remaining pools. Only load-balancer rules in the first 29 rule slots (0-28) can carry source checks - the slot is allocated by the Gateway, not chosen here - so a create or patch carrying allowedSources on a rule allocated a higher slot is refused with 412; GET /status/capabilities reports the slot budget as lb_allowed_sources.
         items:
           properties:
             prefix:
