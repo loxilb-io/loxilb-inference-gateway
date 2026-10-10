@@ -2213,13 +2213,15 @@ func (R *RuleH) syncProxySrcFence(r *ruleEnt) error {
 		have = append(have, fw)
 	}
 	for _, fw := range dels {
-		if _, err := R.DeleteFwRule(fw); err != nil {
-			tk.LogIt(tk.LogError, "lb-rule %s proxy src-fence del %s->%s pref %d failed: %v\n",
-				r.tuples.String(), fw.SrcIP, fw.DstIP, fw.Pref, err)
-			if firstErr == nil {
-				firstErr = fmt.Errorf("proxy src-fence del failed: %w", err)
+		if !R.proxySrcFenceNeededByPeer(r, fw) {
+			if _, err := R.DeleteFwRule(fw); err != nil {
+				tk.LogIt(tk.LogError, "lb-rule %s proxy src-fence del %s->%s pref %d failed: %v\n",
+					r.tuples.String(), fw.SrcIP, fw.DstIP, fw.Pref, err)
+				if firstErr == nil {
+					firstErr = fmt.Errorf("proxy src-fence del failed: %w", err)
+				}
+				continue
 			}
-			continue
 		}
 		for i := range have {
 			if have[i] == fw {
@@ -4463,6 +4465,18 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	tk.LogIt(tk.LogDebug, "lb-rule key (add): %q\n", rt.ruleKey())
 
 	eRule := R.tables[RtLB].eMap[rt.ruleKey()]
+
+	// Reject shared-listener source conflicts before create/replace mutates
+	// any rule or fence. Replay uses the same safety contract.
+	if lBActs.mode == cmn.LBModeFullProxy {
+		allowedSources, err = normalizeListenerSources(allowedSources)
+		if err != nil {
+			return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
+		}
+		if other := R.lbListenerSourcesConflict(eRule, &rt, allowedSources); other != nil {
+			return RuleArgsErr, &cmn.RuleArgumentError{Err: fmt.Errorf("allowedSources: %s already uses this address, port and protocol with a different policy; fullproxy rules sharing a listener must use the same allowedSources", listenerRuleName(&other.tuples))}
+		}
+	}
 
 	// The data plane keeps the security mode and the backend TLS contexts once
 	// per listener, so a rule that asks for something else than the rules

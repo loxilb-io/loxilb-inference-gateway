@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-10-09T12:23:49+00:00",
-  "source_revision": "a4fb03ab10d3fd46354af1142f801c3987f9ac55"
+  "generated_at": "2026-10-10T21:35:11+00:00",
+  "source_revision": "b8b61b85dd51a71fe64474352ef06b9d7eb93543"
  },
  "contract": {
   "total": 314,
@@ -1544,8 +1544,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5548,
+     "def_line": 4046,
+     "call_line": 5562,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -2146,8 +2146,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5097,
+     "def_line": 4046,
+     "call_line": 5111,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2259,8 +2259,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5097,
+     "def_line": 4046,
+     "call_line": 5111,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2383,8 +2383,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5097,
+     "def_line": 4046,
+     "call_line": 5111,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2505,8 +2505,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5097,
+     "def_line": 4046,
+     "call_line": 5111,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2600,8 +2600,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -2691,8 +2691,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -2753,8 +2753,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5548,
+     "def_line": 4046,
+     "call_line": 5562,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -4310,8 +4310,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5553,
+     "def_line": 4046,
+     "call_line": 5567,
      "calls": "syncVllmScraper",
      "note": "on create; the replace path calls it too (rules.go:4891), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
@@ -7223,8 +7223,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7303,8 +7303,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7386,8 +7386,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7465,8 +7465,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7554,8 +7554,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7633,8 +7633,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7715,8 +7715,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9652,8 +9652,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank",
      "receiver": "RuleH"
     },
@@ -9809,8 +9809,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4044,
-     "call_line": 5505,
+     "def_line": 4046,
+     "call_line": 5519,
      "calls": "KvSubscriberStartRank"
     },
     {
