@@ -10005,23 +10005,27 @@ definitions:
         description: Version of the parity oracle (absent when not declared).
   LoadbalanceStats:
     type: object
-    description: Per-LB statistics quad (Octavia).
+    description: Per-LB statistics quad (Octavia). All four counters are emitted, including zero; a missing rule returns 404.
     properties:
       activeConnections:
         type: integer
         format: uint64
+        x-omitempty: false
         description: Live concurrent-connection count for the rule — the same selector-agnostic live count the connectionLimit gate enforces. Recomputed from the conntrack walk; reset to zero on restart.
       bytesIn:
         type: integer
         format: uint64
+        x-omitempty: false
         description: Real per-direction byte total for the forward CT_DIR_IN (client to VIP request) entries of the rule. NOT a 50/50 heuristic. Reset to zero on restart.
       bytesOut:
         type: integer
         format: uint64
+        x-omitempty: false
         description: Real per-direction byte total for the reverse CT_DIR_OUT (VIP to client response) entries of the rule. Reset to zero on restart.
       totalConnections:
         type: integer
         format: uint64
+        x-omitempty: false
         description: Monotonic cumulative connection count (incremented on first-seen CT for the rule, never decremented). In-memory only, reset to zero on restart.
   L7Rule:
     type: object

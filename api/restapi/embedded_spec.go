@@ -5758,27 +5758,31 @@ func init() {
       "type": "object"
     },
     "LoadbalanceStats": {
-      "description": "Per-LB statistics quad (Octavia).",
+      "description": "Per-LB statistics quad (Octavia). All four counters are emitted, including zero; a missing rule returns 404.",
       "properties": {
         "activeConnections": {
           "description": "Live concurrent-connection count for the rule \u2014 the same selector-agnostic live count the connectionLimit gate enforces. Recomputed from the conntrack walk; reset to zero on restart.",
           "format": "uint64",
-          "type": "integer"
+          "type": "integer",
+          "x-omitempty": false
         },
         "bytesIn": {
           "description": "Real per-direction byte total for the forward CT_DIR_IN (client to VIP request) entries of the rule. NOT a 50/50 heuristic. Reset to zero on restart.",
           "format": "uint64",
-          "type": "integer"
+          "type": "integer",
+          "x-omitempty": false
         },
         "bytesOut": {
           "description": "Real per-direction byte total for the reverse CT_DIR_OUT (VIP to client response) entries of the rule. Reset to zero on restart.",
           "format": "uint64",
-          "type": "integer"
+          "type": "integer",
+          "x-omitempty": false
         },
         "totalConnections": {
           "description": "Monotonic cumulative connection count (incremented on first-seen CT for the rule, never decremented). In-memory only, reset to zero on restart.",
           "format": "uint64",
-          "type": "integer"
+          "type": "integer",
+          "x-omitempty": false
         }
       },
       "type": "object"
@@ -42467,28 +42471,32 @@ func init() {
       }
     },
     "LoadbalanceStats": {
-      "description": "Per-LB statistics quad (Octavia).",
+      "description": "Per-LB statistics quad (Octavia). All four counters are emitted, including zero; a missing rule returns 404.",
       "type": "object",
       "properties": {
         "activeConnections": {
           "description": "Live concurrent-connection count for the rule \u2014 the same selector-agnostic live count the connectionLimit gate enforces. Recomputed from the conntrack walk; reset to zero on restart.",
           "type": "integer",
-          "format": "uint64"
+          "format": "uint64",
+          "x-omitempty": false
         },
         "bytesIn": {
           "description": "Real per-direction byte total for the forward CT_DIR_IN (client to VIP request) entries of the rule. NOT a 50/50 heuristic. Reset to zero on restart.",
           "type": "integer",
-          "format": "uint64"
+          "format": "uint64",
+          "x-omitempty": false
         },
         "bytesOut": {
           "description": "Real per-direction byte total for the reverse CT_DIR_OUT (VIP to client response) entries of the rule. Reset to zero on restart.",
           "type": "integer",
-          "format": "uint64"
+          "format": "uint64",
+          "x-omitempty": false
         },
         "totalConnections": {
           "description": "Monotonic cumulative connection count (incremented on first-seen CT for the rule, never decremented). In-memory only, reset to zero on restart.",
           "type": "integer",
-          "format": "uint64"
+          "format": "uint64",
+          "x-omitempty": false
         }
       }
     },
