@@ -83,7 +83,17 @@ plib_dump_domain() { # plib_dump_domain <llb> <domain> <outdir>
         # strip the KNOWN counter keys explicitly -- a new (unclassified)
         # field then shows up in the diff by default and forces a decision.
         url="$PLIB_API/config/securityrate/all"
-        filter='[.securityrateAttr[]? | del(.synPassed,.synBlocked,.synCookies,.connPassed,.connBlocked,.udpPassed,.udpBlocked,.uniqueIps)] | sort' ;;
+        # Older API versions omit opt-in aggregate budgets. Missing and zero
+        # both mean disabled; retain all positive values in the deep diff.
+        filter='[.securityrateAttr[]?
+          | del(.synPassed,.synBlocked,.synCookies,.connPassed,.connBlocked,
+                .udpPassed,.udpBlocked,.uniqueIps,.udpBytesPassed,.udpBytesBlocked,
+                .trackingFailures,.unsupportedPacketBlocked,
+                .aggregateSynBlocked,.aggregateConnBlocked,.aggregateUdpBlocked)
+          | .aggregateSynThreshold = (.aggregateSynThreshold // 0)
+          | .aggregateConnRatePerSec = (.aggregateConnRatePerSec // 0)
+          | .aggregateUdpPktThreshold = (.aggregateUdpPktThreshold // 0)
+          | .aggregateUdpBandwidthMB = (.aggregateUdpBandwidthMB // 0)] | sort' ;;
     bfd)
         url="$PLIB_API/config/bfd/all"
         filter='[.Attr[]? | del(.state)] | sort' ;;
