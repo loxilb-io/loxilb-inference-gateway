@@ -549,10 +549,11 @@ type IPFilterEntry struct {
 // This is the NEW unified approach that combines all three features into single eBPF maps
 type SecurityRateConfig struct {
 	// Gateway-wide IPv4/IPv6 budgets; zero disables each budget. Whitelisted sources bypass them.
-	AggregateSYNThreshold    uint32 `json:"aggregateSynThreshold"`
-	AggregateConnRatePerSec  uint32 `json:"aggregateConnRatePerSec"`
-	AggregateUDPPktThreshold uint32 `json:"aggregateUdpPktThreshold"`
-	AggregateUDPBandwidthMB  uint32 `json:"aggregateUdpBandwidthMB"`
+	// Omit additive zeros to preserve the canonical bytes/checksums of pre-aggregate snapshots.
+	AggregateSYNThreshold    uint32 `json:"aggregateSynThreshold,omitempty"`
+	AggregateConnRatePerSec  uint32 `json:"aggregateConnRatePerSec,omitempty"`
+	AggregateUDPPktThreshold uint32 `json:"aggregateUdpPktThreshold,omitempty"`
+	AggregateUDPBandwidthMB  uint32 `json:"aggregateUdpBandwidthMB,omitempty"`
 
 	// P0-5: SYN Flood Protection
 	SYNEnabled      bool   `json:"synEnabled"`
@@ -574,12 +575,12 @@ type SecurityRateConfig struct {
 
 // SecurityRateStats - Unified statistics for P0-5 + P0-6 + P0-7 from eBPF maps
 type SecurityRateStats struct {
-	UnsupportedPacketBlocked uint64     `json:"unsupportedPacketBlocked"`
+	UnsupportedPacketBlocked uint64     `json:"unsupportedPacketBlocked,omitempty"`
 	ResetGenerations         [16]uint64 `json:"-"` // Internal exporter epoch; not a public metric or API field.
-	TrackingFailures         uint64     `json:"trackingFailures"`
-	AggregateSYNBlocked      uint64     `json:"aggregateSynBlocked"`
-	AggregateConnBlocked     uint64     `json:"aggregateConnBlocked"`
-	AggregateUDPBlocked      uint64     `json:"aggregateUdpBlocked"`
+	TrackingFailures         uint64     `json:"trackingFailures,omitempty"`
+	AggregateSYNBlocked      uint64     `json:"aggregateSynBlocked,omitempty"`
+	AggregateConnBlocked     uint64     `json:"aggregateConnBlocked,omitempty"`
+	AggregateUDPBlocked      uint64     `json:"aggregateUdpBlocked,omitempty"`
 
 	// P0-5: SYN Flood Statistics
 	SYNBlocked uint64 `json:"synBlocked"` // SYN packets blocked
