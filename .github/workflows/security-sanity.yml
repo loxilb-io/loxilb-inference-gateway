@@ -90,6 +90,8 @@ jobs:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
       - uses: actions/setup-python@v5
+      - name: Idle-reap oracle regression
+        run: bash cicd/security-kv-coexist/test_idle_oracle.sh
       - uses: actions/setup-go@v5
         with:
           go-version: '>=1.18.0'

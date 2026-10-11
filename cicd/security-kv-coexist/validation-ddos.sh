@@ -212,14 +212,18 @@ echo "### D10 proxy: idle connection reaped at inactiveTimeOut=22"
 # activeConnections of a fullproxy rule is refreshed by the rules ticker (DpCtStatsRollup), and
 # a 3 s timeout reaped the connection (dp log [IDLE_TIMEOUT] idle=4s) before a tick could count it.
 c=$(rule_replace '"inactiveTimeOut":22'); sleep 3
+assert "D10: idle policy update accepted ($c)" "$([[ "$c" == 200 ]] && echo 1 || echo 0)"
 # one complete ROUTED request first (the idle clock starts at the last activity; an unrouted
 # path such as GET /v1/models is answered 503 and closed, so it never idles), then silence
-# the holder outlives the whole wait window (90 s > 25 + 40): only the gateway's reap can end
+# the holder outlives the whole wait window (120 s > 25 + 40 + 20): only the gateway's reap can end
 # it, and the reap is asserted on the gateway's own [IDLE_TIMEOUT] line, not on the gauge alone
 it_b=$(dp_log_count "IDLE_TIMEOUT")
-H10=$(hold_request_conn l3h2 90)
-act1=$(wait_active 1 25); act2=$(wait_active 0 40)
-it_a=$(dp_log_count "IDLE_TIMEOUT")
+H10=$(hold_request_conn l3h2 120)
+act1=$(wait_active 1 25)
+# Do not stop a live client when an asynchronous gauge first reports zero:
+# that used to kill the holder before 22s and manufacture a peer reset.
+it_a=$(wait_dp_log_count_ge "IDLE_TIMEOUT" $((it_b + 1)) 40)
+act2=$(wait_active 0 20)
 assert "D10: keep-alive connection counted then reaped after 22s idle (${act1} -> ${act2}; gateway IDLE_TIMEOUT lines +$((it_a - it_b)))" \
     "$([[ "$act1" -ge 1 && "$act2" == 0 && $((it_a - it_b)) -ge 1 ]] && echo 1 || echo 0)"
 end_holders l3h2 "$H10"
