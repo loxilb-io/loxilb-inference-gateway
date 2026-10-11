@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "5e36fc44f7bcae7588611893ef158e68e0f26c2a0e67d0a9fc719ab3c026c3bc",
-    "swagger.yml": "b5acf37512be50d7cd0fc16571743080aef57d29ec969dae49b5056889b271b6"
+    "swagger.yml": "49ee313f2516927aae3608989d14ed3939753fd3e58251af7c6fc999b968f90f"
   },
   "fields": [
     {
