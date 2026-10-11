@@ -74,9 +74,14 @@ lb_stats_active() {   # activeConnections of the VIP rule (Octavia stats quad)
     printf '%s\n' "$response" | python3 -c "import sys,json
 try:
     d=json.load(sys.stdin)
-    v=d['activeConnections'] if 'activeConnections' in d else d['ActiveConnections']
-    if type(v) is not int or v < 0: raise ValueError('invalid gauge')
-    print(v)
+    lower={'activeConnections','bytesIn','bytesOut','totalConnections'}
+    upper={'ActiveConnections','BytesIn','BytesOut','TotalConnections'}
+    if not isinstance(d,dict) or not d: raise ValueError('empty stats')
+    if not (set(d)<=lower or set(d)<=upper): raise ValueError('not stats quad')
+    if any(type(v) is not int or not 0<=v<2**64 for v in d.values()): raise ValueError('invalid stats')
+    # The generated optional uint64 quad omits zero fields. Infer zero only
+    # from a nonempty, wholly valid quad; HTTP/error/empty objects stay unknown.
+    print(d.get('activeConnections',d.get('ActiveConnections',0)))
 except Exception: print(-1)" 2>/dev/null
 }
 prompt_text() {
