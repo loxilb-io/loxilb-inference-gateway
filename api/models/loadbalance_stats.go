@@ -12,22 +12,22 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LoadbalanceStats Per-LB statistics quad (Octavia).
+// LoadbalanceStats Per-LB statistics quad (Octavia). All four counters are emitted, including zero; a missing rule returns 404.
 //
 // swagger:model LoadbalanceStats
 type LoadbalanceStats struct {
 
 	// Live concurrent-connection count for the rule — the same selector-agnostic live count the connectionLimit gate enforces. Recomputed from the conntrack walk; reset to zero on restart.
-	ActiveConnections uint64 `json:"activeConnections,omitempty"`
+	ActiveConnections uint64 `json:"activeConnections"`
 
 	// Real per-direction byte total for the forward CT_DIR_IN (client to VIP request) entries of the rule. NOT a 50/50 heuristic. Reset to zero on restart.
-	BytesIn uint64 `json:"bytesIn,omitempty"`
+	BytesIn uint64 `json:"bytesIn"`
 
 	// Real per-direction byte total for the reverse CT_DIR_OUT (VIP to client response) entries of the rule. Reset to zero on restart.
-	BytesOut uint64 `json:"bytesOut,omitempty"`
+	BytesOut uint64 `json:"bytesOut"`
 
 	// Monotonic cumulative connection count (incremented on first-seen CT for the rule, never decremented). In-memory only, reset to zero on restart.
-	TotalConnections uint64 `json:"totalConnections,omitempty"`
+	TotalConnections uint64 `json:"totalConnections"`
 }
 
 // Validate validates this loadbalance stats

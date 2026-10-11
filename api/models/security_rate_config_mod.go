@@ -14,10 +14,30 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// SecurityRateConfigMod Full replacement of rate-limit configuration and security-rate whitelist. All required flags and thresholds must be supplied; schema defaults do not establish omission support. Thresholds are 0..16777216 and UDP bandwidth is 0..4095 MiB/s. Enabled protections require positive applicable thresholds, and enabled SYN protection requires cookieThreshold < synThreshold. At least one protection must be enabled. At most 1024 valid whitelist CIDRs are accepted; omission clears the prior list. Explicit cookieThreshold zero becomes 50 in the datapath. Programming is non-atomic and shares whitelist maps with IP filtering.
+// SecurityRateConfigMod Full replacement of rate-limit configuration and security-rate whitelist. All required flags and thresholds must be supplied; schema defaults do not establish omission support. Thresholds are 0..16777216 and UDP bandwidth is 0..4095 MiB/s. Enabled protections require positive applicable thresholds, and enabled SYN protection requires cookieThreshold < synThreshold. At least one per-source protection or positive aggregate budget must be enabled. At most 1024 valid whitelist CIDRs are accepted; omission clears the prior list. Explicit cookieThreshold zero becomes 50 in the datapath. Programming is non-atomic and shares whitelist maps with IP filtering.
 //
 // swagger:model SecurityRateConfigMod
 type SecurityRateConfigMod struct {
+
+	// Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication.
+	// Maximum: 1.6777216e+07
+	// Minimum: 0
+	AggregateConnRatePerSec *int64 `json:"aggregateConnRatePerSec,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication.
+	// Maximum: 1.6777216e+07
+	// Minimum: 0
+	AggregateSynThreshold *int64 `json:"aggregateSynThreshold,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 UDP bandwidth budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. Units are MiB using 1024*1024 bytes.
+	// Maximum: 4095
+	// Minimum: 0
+	AggregateUDPBandwidthMB *int64 `json:"aggregateUdpBandwidthMB,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 UDP packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication.
+	// Maximum: 1.6777216e+07
+	// Minimum: 0
+	AggregateUDPPktThreshold *int64 `json:"aggregateUdpPktThreshold,omitempty"`
 
 	// Enable/disable connection rate limiting (P0-6)
 	// Required: true
@@ -59,6 +79,22 @@ type SecurityRateConfigMod struct {
 func (m *SecurityRateConfigMod) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateAggregateConnRatePerSec(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateAggregateSynThreshold(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateAggregateUDPBandwidthMB(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateAggregateUDPPktThreshold(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateConnRateEnabled(formats); err != nil {
 		res = append(res, err)
 	}
@@ -94,6 +130,70 @@ func (m *SecurityRateConfigMod) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *SecurityRateConfigMod) validateAggregateConnRatePerSec(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateConnRatePerSec) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateConnRatePerSec", "body", *m.AggregateConnRatePerSec, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateConnRatePerSec", "body", *m.AggregateConnRatePerSec, 1.6777216e+07, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SecurityRateConfigMod) validateAggregateSynThreshold(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateSynThreshold) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateSynThreshold", "body", *m.AggregateSynThreshold, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateSynThreshold", "body", *m.AggregateSynThreshold, 1.6777216e+07, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SecurityRateConfigMod) validateAggregateUDPBandwidthMB(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateUDPBandwidthMB) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateUdpBandwidthMB", "body", *m.AggregateUDPBandwidthMB, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateUdpBandwidthMB", "body", *m.AggregateUDPBandwidthMB, 4095, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SecurityRateConfigMod) validateAggregateUDPPktThreshold(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateUDPPktThreshold) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateUdpPktThreshold", "body", *m.AggregateUDPPktThreshold, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateUdpPktThreshold", "body", *m.AggregateUDPPktThreshold, 1.6777216e+07, false); err != nil {
+		return err
+	}
+
 	return nil
 }
 

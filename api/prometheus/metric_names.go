@@ -64,6 +64,12 @@ const (
 	MetricSecurityUDPBytesBlocked = "loxilb_security_udp_bytes_blocked_total"
 	MetricSecurityUDPBytesPassed  = "loxilb_security_udp_bytes_passed_total"
 
+	MetricSecurityAggregateSYNBlocked      = "loxilb_security_aggregate_syn_blocked_total"
+	MetricSecurityAggregateConnBlocked     = "loxilb_security_aggregate_conn_blocked_total"
+	MetricSecurityAggregateUDPBlocked      = "loxilb_security_aggregate_udp_blocked_total"
+	MetricSecurityUnsupportedPacketBlocked = "loxilb_security_unsupported_packet_blocked_total"
+	MetricSecurityTrackingFailures         = "loxilb_security_tracking_failures_total"
+
 	// IP filter metrics
 	MetricIPFilterBlacklistPackets = "loxilb_ipfilter_blacklist_packets_total"
 	MetricIPFilterBlacklistBytes   = "loxilb_ipfilter_blacklist_bytes_total"

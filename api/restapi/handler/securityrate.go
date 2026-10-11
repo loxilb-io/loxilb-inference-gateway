@@ -43,6 +43,18 @@ const (
 	secRateMaxWhitelistIPs   = 1024
 )
 
+// Omitted opt-in aggregate budgets remain disabled; no per-source defaults apply.
+func securityRateOptional(v *int64) int64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+func securityRateAggregateValue(v uint32) *int64 {
+	n := int64(v)
+	return &n
+}
+
 // ConfigPostSecurityRate - Configure unified security rate limiting (P0-5 SYN Flood + P0-6 Connection Rate + P0-7 UDP Flood)
 // POST /config/securityrate
 // Pattern: Follows ConfigPostIPFilter from P0-7 (ipfilter.go:29-67)
@@ -57,6 +69,11 @@ func ConfigPostSecurityRate(params operations.PostConfigSecurityrateParams, prin
 		max  int64
 	}{
 		{"synThreshold", *params.Attr.SynThreshold, secRateMaxPPSThreshold},
+		{"aggregateSynThreshold", securityRateOptional(params.Attr.AggregateSynThreshold), secRateMaxPPSThreshold},
+		{"aggregateConnRatePerSec", securityRateOptional(params.Attr.AggregateConnRatePerSec), secRateMaxPPSThreshold},
+		{"aggregateUdpPktThreshold", securityRateOptional(params.Attr.AggregateUDPPktThreshold), secRateMaxPPSThreshold},
+		{"aggregateUdpBandwidthMB", securityRateOptional(params.Attr.AggregateUDPBandwidthMB), secRateMaxUDPBandwidthMB},
+
 		{"cookieThreshold", *params.Attr.CookieThreshold, secRateMaxPPSThreshold},
 		{"ratePerSec", *params.Attr.RatePerSec, secRateMaxPPSThreshold},
 		{"udpPktThreshold", *params.Attr.UDPPktThreshold, secRateMaxPPSThreshold},
@@ -85,6 +102,11 @@ func ConfigPostSecurityRate(params operations.PostConfigSecurityrateParams, prin
 
 	// Extract parameters from request body
 	config := cmn.SecurityRateConfig{
+		AggregateSYNThreshold:    uint32(securityRateOptional(params.Attr.AggregateSynThreshold)),
+		AggregateConnRatePerSec:  uint32(securityRateOptional(params.Attr.AggregateConnRatePerSec)),
+		AggregateUDPPktThreshold: uint32(securityRateOptional(params.Attr.AggregateUDPPktThreshold)),
+		AggregateUDPBandwidthMB:  uint32(securityRateOptional(params.Attr.AggregateUDPBandwidthMB)),
+
 		// P0-5: SYN Flood Protection
 		SYNEnabled:      *params.Attr.SynEnabled,
 		SYNThreshold:    uint32(*params.Attr.SynThreshold),
@@ -137,9 +159,13 @@ func ConfigPostSecurityRate(params operations.PostConfigSecurityrateParams, prin
 	}
 
 	// Validation: At least one protection must be enabled
-	if !config.SYNEnabled && !config.ConnRateEnabled && !config.UDPEnabled {
+	if !config.SYNEnabled && !config.ConnRateEnabled && !config.UDPEnabled &&
+		config.AggregateSYNThreshold == 0 &&
+		config.AggregateConnRatePerSec == 0 &&
+		config.AggregateUDPPktThreshold == 0 &&
+		config.AggregateUDPBandwidthMB == 0 {
 		tk.LogIt(tk.LogError, "[SECURITYRATE] At least one protection (SYN, ConnRate, or UDP) must be enabled\n")
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid parameters: at least one protection (synEnabled, connRateEnabled, or udpEnabled) must be true")}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid parameters: at least one per-source protection or positive aggregate budget is required")}
 	}
 
 	tk.LogIt(tk.LogInfo, "[SECURITYRATE] Configure unified protection: synEnabled=%v (threshold=%d, cookie=%d), connRateEnabled=%v (rate=%d/s), udpEnabled=%v (pktThreshold=%d/s, bandwidthMB=%d), whitelist=%d IPs\n",
@@ -201,6 +227,16 @@ func ConfigGetSecurityRateAll(params operations.GetConfigSecurityrateAllParams, 
 
 	// Convert to API model
 	entry := &models.SecurityRateEntry{
+		TrackingFailures:         int64(state.Stats.TrackingFailures),
+		UnsupportedPacketBlocked: int64(state.Stats.UnsupportedPacketBlocked),
+		AggregateSynThreshold:    securityRateAggregateValue(state.Config.AggregateSYNThreshold),
+		AggregateConnRatePerSec:  securityRateAggregateValue(state.Config.AggregateConnRatePerSec),
+		AggregateUDPPktThreshold: securityRateAggregateValue(state.Config.AggregateUDPPktThreshold),
+		AggregateUDPBandwidthMB:  securityRateAggregateValue(state.Config.AggregateUDPBandwidthMB),
+		AggregateSynBlocked:      int64(state.Stats.AggregateSYNBlocked),
+		AggregateConnBlocked:     int64(state.Stats.AggregateConnBlocked),
+		AggregateUDPBlocked:      int64(state.Stats.AggregateUDPBlocked),
+
 		// P0-5: SYN Flood Configuration
 		SynEnabled:      state.Config.SYNEnabled,
 		SynThreshold:    int64(state.Config.SYNThreshold),

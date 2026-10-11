@@ -1,18 +1,18 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-10-10T21:35:11+00:00",
-  "source_revision": "b8b61b85dd51a71fe64474352ef06b9d7eb93543"
+  "generated_at": "2026-10-10T23:38:54+00:00",
+  "source_revision": "5afabb87b12e894e9ef164ff67e208dde8f7dbd7"
  },
  "contract": {
-  "total": 314,
+  "total": 319,
   "owners": {
-   "loxilb": 291,
+   "loxilb": 296,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 258,
+   "default": 263,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -21,13 +21,13 @@
   }
  },
  "coverage": {
-  "default_families": 258,
+  "default_families": 263,
   "default_referenced": 182,
   "default_waived": 21,
-  "default_unreferenced": 55,
-  "writer_classified": 258,
+  "default_unreferenced": 60,
+  "writer_classified": 263,
   "writer_unclassified": 0,
-  "writer_unverified": 64
+  "writer_unverified": 69
  },
  "families": [
   {
@@ -524,39 +524,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "activeConntrackCount"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -614,39 +614,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "activeFlowCountSctp"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -704,39 +704,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "activeFlowCountTcp"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -794,39 +794,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "activeFlowCountUdp"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -2008,7 +2008,7 @@
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
+     "def_line": 973,
      "writes": "keyedServiceCount",
      "note": "number of LB rules with API-key auth enabled, recomputed each scan"
     },
@@ -2016,8 +2016,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -5507,7 +5507,7 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "backendTrafficBytes",
      "note": "first pass seeds baselines and adds nothing; later passes add the delta, and a counter that went backwards (DP restart) is treated as a fresh value rather than a negative delta"
     },
@@ -5515,16 +5515,16 @@
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -5586,7 +5586,7 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "backendTrafficConnections",
      "note": "counted from the conntrack rollup rather than the LB rule scan, so it moves on connection establishment, not on byte deltas"
     },
@@ -5594,32 +5594,32 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -5680,23 +5680,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "backendTrafficPackets"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -5890,31 +5890,31 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
+     "def_line": 1235,
      "writes": "clientTrafficPackets"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -5970,7 +5970,7 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
+     "def_line": 1235,
      "writes": "closedConnectionsProcessed",
      "note": "counts flows finalized on close, which is how byte/packet totals for short flows reach the counters at all"
     },
@@ -5978,24 +5978,24 @@
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -6086,7 +6086,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:2289",
+   "source": "api/prometheus/prometheus.go:2296",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -6096,7 +6096,7 @@
      "symbol": "SetConntrackMaxEntries",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 2284,
+     "def_line": 2291,
      "writes": "conntrackMaxGauge",
      "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step"
     },
@@ -6104,8 +6104,8 @@
      "symbol": "DpEbpfInit",
      "kind": "func",
      "file": "pkg/loxinet/dpebpf_linux.go",
-     "def_line": 624,
-     "call_line": 717,
+     "def_line": 616,
+     "call_line": 709,
      "calls": "SetConntrackMaxEntries",
      "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this"
     },
@@ -6155,7 +6155,7 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
+     "def_line": 1235,
      "writes": "counterResetEvents",
      "note": "increments when a DP counter went backwards; a rising value means the delta arithmetic is being exercised, not that data was lost"
     },
@@ -6163,24 +6163,24 @@
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -6286,31 +6286,31 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
+     "def_line": 1235,
      "writes": "endpointTrafficBytes"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -6366,7 +6366,7 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "totalErrors",
      "note": "sampled from connection STATE every collection period, so short-lived error flows can be missed entirely -- loxilb_l4_error_events_total is the event-driven source of truth for L4 error alerting"
     },
@@ -6374,32 +6374,32 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -6457,7 +6457,7 @@
      "symbol": "RunGetFwRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1762,
+     "def_line": 1779,
      "writes": "fwRuleCount",
      "note": "count of configured firewall rules; 0 is a real answer, not an absence"
     },
@@ -6465,8 +6465,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 795,
+     "def_line": 773,
+     "call_line": 812,
      "calls": "RunGetFwRule"
     },
     {
@@ -6526,7 +6526,7 @@
      "symbol": "RunGetFwRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1762,
+     "def_line": 1779,
      "writes": "totalDropsByFw",
      "note": "fleet-wide drop total; the per-rule family partitions the same count"
     },
@@ -6534,8 +6534,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 795,
+     "def_line": 773,
+     "call_line": 812,
      "calls": "RunGetFwRule"
     },
     {
@@ -6596,7 +6596,7 @@
      "symbol": "RunGetFwRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1762,
+     "def_line": 1779,
      "writes": "totalDropsByFwPerRule",
      "note": "two sites, the per-rule delta at :1775 and the reap pass at :1789"
     },
@@ -6604,8 +6604,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 795,
+     "def_line": 773,
+     "call_line": 812,
      "calls": "RunGetFwRule"
     },
     {
@@ -6664,7 +6664,7 @@
      "symbol": "RunGetEndpoint",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 905,
+     "def_line": 922,
      "writes": "healthyHostCount",
      "note": "counted from the endpoint health scan; with no endpoints configured it reports 0 rather than disappearing"
     },
@@ -6672,8 +6672,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 794,
+     "def_line": 773,
+     "call_line": 811,
      "calls": "RunGetEndpoint"
     },
     {
@@ -6737,8 +6737,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 798,
+     "def_line": 773,
+     "call_line": 815,
      "calls": "RunSystemUtilization"
     },
     {
@@ -6788,7 +6788,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:636",
+   "source": "api/prometheus/prometheus.go:653",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -6798,15 +6798,15 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1909,
+     "def_line": 1916,
      "writes": "ipFilterBlacklistBytes"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 815,
+     "def_line": 773,
+     "call_line": 832,
      "calls": "RunIPFilterStats"
     },
     {
@@ -6858,7 +6858,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:628",
+   "source": "api/prometheus/prometheus.go:645",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -6868,7 +6868,7 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1909,
+     "def_line": 1916,
      "writes": "ipFilterBlacklistPackets",
      "note": "two sites, :1934 for the per-entry delta and :1957 for the reap pass"
     },
@@ -6876,8 +6876,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 815,
+     "def_line": 773,
+     "call_line": 832,
      "calls": "RunIPFilterStats"
     },
     {
@@ -6927,7 +6927,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:660",
+   "source": "api/prometheus/prometheus.go:677",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -6937,15 +6937,15 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1909,
+     "def_line": 1916,
      "writes": "ipFilterTotalRules"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 815,
+     "def_line": 773,
+     "call_line": 832,
      "calls": "RunIPFilterStats"
     },
     {
@@ -6995,7 +6995,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:652",
+   "source": "api/prometheus/prometheus.go:669",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -7005,15 +7005,15 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1909,
+     "def_line": 1916,
      "writes": "ipFilterWhitelistBytes"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 815,
+     "def_line": 773,
+     "call_line": 832,
      "calls": "RunIPFilterStats"
     },
     {
@@ -7065,7 +7065,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:644",
+   "source": "api/prometheus/prometheus.go:661",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -7075,15 +7075,15 @@
      "symbol": "RunIPFilterStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1909,
+     "def_line": 1916,
      "writes": "ipFilterWhitelistPackets"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 815,
+     "def_line": 773,
+     "call_line": 832,
      "calls": "RunIPFilterStats"
     },
     {
@@ -7771,8 +7771,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 819,
+     "def_line": 773,
+     "call_line": 836,
      "calls": "RunL4ErrorStats"
     },
     {
@@ -7882,7 +7882,7 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
+     "def_line": 1235,
      "writes": "lbRuleInteractionBytes",
      "note": "two accounting sites: the closed-flow finalization at :1334 and the live-flow delta at :1451"
     },
@@ -7890,24 +7890,24 @@
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -7967,31 +7967,31 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
+     "def_line": 1235,
      "writes": "lbRuleInteractionPackets"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -8051,7 +8051,7 @@
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
+     "def_line": 973,
      "writes": "ruleCount",
      "note": "a name search for 'ruleCount' also hits pkg/loxinet/rules.go, but those are the endpoint struct's own ruleCount FIELD (data.ruleCount, ep.ruleCount) -- a different symbol in a different scope, exactly the false positive this map exists to settle"
     },
@@ -8059,8 +8059,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -8126,8 +8126,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -8185,39 +8185,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "newFlowCount"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -8801,8 +8801,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -8867,8 +8867,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -8933,8 +8933,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -8999,8 +8999,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9065,8 +9065,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9131,8 +9131,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9199,8 +9199,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9266,8 +9266,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9509,8 +9509,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9575,8 +9575,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9703,8 +9703,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -9908,8 +9908,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10019,8 +10019,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10193,8 +10193,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10259,8 +10259,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10326,8 +10326,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10393,8 +10393,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10460,8 +10460,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10527,8 +10527,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10594,8 +10594,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10661,8 +10661,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10728,8 +10728,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -10898,7 +10898,7 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedBytes",
      "note": "the PII-detection path (pkg/loxinet/pii_detection.go:1257) increments the same family for payload it inspected"
     },
@@ -10906,16 +10906,16 @@
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -10972,7 +10972,7 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedPackets",
      "note": "summed across all LB rules in the scan; the per-protocol splits below partition the same total"
     },
@@ -10980,16 +10980,16 @@
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11046,23 +11046,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedSCTPBytes"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11121,23 +11121,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedSCTPPackets"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11194,23 +11194,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedTCPBytes"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11269,23 +11269,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedTCPPackets"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11342,23 +11342,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedUDPBytes"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11417,23 +11417,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "processedUDPPackets"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -11499,8 +11499,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11566,8 +11566,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11633,8 +11633,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11699,8 +11699,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11766,8 +11766,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11832,8 +11832,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11898,8 +11898,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -11964,8 +11964,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12030,8 +12030,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12096,8 +12096,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12162,8 +12162,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12268,8 +12268,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12335,8 +12335,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12401,8 +12401,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12467,8 +12467,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12533,8 +12533,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -12599,8 +12599,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -13337,8 +13337,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -13403,8 +13403,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -13475,8 +13475,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -13542,8 +13542,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -13659,8 +13659,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 811,
+     "def_line": 773,
+     "call_line": 828,
      "calls": "RunListenBacklogMetrics"
     },
     {
@@ -13732,8 +13732,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 811,
+     "def_line": 773,
+     "call_line": 828,
      "calls": "RunListenBacklogMetrics"
     },
     {
@@ -13798,8 +13798,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 806,
+     "def_line": 773,
+     "call_line": 823,
      "calls": "RunSockproxyMetrics"
     },
     {
@@ -14308,7 +14308,7 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "totalRequests",
      "note": "the fleet-wide request rollup; loxilb_service_requests_total is the same quantity partitioned by service"
     },
@@ -14316,32 +14316,32 @@
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -14480,6 +14480,201 @@
    "verification_evidence": "pkg/snapshot/metrics_test.go TestMetricsCommitOKIncrementsRestoreAndSnapshotSeries and TestMetricsParseFailureCountsAsRejected assert exact per-label deltas of 1. Not yet observed on a bed; scenario M15 owns the runtime proof."
   },
   {
+   "name": "loxilb_security_aggregate_conn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/prometheus.go:630",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "writer-mapped",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "RunSecurityRateStats",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 1847,
+     "writes": "securityAggregateConnBlocked",
+     "note": "read security-rate counter from the DP->Go collector chain"
+    },
+    {
+     "symbol": "Init",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 773,
+     "call_line": 831,
+     "calls": "RunSecurityRateStats"
+    },
+    {
+     "symbol": "PrometheusInit",
+     "kind": "method",
+     "receiver": "loxiNetH",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 170,
+     "call_line": 172,
+     "calls": "Init"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 359,
+     "call_line": 790,
+     "calls": "PrometheusInit",
+     "note": "guarded by opts.Opts.Prometheus"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1337,
+     "call_line": 1338,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+  },
+  {
+   "name": "loxilb_security_aggregate_syn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/prometheus.go:627",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "writer-mapped",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "RunSecurityRateStats",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 1847,
+     "writes": "securityAggregateSYNBlocked",
+     "note": "read security-rate counter from the DP->Go collector chain"
+    },
+    {
+     "symbol": "Init",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 773,
+     "call_line": 831,
+     "calls": "RunSecurityRateStats"
+    },
+    {
+     "symbol": "PrometheusInit",
+     "kind": "method",
+     "receiver": "loxiNetH",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 170,
+     "call_line": 172,
+     "calls": "Init"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 359,
+     "call_line": 790,
+     "calls": "PrometheusInit",
+     "note": "guarded by opts.Opts.Prometheus"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1337,
+     "call_line": 1338,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+  },
+  {
+   "name": "loxilb_security_aggregate_udp_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/prometheus.go:633",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "writer-mapped",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "RunSecurityRateStats",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 1847,
+     "writes": "securityAggregateUDPBlocked",
+     "note": "read security-rate counter from the DP->Go collector chain"
+    },
+    {
+     "symbol": "Init",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 773,
+     "call_line": 831,
+     "calls": "RunSecurityRateStats"
+    },
+    {
+     "symbol": "PrometheusInit",
+     "kind": "method",
+     "receiver": "loxiNetH",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 170,
+     "call_line": 172,
+     "calls": "Init"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 359,
+     "call_line": 790,
+     "calls": "PrometheusInit",
+     "note": "guarded by opts.Opts.Prometheus"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1337,
+     "call_line": 1338,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+  },
+  {
    "name": "loxilb_security_conn_blocked_total",
    "owner": "loxilb",
    "class": "default",
@@ -14504,15 +14699,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityConnBlocked"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14570,15 +14765,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityConnPassed"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14637,7 +14832,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securitySYNBlocked",
      "note": "read from the DP security-rate maps once per cycle as a delta"
     },
@@ -14645,8 +14840,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14704,15 +14899,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securitySYNCookies"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14770,15 +14965,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securitySYNPassed"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14812,6 +15007,71 @@
    "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1866. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
   },
   {
+   "name": "loxilb_security_tracking_failures_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/prometheus.go:636",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "writer-mapped",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "RunSecurityRateStats",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 1847,
+     "writes": "securityTrackingFailures",
+     "note": "read security-rate counter from the DP->Go collector chain"
+    },
+    {
+     "symbol": "Init",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 773,
+     "call_line": 831,
+     "calls": "RunSecurityRateStats"
+    },
+    {
+     "symbol": "PrometheusInit",
+     "kind": "method",
+     "receiver": "loxiNetH",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 170,
+     "call_line": 172,
+     "calls": "Init"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 359,
+     "call_line": 790,
+     "calls": "PrometheusInit",
+     "note": "guarded by opts.Opts.Prometheus"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1337,
+     "call_line": 1338,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "Aggregate/tracking counter runtime qualification pending on the campaign candidate; source writer chain re-verified."
+  },
+  {
    "name": "loxilb_security_udp_blocked_total",
    "owner": "loxilb",
    "class": "default",
@@ -14837,15 +15097,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityUDPBlocked"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14903,15 +15163,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityUDPBytesBlocked"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -14967,15 +15227,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityUDPBytesPassed"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -15033,15 +15293,15 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityUDPPassed"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -15099,7 +15359,7 @@
      "symbol": "RunSecurityRateStats",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1830,
+     "def_line": 1847,
      "writes": "securityUniqueIPs",
      "note": "a gauge of distinct source addresses seen by the rate limiter in the current window, not a cumulative total"
     },
@@ -15107,8 +15367,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 814,
+     "def_line": 773,
+     "call_line": 831,
      "calls": "RunSecurityRateStats"
     },
     {
@@ -15142,6 +15402,71 @@
    "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/prometheus.go:1876. No test drives the collector and no bed run has checked this family's value; scenario M13 owns the runtime proof."
   },
   {
+   "name": "loxilb_security_unsupported_packet_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/prometheus.go:640",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "writer-mapped",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "RunSecurityRateStats",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 1847,
+     "writes": "securityUnsupportedPacketBlocked",
+     "note": "read security-rate counter from the DP->Go collector chain"
+    },
+    {
+     "symbol": "Init",
+     "kind": "func",
+     "file": "api/prometheus/prometheus.go",
+     "def_line": 773,
+     "call_line": 831,
+     "calls": "RunSecurityRateStats"
+    },
+    {
+     "symbol": "PrometheusInit",
+     "kind": "method",
+     "receiver": "loxiNetH",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 170,
+     "call_line": 172,
+     "calls": "Init"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 359,
+     "call_line": 790,
+     "calls": "PrometheusInit",
+     "note": "guarded by opts.Opts.Prometheus"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1337,
+     "call_line": 1338,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "IPv6 malformed/fragment counter source verified; final immutable candidate qualification pending."
+  },
+  {
    "name": "loxilb_service_errors_total",
    "owner": "loxilb",
    "class": "default",
@@ -15168,39 +15493,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "totalErrorsPerService"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -15260,39 +15585,39 @@
      "symbol": "updateAllMetricSystems",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1644,
+     "def_line": 1661,
      "writes": "totalRequestsPerService"
     },
     {
      "symbol": "processConntrackDataOptimized",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1218,
-     "call_line": 1570,
+     "def_line": 1235,
+     "call_line": 1587,
      "calls": "updateAllMetricSystems"
     },
     {
      "symbol": "RunOptimizedActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1127,
-     "call_line": 1140,
+     "def_line": 1144,
+     "call_line": 1157,
      "calls": "processConntrackDataOptimized"
     },
     {
      "symbol": "RunActiveConntrackCount",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 1119,
-     "call_line": 1121,
+     "def_line": 1136,
+     "call_line": 1138,
      "calls": "RunOptimizedActiveConntrackCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 800,
+     "def_line": 773,
+     "call_line": 817,
      "calls": "RunActiveConntrackCount"
     },
     {
@@ -15352,23 +15677,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "serviceTrafficBytes"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -15427,23 +15752,23 @@
      "symbol": "collectLbRuleTraffic",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 995,
+     "def_line": 1012,
      "writes": "serviceTrafficPackets"
     },
     {
      "symbol": "RunGetLBRule",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 956,
-     "call_line": 978,
+     "def_line": 973,
+     "call_line": 995,
      "calls": "collectLbRuleTraffic"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 796,
+     "def_line": 773,
+     "call_line": 813,
      "calls": "RunGetLBRule",
      "note": "collector goroutine; one pass per PrometheusDefaultPeriod"
     },
@@ -16377,8 +16702,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 798,
+     "def_line": 773,
+     "call_line": 815,
      "calls": "RunSystemUtilization"
     },
     {
@@ -16444,8 +16769,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 798,
+     "def_line": 773,
+     "call_line": 815,
      "calls": "RunSystemUtilization"
     },
     {
@@ -16511,8 +16836,8 @@
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 798,
+     "def_line": 773,
+     "call_line": 815,
      "calls": "RunSystemUtilization"
     },
     {
@@ -16571,15 +16896,15 @@
      "symbol": "RunGetEndpoint",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 905,
+     "def_line": 922,
      "writes": "unHealthyHostCount"
     },
     {
      "symbol": "Init",
      "kind": "func",
      "file": "api/prometheus/prometheus.go",
-     "def_line": 756,
-     "call_line": 794,
+     "def_line": 773,
+     "call_line": 811,
      "calls": "RunGetEndpoint"
     },
     {

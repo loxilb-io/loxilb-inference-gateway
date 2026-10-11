@@ -67,10 +67,22 @@ loxilb_log_count() {
     local n; n=$(docker exec llb1 sh -c 'cat /var/log/loxilb*.log 2>/dev/null' 2>/dev/null | grep -cE "$1"); echo "${n:-0}"
 }
 lb_stats_active() {   # activeConnections of the VIP rule (Octavia stats quad)
-    llb_curl "${LBBASE}/externalipaddress/${VIP}/port/${VPORT}/protocol/tcp/stats" 2>/dev/null \
-        | python3 -c "import sys,json
-try: d=json.load(sys.stdin); print(int(d.get('activeConnections', d.get('ActiveConnections',0))))
-except Exception: print(-1)" 2>/dev/null || echo -1
+    local response
+    if ! response=$(llb_curl -f "${LBBASE}/externalipaddress/${VIP}/port/${VPORT}/protocol/tcp/stats" 2>/dev/null); then
+        echo -1; return
+    fi
+    printf '%s\n' "$response" | python3 -c "import sys,json
+try:
+    d=json.load(sys.stdin)
+    lower={'activeConnections','bytesIn','bytesOut','totalConnections'}
+    upper={'ActiveConnections','BytesIn','BytesOut','TotalConnections'}
+    if not isinstance(d,dict) or not d: raise ValueError('empty stats')
+    if not (set(d)<=lower or set(d)<=upper): raise ValueError('not stats quad')
+    if any(type(v) is not int or not 0<=v<2**64 for v in d.values()): raise ValueError('invalid stats')
+    # The generated optional uint64 quad omits zero fields. Infer zero only
+    # from a nonempty, wholly valid quad; HTTP/error/empty objects stay unknown.
+    print(d.get('activeConnections',d.get('ActiveConnections',0)))
+except Exception: print(-1)" 2>/dev/null
 }
 prompt_text() {
     python3 -c "import json,sys
@@ -160,6 +172,18 @@ wait_active() {   # wait_active <expected> [max-seconds] -> prints the last valu
 wait_metric_ge() {   # wait_metric_ge <metric regex> <min value> [max-seconds] -> prints the last value read
     local re="$1" want="$2" max="${3:-30}" v=0
     for _ in $(seq 1 "$max"); do v=$(metric_val "$re"); [[ "$v" -ge "$want" ]] && break; sleep 1; done
+    echo "$v"
+}
+# A listener gauge may change before the sampled idle connection is reaped.
+# Poll the owning datapath event before ending a holder; zero gauge alone is
+# not evidence that inactiveTimeOut fired.
+wait_dp_log_count_ge() { # <regex> <min count> [max-seconds]
+    local re="$1" want="$2" max="${3:-40}" v=0
+    for _ in $(seq 1 "$max"); do
+        v=$(dp_log_count "$re")
+        [[ "$v" -ge "$want" ]] && break
+        sleep 1
+    done
     echo "$v"
 }
 # securityrate off switch: a POST with every protection off is refused (400) by design

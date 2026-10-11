@@ -43,6 +43,7 @@ func TestProxyOnlySecurityRateRejectsKernelControlSettings(t *testing.T) {
 	cases := []cmn.SecurityRateConfig{
 		{SYNEnabled: true}, {ConnRateEnabled: true}, {UDPEnabled: true},
 		{SYNThreshold: 1}, {CookieThreshold: 1}, {RatePerSec: 1},
+		{AggregateSYNThreshold: 1}, {AggregateConnRatePerSec: 1}, {AggregateUDPPktThreshold: 1}, {AggregateUDPBandwidthMB: 1},
 		{UDPPktThreshold: 1}, {UDPBandwidthMB: 1}, {WhitelistIPs: []string{"192.0.2.1"}},
 	}
 	for _, cfg := range cases {
@@ -51,6 +52,27 @@ func TestProxyOnlySecurityRateRejectsKernelControlSettings(t *testing.T) {
 		}
 		if !reflect.DeepEqual(mh.securityRateConfig, cmn.SecurityRateConfig{}) {
 			t.Fatalf("rejected setting changed reported state: %+v", mh.securityRateConfig)
+		}
+	}
+}
+
+func TestSecurityRateInvalidSnapshotPreservesReportedConfig(t *testing.T) {
+	api := securityRateTestState(t, false)
+	mh.securityRateConfig = cmn.SecurityRateConfig{UDPEnabled: true, UDPPktThreshold: 100, UDPBandwidthMB: 100, AggregateUDPPktThreshold: 120}
+	want := mh.securityRateConfig
+	for _, cfg := range []*cmn.SecurityRateConfig{
+		nil,
+		{AggregateSYNThreshold: 1<<24 + 1},
+		{AggregateConnRatePerSec: ^uint32(0)},
+		{AggregateUDPPktThreshold: ^uint32(0)},
+		{AggregateUDPBandwidthMB: 4096},
+		{UDPBandwidthMB: 4096},
+	} {
+		if rc, err := api.NetSecurityRateSet(cfg); err == nil || rc == 0 {
+			t.Fatalf("invalid direct/snapshot configuration accepted: %+v", cfg)
+		}
+		if !reflect.DeepEqual(mh.securityRateConfig, want) {
+			t.Fatalf("invalid direct/snapshot configuration replaced policy: %+v", mh.securityRateConfig)
 		}
 	}
 }

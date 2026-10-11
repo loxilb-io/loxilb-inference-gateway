@@ -571,21 +571,21 @@ var (
 	securitySYNCookies = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecuritySYNCookies,
-			Help: "Total number of SYN cookie activations",
+			Help: "SYN threshold events only; not generated kernel cookies or successful cookie handshakes",
 		},
 	)
 
 	securityConnBlocked = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityConnBlocked,
-			Help: "Total number of connections blocked by rate limiting",
+			Help: "SYN packets blocked by connection-rate limiting; not completed connections",
 		},
 	)
 
 	securityConnPassed = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityConnPassed,
-			Help: "Total number of connections passed by rate limiting",
+			Help: "SYN packets passed by connection-rate limiting; not completed connections",
 		},
 	)
 
@@ -623,6 +623,23 @@ var (
 			Help: "Total number of UDP bytes passed by UDP flood protection",
 		},
 	)
+
+	securityAggregateSYNBlocked = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricSecurityAggregateSYNBlocked, Help: "Gateway-wide SYN budget drops; also included in SYN blocked totals",
+	})
+	securityAggregateConnBlocked = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricSecurityAggregateConnBlocked, Help: "Gateway-wide connection-SYN budget drops; also included in connection blocked totals",
+	})
+	securityAggregateUDPBlocked = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricSecurityAggregateUDPBlocked, Help: "Gateway-wide UDP packet or byte budget drops; also included in UDP blocked totals",
+	})
+	securityTrackingFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricSecurityTrackingFailures, Help: "Source tracking-map insertion failures; protected SYN and UDP packets fail closed",
+	})
+
+	securityUnsupportedPacketBlocked = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricSecurityUnsupportedPacketBlocked, Help: "IPv6 protected fragments and uninspectable header-chain drops",
+	})
 
 	// IP filter metrics
 	ipFilterBlacklistPackets = promauto.NewCounterVec(
@@ -1834,6 +1851,8 @@ func RunSecurityRateStats(ctx context.Context) {
 			return fmt.Errorf("security rate stats get failed: %v", err)
 		}
 
+		previous := securityRatePrevious(stats, prevSecurityStats)
+
 		// Calculate deltas (eBPF counters are cumulative, following conntrack pattern)
 		// Handle counter overflow/reset by checking if current < previous
 		var (
@@ -1849,37 +1868,19 @@ func RunSecurityRateStats(ctx context.Context) {
 		)
 
 		// SYN flood deltas with overflow protection
-		if stats.SYNBlocked >= prevSecurityStats.SYNBlocked {
-			deltaSYNBlocked = stats.SYNBlocked - prevSecurityStats.SYNBlocked
-		}
-		if stats.SYNPassed >= prevSecurityStats.SYNPassed {
-			deltaSYNPassed = stats.SYNPassed - prevSecurityStats.SYNPassed
-		}
-		if stats.SYNCookies >= prevSecurityStats.SYNCookies {
-			deltaSYNCookies = stats.SYNCookies - prevSecurityStats.SYNCookies
-		}
+		deltaSYNBlocked = securityRateCounterDelta(stats.SYNBlocked, previous.SYNBlocked)
+		deltaSYNPassed = securityRateCounterDelta(stats.SYNPassed, previous.SYNPassed)
+		deltaSYNCookies = securityRateCounterDelta(stats.SYNCookies, previous.SYNCookies)
 
 		// Connection rate deltas with overflow protection
-		if stats.ConnBlocked >= prevSecurityStats.ConnBlocked {
-			deltaConnBlocked = stats.ConnBlocked - prevSecurityStats.ConnBlocked
-		}
-		if stats.ConnPassed >= prevSecurityStats.ConnPassed {
-			deltaConnPassed = stats.ConnPassed - prevSecurityStats.ConnPassed
-		}
+		deltaConnBlocked = securityRateCounterDelta(stats.ConnBlocked, previous.ConnBlocked)
+		deltaConnPassed = securityRateCounterDelta(stats.ConnPassed, previous.ConnPassed)
 
 		// UDP flood deltas with overflow protection
-		if stats.UDPBlocked >= prevSecurityStats.UDPBlocked {
-			deltaUDPBlocked = stats.UDPBlocked - prevSecurityStats.UDPBlocked
-		}
-		if stats.UDPPassed >= prevSecurityStats.UDPPassed {
-			deltaUDPPassed = stats.UDPPassed - prevSecurityStats.UDPPassed
-		}
-		if stats.UDPBytesBlocked >= prevSecurityStats.UDPBytesBlocked {
-			deltaUDPBytesBlocked = stats.UDPBytesBlocked - prevSecurityStats.UDPBytesBlocked
-		}
-		if stats.UDPBytesPassed >= prevSecurityStats.UDPBytesPassed {
-			deltaUDPBytesPassed = stats.UDPBytesPassed - prevSecurityStats.UDPBytesPassed
-		}
+		deltaUDPBlocked = securityRateCounterDelta(stats.UDPBlocked, previous.UDPBlocked)
+		deltaUDPPassed = securityRateCounterDelta(stats.UDPPassed, previous.UDPPassed)
+		deltaUDPBytesBlocked = securityRateCounterDelta(stats.UDPBytesBlocked, previous.UDPBytesBlocked)
+		deltaUDPBytesPassed = securityRateCounterDelta(stats.UDPBytesPassed, previous.UDPBytesPassed)
 
 		// Update Prometheus metrics with deltas (Counter.Add)
 		securitySYNBlocked.Add(float64(deltaSYNBlocked))
@@ -1891,6 +1892,12 @@ func RunSecurityRateStats(ctx context.Context) {
 		securityUDPPassed.Add(float64(deltaUDPPassed))
 		securityUDPBytesBlocked.Add(float64(deltaUDPBytesBlocked))
 		securityUDPBytesPassed.Add(float64(deltaUDPBytesPassed))
+
+		securityAggregateSYNBlocked.Add(float64(securityRateCounterDelta(stats.AggregateSYNBlocked, previous.AggregateSYNBlocked)))
+		securityAggregateConnBlocked.Add(float64(securityRateCounterDelta(stats.AggregateConnBlocked, previous.AggregateConnBlocked)))
+		securityAggregateUDPBlocked.Add(float64(securityRateCounterDelta(stats.AggregateUDPBlocked, previous.AggregateUDPBlocked)))
+		securityTrackingFailures.Add(float64(securityRateCounterDelta(stats.TrackingFailures, previous.TrackingFailures)))
+		securityUnsupportedPacketBlocked.Add(float64(securityRateCounterDelta(stats.UnsupportedPacketBlocked, previous.UnsupportedPacketBlocked)))
 
 		// Unique IPs is a gauge (point-in-time value, not cumulative)
 		securityUniqueIPs.Set(float64(stats.UniqueIPs))

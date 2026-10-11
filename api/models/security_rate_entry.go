@@ -8,14 +8,45 @@ package models
 import (
 	"context"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
-// SecurityRateEntry Stored configuration with observed security-rate statistics. GET does not establish effective configuration after defaults or partial programming failures, and statistics failures can appear as zeros. Connection counters concern SYN packets, not completed connections. synCookies is threshold telemetry, not proof of a SYN-cookie exchange. uniqueIps is current tracking-map occupancy and is not cleared by counter reset.
+// SecurityRateEntry Stored configuration with observed security-rate statistics. GET does not establish effective configuration after defaults or partial programming failures, and statistics read failures return an error. Connection counters concern SYN packets, not completed connections. synCookies is threshold telemetry, not proof of a SYN-cookie exchange. uniqueIps is current tracking-map occupancy and is not cleared by counter reset.
 //
 // swagger:model SecurityRateEntry
 type SecurityRateEntry struct {
+
+	// Aggregate budget drops, also included in the corresponding total blocked counter.
+	AggregateConnBlocked int64 `json:"aggregateConnBlocked,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication.
+	// Maximum: 1.6777216e+07
+	// Minimum: 0
+	AggregateConnRatePerSec *int64 `json:"aggregateConnRatePerSec,omitempty"`
+
+	// Aggregate budget drops, also included in the corresponding total blocked counter.
+	AggregateSynBlocked int64 `json:"aggregateSynBlocked,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 SYN packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication.
+	// Maximum: 1.6777216e+07
+	// Minimum: 0
+	AggregateSynThreshold *int64 `json:"aggregateSynThreshold,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 UDP bandwidth budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication. Units are MiB using 1024*1024 bytes.
+	// Maximum: 4095
+	// Minimum: 0
+	AggregateUDPBandwidthMB *int64 `json:"aggregateUdpBandwidthMB,omitempty"`
+
+	// Aggregate budget drops, also included in the corresponding total blocked counter.
+	AggregateUDPBlocked int64 `json:"aggregateUdpBlocked,omitempty"`
+
+	// Optional Gateway-wide IPv4/IPv6 UDP packet budget per one-second window. Zero or omission disables it independently of per-source flags; trusted whitelist sources bypass it. Budget is shared across listeners and interfaces; it can reject normal tenants before authentication.
+	// Maximum: 1.6777216e+07
+	// Minimum: 0
+	AggregateUDPPktThreshold *int64 `json:"aggregateUdpPktThreshold,omitempty"`
 
 	// SYN packets blocked by connection-rate checking, not distinct completed connections.
 	ConnBlocked int64 `json:"connBlocked,omitempty"`
@@ -47,6 +78,9 @@ type SecurityRateEntry struct {
 	// Maximum SYNs per second per IP
 	SynThreshold int64 `json:"synThreshold,omitempty"`
 
+	// Source tracking-map insertion errors. Protected SYN or UDP packets fail closed on these errors; ordinary established TCP data is not denied by an insertion error.
+	TrackingFailures int64 `json:"trackingFailures,omitempty"`
+
 	// Stored UDP bandwidth threshold in MiB per second per source IP.
 	UDPBandwidthMB int64 `json:"udpBandwidthMB,omitempty"`
 
@@ -71,12 +105,100 @@ type SecurityRateEntry struct {
 	// Current IPv4 plus IPv6 tracking-map occupancy. Counter reset and protection disable do not clear these maps.
 	UniqueIps int64 `json:"uniqueIps,omitempty"`
 
+	// IPv6 fragment (including atomic fragment), malformed transport, or bounded header-chain rejection under applicable TCP/UDP rate protection. Whitelisted sources bypass rate protection. Extension chains of up to eight headers are inspected; ESP remains opaque.
+	UnsupportedPacketBlocked int64 `json:"unsupportedPacketBlocked,omitempty"`
+
 	// Whitelisted IPs
 	WhitelistIps []string `json:"whitelistIps"`
 }
 
 // Validate validates this security rate entry
 func (m *SecurityRateEntry) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateAggregateConnRatePerSec(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateAggregateSynThreshold(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateAggregateUDPBandwidthMB(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateAggregateUDPPktThreshold(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *SecurityRateEntry) validateAggregateConnRatePerSec(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateConnRatePerSec) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateConnRatePerSec", "body", *m.AggregateConnRatePerSec, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateConnRatePerSec", "body", *m.AggregateConnRatePerSec, 1.6777216e+07, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SecurityRateEntry) validateAggregateSynThreshold(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateSynThreshold) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateSynThreshold", "body", *m.AggregateSynThreshold, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateSynThreshold", "body", *m.AggregateSynThreshold, 1.6777216e+07, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SecurityRateEntry) validateAggregateUDPBandwidthMB(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateUDPBandwidthMB) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateUdpBandwidthMB", "body", *m.AggregateUDPBandwidthMB, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateUdpBandwidthMB", "body", *m.AggregateUDPBandwidthMB, 4095, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *SecurityRateEntry) validateAggregateUDPPktThreshold(formats strfmt.Registry) error {
+	if swag.IsZero(m.AggregateUDPPktThreshold) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("aggregateUdpPktThreshold", "body", *m.AggregateUDPPktThreshold, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("aggregateUdpPktThreshold", "body", *m.AggregateUDPPktThreshold, 1.6777216e+07, false); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-10-05T02:58:23+00:00",
-  "source_revision": "c966955f29eba57cc379d5d1852f3d1733da90d3",
+  "generated_at": "2026-10-11T00:31:40+00:00",
+  "source_revision": "ddf5de65ce66796cb7b58bcd58596d4f4d65dbcf",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "98487453eaf1853690de5928eab95a51817ba5d7"
  },
  "contract": {
-  "gateway_families": 314,
+  "gateway_families": 319,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 279,
+  "absent": 284,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -3696,6 +3696,39 @@
    }
   },
   {
+   "name": "loxilb_security_aggregate_conn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_aggregate_syn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_aggregate_udp_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
    "name": "loxilb_security_conn_blocked_total",
    "owner": "loxilb",
    "class": "default",
@@ -3741,6 +3774,17 @@
   },
   {
    "name": "loxilb_security_syn_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_tracking_failures_total",
    "owner": "loxilb",
    "class": "default",
    "parity": "absent",
@@ -3802,6 +3846,17 @@
    "present_upstream": false,
    "gateway": {
     "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_unsupported_packet_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
     "labels": []
    }
   },
