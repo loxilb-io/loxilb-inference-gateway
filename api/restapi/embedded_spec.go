@@ -17879,7 +17879,7 @@ func init() {
     },
     "/config/securityrate/all": {
       "get": {
-        "description": "Return a single configuration/statistics entry in an array. Configuration reflects the stored control-plane values, which can differ from effective datapath defaults or partially applied updates. Statistics read failures can appear as zeros. uniqueIps is tracking-map occupancy, not a resettable cumulative counter.",
+        "description": "Return a single configuration/statistics entry in an array. Configuration reflects the stored control-plane values, which can differ from effective datapath defaults or partially applied updates. Statistics read failures return HTTP 500 instead of a zero snapshot. uniqueIps is tracking-map occupancy, not a resettable cumulative counter.",
         "responses": {
           "200": {
             "description": "OK",
@@ -17919,7 +17919,7 @@ func init() {
     },
     "/config/securityrate/reset": {
       "put": {
-        "description": "Attempt to reset accumulated SYN, connection-SYN, and UDP statistics counters. Tracking maps and their uniqueIps occupancy are not cleared. Individual counter-write failures are logged but can still result in HTTP 204; success does not prove every counter was reset.",
+        "description": "Attempt to reset accumulated SYN, connection-SYN, and UDP statistics counters. Tracking maps and their uniqueIps occupancy are not cleared. Counter-write failures return HTTP 500 and may follow partial resets. Only successfully reset counters advance exporter generations. HTTP 204 means all reset writes succeeded; packet processing continues during reset.",
         "responses": {
           "204": {
             "description": "Statistics reset successfully"
@@ -31352,7 +31352,7 @@ func init() {
     },
     "/config/securityrate/all": {
       "get": {
-        "description": "Return a single configuration/statistics entry in an array. Configuration reflects the stored control-plane values, which can differ from effective datapath defaults or partially applied updates. Statistics read failures can appear as zeros. uniqueIps is tracking-map occupancy, not a resettable cumulative counter.",
+        "description": "Return a single configuration/statistics entry in an array. Configuration reflects the stored control-plane values, which can differ from effective datapath defaults or partially applied updates. Statistics read failures return HTTP 500 instead of a zero snapshot. uniqueIps is tracking-map occupancy, not a resettable cumulative counter.",
         "summary": "Get unified security rate limiting configuration and statistics",
         "responses": {
           "200": {
@@ -31398,7 +31398,7 @@ func init() {
     },
     "/config/securityrate/reset": {
       "put": {
-        "description": "Attempt to reset accumulated SYN, connection-SYN, and UDP statistics counters. Tracking maps and their uniqueIps occupancy are not cleared. Individual counter-write failures are logged but can still result in HTTP 204; success does not prove every counter was reset.",
+        "description": "Attempt to reset accumulated SYN, connection-SYN, and UDP statistics counters. Tracking maps and their uniqueIps occupancy are not cleared. Counter-write failures return HTTP 500 and may follow partial resets. Only successfully reset counters advance exporter generations. HTTP 204 means all reset writes succeeded; packet processing continues during reset.",
         "summary": "Reset security rate limiting statistics",
         "responses": {
           "204": {
