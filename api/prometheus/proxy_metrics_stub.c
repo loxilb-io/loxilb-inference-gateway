@@ -166,6 +166,11 @@ typedef struct proxy_metrics_snapshot {
     /* Pools allocated and not yet freed, and pools freed (sockproxy_pool.h). TAIL-APPEND ONLY — same three-way lockstep. */
     uint64_t pools_live;
     uint64_t pools_freed_total;
+
+    /* P/D request-lifetime occupancy. Append-only: keep all three ABI mirrors aligned. */
+    uint64_t pd_prefill_inflight;
+    uint64_t pd_decode_inflight;
+    uint64_t pd_parked_connections;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

@@ -101,6 +101,11 @@ func NlpRegister(hook cmn.NetHookInterface) {
 }
 
 func NlpIsBlackListedIntf(name string, masterIdx int) bool {
+	// --nonlp deliberately skips NlpInit. Periodic L3 reconciliation can
+	// still see service addresses; do not sync interfaces without a policy.
+	if nNl == nil {
+		return true
+	}
 	if nNl.WhiteList != "none" {
 		filter := nNl.WLRgx.MatchString(name)
 		return !filter

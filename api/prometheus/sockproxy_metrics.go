@@ -184,6 +184,11 @@ typedef struct proxy_metrics_snapshot {
     // Pools allocated and not yet freed, and pools freed (sockproxy_pool.h). TAIL-APPEND ONLY — same three-way lockstep.
     uint64_t pools_live;
     uint64_t pools_freed_total;
+
+    // P/D request-lifetime occupancy. Append-only: keep all three ABI mirrors aligned.
+    uint64_t pd_prefill_inflight;
+    uint64_t pd_decode_inflight;
+    uint64_t pd_parked_connections;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -400,6 +405,19 @@ var (
 			Help: "Number of active P/D disaggregation sessions.",
 		},
 	)
+
+	pdPrefillInflight = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_pd_prefill_inflight",
+		Help: "P/D admission units held on prefill endpoints until request cleanup, summed across pools; not engine prefill jobs.",
+	})
+	pdDecodeInflight = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_pd_decode_inflight",
+		Help: "P/D admission units held on decode endpoints until request cleanup, summed across pools.",
+	})
+	pdParkedConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_pd_parked_connections",
+		Help: "Client connections currently in the legacy P/D admission PARKED phase, summed across listeners.",
+	})
 
 	// Metric #19: P/D Trie Nodes (Gauge)
 	pdTrieNodes = promauto.NewGauge(
@@ -1273,6 +1291,8 @@ func RunSockproxyMetrics(ctx context.Context) {
 
 		// 3d. P/D Production Hardening metrics
 		pdSessionsActive.Set(float64(current.pd_sessions_active))
+		setPDAdmissionOccupancy(uint64(current.pd_prefill_inflight),
+			uint64(current.pd_decode_inflight), uint64(current.pd_parked_connections))
 		pdTrieNodes.Set(float64(current.pd_trie_nodes))
 
 		if current.pd_cb_flips >= prevSockproxyMetrics.pd_cb_flips {
@@ -1866,4 +1886,12 @@ func IncKvTrtllmDrainOwnershipFault(reason string) {
 // IncKvTrtllmDrainOwnershipHeal counts one standing-fault clear.
 func IncKvTrtllmDrainOwnershipHeal() {
 	kvTrtllmDrainOwnHealTotal.Inc()
+}
+
+// Occupancy is a point-in-time gauge: recovery must be able to reduce it to
+// zero, independently of cumulative admissions and retained session mappings.
+func setPDAdmissionOccupancy(prefill, decode, parked uint64) {
+	pdPrefillInflight.Set(float64(prefill))
+	pdDecodeInflight.Set(float64(decode))
+	pdParkedConnections.Set(float64(parked))
 }

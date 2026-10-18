@@ -189,3 +189,43 @@ func TestTtfbBucketBoundsMatchC(t *testing.T) {
 		}
 	}
 }
+
+func TestPDAdmissionOccupancyRecoversAndReuses(t *testing.T) {
+	t.Cleanup(func() { setPDAdmissionOccupancy(0, 0, 0) })
+	for _, values := range [][3]uint64{{6, 5, 3}, {0, 0, 0}, {2, 2, 0}} {
+		setPDAdmissionOccupancy(values[0], values[1], values[2])
+		for i, gauge := range []prometheus.Gauge{pdPrefillInflight, pdDecodeInflight, pdParkedConnections} {
+			var metric dto.Metric
+			if err := gauge.Write(&metric); err != nil {
+				t.Fatal(err)
+			}
+			if got := metric.GetGauge().GetValue(); got != float64(values[i]) {
+				t.Fatalf("occupancy %d got %v, want %v after transition to %v", i, got, values[i], values)
+			}
+		}
+	}
+}
+
+// Gather must expose zero-valued gauges before the first periodic C sample.
+func TestPDAdmissionOccupancyRegisteredAtZero(t *testing.T) {
+	setPDAdmissionOccupancy(0, 0, 0)
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]bool{"loxilb_pd_prefill_inflight": false, "loxilb_pd_decode_inflight": false, "loxilb_pd_parked_connections": false}
+	for _, family := range families {
+		if _, wanted := expected[family.GetName()]; !wanted {
+			continue
+		}
+		if family.GetType() != dto.MetricType_GAUGE || len(family.Metric) != 1 || family.Metric[0].GetGauge().GetValue() != 0 {
+			t.Fatalf("invalid zero occupancy metric: %v", family)
+		}
+		expected[family.GetName()] = true
+	}
+	for name, seen := range expected {
+		if !seen {
+			t.Errorf("missing occupancy gauge: %s", name)
+		}
+	}
+}
