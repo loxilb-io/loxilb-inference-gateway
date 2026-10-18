@@ -1,0 +1,24 @@
+{
+  "status": "TESTBED_ONLY_FINITE_NATIVE_REPLAY_COMPLETE",
+  "scope": "stock vLLM 0.31.0 chat streaming terminal handling",
+  "original_sha256": "532dadea845c77a5a79011027b9989987c3e32467614e993f439f29c924de002",
+  "proposed_sha256": "3ea63eaf9069816cd58cdef51d350196f9c8e0a30dbab741b43317de77c13312",
+  "reason": "An empty initial terminal output with finish_reason=error skips _raise_if_error and emits usage0/DONE",
+  "requires_separate_engine_change_review": true,
+  "native_gpu_replay": "COMPLETE_FINITE_SCOPE",
+  "stock_image_digest": "sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b",
+  "native_validation": {
+    "visibility": "private internal review evidence",
+    "record_sha256": "579443206c4eb318d2df751cfb7989a440b382b498e05755f36ce0517d7524f0",
+    "image_id_location": "four immutable worker image IDs in the private native validation record",
+    "result": "finite native replay completed; availability and fault-injection RED gates retained",
+    "open_followup": "F12-review-availability (private tracking; public disclosure pending)"
+  },
+  "historical_prebuild_source_metadata_sha256": "ed77e723b382e683e29b5b0dbec1de9a1f51c1a1148d0532054e985525a25e66",
+  "upstream": {
+    "already_merged_error_fix": "https://github.com/vllm-project/vllm/pull/40986",
+    "verified_main_revision": "03ee2e134d6cc60c4cc84096c8492fcc971f0526",
+    "main_empty_chunk_filter": "nothing_generated and output.finish_reason is None",
+    "duplicate_upstream_patch_submitted": false
+  }
+}
