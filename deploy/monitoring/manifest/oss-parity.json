@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-10-15T14:03:20+00:00",
-  "source_revision": "e98ce489259366adb2f78090f3dfff389d7d461d",
+  "generated_at": "2026-10-18T01:14:09+00:00",
+  "source_revision": "de3ae778b4cd94ab88dfd49c9c9287de61db5267",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "98487453eaf1853690de5928eab95a51817ba5d7"
  },
  "contract": {
-  "gateway_families": 334,
+  "gateway_families": 337,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 299,
+  "absent": 302,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -2775,6 +2775,17 @@
    }
   },
   {
+   "name": "loxilb_pd_decode_inflight",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
    "name": "loxilb_pd_decode_zero_byte_eof_total",
    "owner": "loxilb",
    "class": "default",
@@ -2902,6 +2913,17 @@
    }
   },
   {
+   "name": "loxilb_pd_parked_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
    "name": "loxilb_pd_prefill_ep_died_total",
    "owner": "loxilb",
    "class": "default",
@@ -2909,6 +2931,17 @@
    "present_upstream": false,
    "gateway": {
     "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_prefill_inflight",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
     "labels": []
    }
   },
