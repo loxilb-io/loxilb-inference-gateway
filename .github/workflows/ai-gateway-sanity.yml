@@ -40,6 +40,10 @@ on:
       - '.github/workflows/ai-gateway-sanity.yml'
   workflow_dispatch:
     inputs:
+      ebpf_review_sha:
+        description: 'Test-only immutable candidate SHA; the committed gitlink remains a main merge commit'
+        required: true
+        type: string
       logLevel:
         description: 'Log level'
         required: true
@@ -58,6 +62,20 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - name: Select immutable eBPF review candidate (validation driver only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REVIEW_SHA: ${{ inputs.ebpf_review_sha }}
+        run: |
+          test "${#REVIEW_SHA}" = 40
+          [[ "$REVIEW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "Gateway checkout: $(git rev-parse HEAD)"
+          echo "Committed main gitlink: $(git rev-parse HEAD:loxilb-ebpf)"
+          git -C loxilb-ebpf fetch --no-tags origin "$REVIEW_SHA"
+          git -C loxilb-ebpf checkout --detach "$REVIEW_SHA"
+          git -C loxilb-ebpf submodule update --init --recursive
+          test "$(git -C loxilb-ebpf rev-parse HEAD)" = "$REVIEW_SHA"
+          echo "Tested candidate: $REVIEW_SHA"
       - uses: actions/setup-python@v5
       - uses: actions/setup-go@v5
         with:
