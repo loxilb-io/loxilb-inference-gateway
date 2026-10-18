@@ -1,0 +1,10 @@
+--- a/vllm/entrypoints/openai/chat_completion/serving.py
++++ b/vllm/entrypoints/openai/chat_completion/serving.py
+@@ -653,4 +653,6 @@
+                         and not previous_num_tokens[i]
++                        and output.finish_reason is None
+                     ):
+-                        # Chunked prefill case, don't return empty chunks
++                        # Skip only empty in-progress prefill chunks; terminal
++                        # errors and finish metadata must reach handling below.
+                         continue

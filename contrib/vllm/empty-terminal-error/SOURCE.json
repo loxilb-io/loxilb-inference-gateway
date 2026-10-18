@@ -1,0 +1,9 @@
+{
+  "status": "AUTHORIZED_CANDIDATE",
+  "scope": "stock vLLM 0.31.0 chat streaming terminal handling",
+  "original_sha256": "532dadea845c77a5a79011027b9989987c3e32467614e993f439f29c924de002",
+  "proposed_sha256": "3ea63eaf9069816cd58cdef51d350196f9c8e0a30dbab741b43317de77c13312",
+  "reason": "An empty initial terminal output with finish_reason=error skips _raise_if_error and emits usage0/DONE",
+  "requires_separate_engine_change_review": true,
+  "native_gpu_replay": "PENDING"
+}
