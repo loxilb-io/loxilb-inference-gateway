@@ -182,6 +182,10 @@ binary behaves exactly like upstream loxilb.
 
 ### Fixed
 
+- loxilb started with `--nonlp` could panic in the periodic L3 reconciliation
+  (`IfasTicker` → `NlpIsBlackListedIntf` on a nil netlink handle); interfaces
+  are now excluded from reconciliation when netlink is not initialised.
+
 - **HTTP/2 requests on a busy, healthy client connection occasionally failed
   together with no response (the connection was closed)** — the
   header-completion (slowloris) deadline charged the connection with a header
