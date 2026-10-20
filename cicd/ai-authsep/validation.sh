@@ -804,10 +804,13 @@ fi
 # completed would put it in the error-ratio numerator, which is the silent
 # failure the outcome label exists to prevent.
 # Labels are emitted in alphabetical order, so match each one independently
-# rather than pinning an order this test does not control.
+# rather than pinning an order this test does not control. The value is
+# summed, not the lines counted: a keyed (model, tenant) pair is seeded with a
+# completed/401 series at 0 (a backend may answer 401 itself), so the series
+# exists whether or not a denial leaked into it.
 DENIED_AS_COMPLETED=$(lcurl "http://127.0.0.1:11111/netlox/v1/metrics" 2>/dev/null \
   | grep '^loxilb_ai_requests_total{' | grep 'status="401"' \
-  | grep -c 'outcome="completed"' || true)
+  | grep 'outcome="completed"' | awk '{s+=$NF} END{printf "%d", s+0}')
 if [ "${DENIED_AS_COMPLETED:-0}" -eq 0 ]; then
   echo "  [PASS] DP-29 no denial leaked into outcome=completed"; PASS=$((PASS + 1))
 else

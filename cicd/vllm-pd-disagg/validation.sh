@@ -1247,9 +1247,11 @@ echo "  loxilb_ai_pd_decode_duration_seconds_count total: $TH3B_COUNT"
 check "TH3b: loxilb_ai_pd_decode_duration_seconds observed >= 1 sample (got $TH3B_COUNT)" \
   $([ "${TH3B_COUNT:-0}" -ge 1 ] && echo 0 || echo 1)
 
-# TH4: error label filter on loxilb_ai_pd_requests_total (use status label, per R7)
-TH4_HAS_ERROR=$(echo "$H_METRICS" | grep -v '^#' | grep 'loxilb_ai_pd_requests_total' | grep -c 'status="error"\|status="timeout"' 2>/dev/null)
-echo "  loxilb_ai_pd_requests_total error/timeout label lines: $TH4_HAS_ERROR"
+# TH4: error label filter on loxilb_ai_pd_requests_total (use status label, per R7).
+# The family is seeded at 0 for every phase and status, so a series line proves
+# nothing: the count is the sum of the error and timeout values.
+TH4_HAS_ERROR=$(( $(c_label_sum loxilb_ai_pd_requests_total 'status="error"') + $(c_label_sum loxilb_ai_pd_requests_total 'status="timeout"') ))
+echo "  loxilb_ai_pd_requests_total error + timeout count: $TH4_HAS_ERROR"
 if [ "${TH4_HAS_ERROR:-0}" -ge 1 ]; then
   check "TH4: loxilb_ai_pd_requests_total has error/timeout status label entries" 0
 else
