@@ -79,6 +79,19 @@ jobs:
              ./validation.sh
              ./rmconfig.sh
              cd -
+      # Per-endpoint counters survive a health flap of another endpoint (the rule is
+      # re-programmed in place). Tears down whatever the verdict, keeps the
+      # validation's exit code, and leaves llb1's logs in /tmp/ci-logs when red.
+      - run: |
+             cd cicd/tcplbmon-epstat/
+             rc=0
+             ./config.sh && ./validation.sh || rc=$?
+             if [ $rc -ne 0 ]; then
+               mkdir -p /tmp/ci-logs/tcplbmon-epstat
+               for f in /tmp/loxilb.err /tmp/loxilb.out /var/log/loxilbdp.log; do docker cp "llb1:$f" /tmp/ci-logs/tcplbmon-epstat/ || true; done
+             fi
+             ./rmconfig.sh
+             exit $rc
       - run: |
              cd cicd/tcplbepmod/
              ./config.sh
@@ -109,3 +122,10 @@ jobs:
              ./validation.sh
              ./rmconfig.sh
              cd -
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: liveness-lb-sanity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/ci-logs
+          if-no-files-found: ignore
+          retention-days: 14

@@ -10,6 +10,11 @@ name: Security-Sanity-CI
 #                              and validation-ddos.sh (DDoS option matrix), generic-XDP
 #                              arm and the accept-valve arm
 #   cicd/qos-fullproxy         the L7 byte shaper on fullproxy rules
+#   cicd/qos-rulepol           the Tier-0 policer attached to NAT-mode LB rules (both
+#                              directions, counters, re-create heal, egress refused
+#                              without --egr-hooks)                            ~1.5 min
+#   cicd/qos-egrpol            the egress-direction port policer (--egr-hooks):
+#                              host-originated and transit traffic          ~1.2 min
 #
 # Hosted runners attach XDP in generic (skb) mode on veth: the native-XDP arm is
 # workflow_dispatch only and needs a self-hosted runner with a real NIC. The burst
@@ -36,6 +41,8 @@ on:
       - 'cicd/secfilter/**'
       - 'cicd/security-kv-coexist/**'
       - 'cicd/qos-fullproxy/**'
+      - 'cicd/qos-rulepol/**'
+      - 'cicd/qos-egrpol/**'
       - 'cicd/edge-cloud-security/**'
       - 'cicd/vllm-kvcache-routing-cpu/kv_event_publisher.py'
       - '.github/workflows/security-sanity.yml'
@@ -51,6 +58,8 @@ on:
       - 'cicd/secfilter/**'
       - 'cicd/security-kv-coexist/**'
       - 'cicd/qos-fullproxy/**'
+      - 'cicd/qos-rulepol/**'
+      - 'cicd/qos-egrpol/**'
       - 'cicd/edge-cloud-security/**'
       - 'cicd/vllm-kvcache-routing-cpu/kv_event_publisher.py'
       - '.github/workflows/security-sanity.yml'
@@ -193,6 +202,34 @@ jobs:
           sudo -E env "PATH=$PATH" ./validation.sh
           sudo -E env "PATH=$PATH" ./rmconfig.sh
           cd -
+
+      # The two Tier-0 policer scenarios: the same policer API as the shaper above, on
+      # NAT-mode rules and on an egress port. They tear down whatever the validation's
+      # verdict, keep its exit code, and leave llb1's logs in /tmp/ci-logs when red
+      # (rmconfig.sh removes llb1, so the collector below would find nothing).
+      - name: Tier-0 policer on NAT-mode LB rules
+        run: |
+          cd cicd/qos-rulepol/
+          rc=0
+          sudo -E env "PATH=$PATH" ./config.sh && sudo -E env "PATH=$PATH" ./validation.sh || rc=$?
+          if [ $rc -ne 0 ]; then
+            mkdir -p /tmp/ci-logs/qos-rulepol
+            for f in /tmp/loxilb.err /tmp/loxilb.out /var/log/loxilbdp.log; do docker cp "llb1:$f" /tmp/ci-logs/qos-rulepol/ || true; done
+          fi
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
+          exit $rc
+
+      - name: Egress-direction port policer (--egr-hooks)
+        run: |
+          cd cicd/qos-egrpol/
+          rc=0
+          sudo -E env "PATH=$PATH" ./config.sh && sudo -E env "PATH=$PATH" ./validation.sh || rc=$?
+          if [ $rc -ne 0 ]; then
+            mkdir -p /tmp/ci-logs/qos-egrpol
+            for f in /tmp/loxilb.err /tmp/loxilb.out /var/log/loxilbdp.log; do docker cp "llb1:$f" /tmp/ci-logs/qos-egrpol/ || true; done
+          fi
+          sudo -E env "PATH=$PATH" ./rmconfig.sh
+          exit $rc
 
       - name: Collect loxilb logs on failure
         if: failure()
