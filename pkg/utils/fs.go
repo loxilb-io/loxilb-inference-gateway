@@ -18,16 +18,37 @@ package utils
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"strconv"
+	"sync"
 	"syscall"
+
+	tk "github.com/loxilb-io/loxilib"
 )
 
+// fileExistsWarned remembers the paths whose stat failed with an error other
+// than "not found", so that each such path is reported once and not on every
+// probe (FileExists is on the boot path and on the endpoint add path).
+var fileExistsWarned sync.Map
+
 // FileExists - Check if file exists
+//
+// It reports true only for a path that stats successfully and is not a
+// directory. Any stat error is treated as "absent": a missing path silently,
+// every other error (EACCES, ENOTDIR, ELOOP, ENAMETOOLONG, EIO, ...) with one
+// warning per path, so that an unreadable certificate or a regular file in
+// place of a directory is visible in the log instead of crashing the caller.
 func FileExists(fname string) bool {
 	info, err := os.Stat(fname)
-	if os.IsNotExist(err) {
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			if _, seen := fileExistsWarned.LoadOrStore(fname, struct{}{}); !seen {
+				tk.LogIt(tk.LogWarning, "FileExists: %s: %v - treated as absent\n", fname, err)
+			}
+		}
 		return false
 	}
 	return !info.IsDir()
