@@ -26,7 +26,7 @@ because their volumes are small; `validation_integrity.sh` is the one that looks
 for it on purpose. Check `/proc/version_signature` against the table in the
 feature doc before reading a failure as a loxilb defect.
 
-**Image.** The default is `ghcr.io/loxilb-io/loxilb-inference-gateway:latest`,
+**Image.** The default is `ghcr.io/loxilb-io/loxilb-inference-gateway:main`,
 overridden with `LOXILB_IMAGE`. The daemon is started with `--sockmapsupport` by
 `config.sh`, so the image must be a build that has the sockmap assets.
 

@@ -12,7 +12,7 @@
 
 K8SINF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-IGW_IMAGE="${IGW_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}"
+IGW_IMAGE="${IGW_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}"
 KLB_IMAGE="${KLB_IMAGE:-}"       # preset to skip building kube-loxilb from source
 KLB_REPO="${KLB_REPO:-https://github.com/loxilb-io/kube-loxilb.git}"
 KLB_REF="${KLB_REF:-feat/auth-annotation}"

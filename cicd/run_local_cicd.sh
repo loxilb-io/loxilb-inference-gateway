@@ -39,9 +39,9 @@ if [[ -n ${LOXILB_DOCKER_IMAGE:-} ]]; then
   [[ $IMAGE_UNDER_TEST != *"/"* && $IMAGE_UNDER_TEST != *":"* ]] &&
     IMAGE_UNDER_TEST="ghcr.io/loxilb-io/loxilb-inference-gateway:$IMAGE_UNDER_TEST"
 elif [[ $(lsb_release -r 2>/dev/null | cut -f2) == *"24.04"* ]]; then
-  IMAGE_UNDER_TEST="ghcr.io/loxilb-io/loxilb-inference-gateway:latest-u24"
+  IMAGE_UNDER_TEST="ghcr.io/loxilb-io/loxilb-inference-gateway:main-u24"
 else
-  IMAGE_UNDER_TEST="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
+  IMAGE_UNDER_TEST="ghcr.io/loxilb-io/loxilb-inference-gateway:main"
 fi
 
 # Cheap gates first — none of these needs a container.

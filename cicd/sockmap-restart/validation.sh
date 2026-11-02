@@ -23,7 +23,7 @@
 set -u
 cd "$(dirname "$0")"
 
-IMAGE=${LOXILB_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}
+IMAGE=${LOXILB_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}
 RESTARTS=${RESTARTS:-2}
 READY_TIMEOUT=${READY_TIMEOUT:-90}
 OUT_DIR=${OUT_DIR:-./artifacts}

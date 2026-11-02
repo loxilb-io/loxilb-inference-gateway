@@ -82,7 +82,7 @@ _sr_provenance() {
     echo "gateway_commit: $(git -C "$root" rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "gateway_dirty:  $(test -n "$(git -C "$root" status --porcelain 2>/dev/null)" && echo yes || echo no)"
     echo "ebpf_gitlink:   $(git -C "$root" rev-parse HEAD:loxilb-ebpf 2>/dev/null || echo unknown)"
-    local img="${LOXILB_DOCKER_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}"
+    local img="${LOXILB_DOCKER_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}"
     echo "image:          $img"
     echo "image_id:       $(docker image inspect --format '{{.Id}}' "$img" 2>/dev/null || echo not-present)"
   } > "$ARTIFACT_DIR/provenance.txt"

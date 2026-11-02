@@ -35,7 +35,7 @@ set -e
 
 TAG=${1:-sockmap-nodebug}
 KEEP_DEBUG=${2:-0}
-BASE=${BASE_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}
+BASE=${BASE_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}
 BUILDER_IMG=loxilb-inbuilder:22.04
 BUILDER=llbbuilder
 REPO=$(cd "$(dirname "$0")/../.." && pwd)

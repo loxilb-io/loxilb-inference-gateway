@@ -242,7 +242,7 @@ echo "[HA] Spawning llb2 container (no host-port mappings — uses container IPs
 docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged \
   -dt --entrypoint /bin/bash \
   -v /dev/log:/dev/log -v "$(pwd)/cert:/opt/loxilb/cert/" \
-  --name llb2 "${lxdocker:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}" 2>&1 || \
+  --name llb2 "${lxdocker:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}" 2>&1 || \
   echo "WARN: llb2 docker run failed (container may already exist)"
 sleep 2
 

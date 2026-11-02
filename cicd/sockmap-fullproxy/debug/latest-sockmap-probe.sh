@@ -25,7 +25,7 @@ source ./sockmap_common.sh
 sockmap_init_artifacts
 
 STREAMS=${1:-300}
-IMG=${IMG:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}
+IMG=${IMG:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}
 VIP=10.10.10.254; VP=2130; BP=9130
 CONC=${CONC:-32}; TOKENS=${TOKENS:-2000}
 

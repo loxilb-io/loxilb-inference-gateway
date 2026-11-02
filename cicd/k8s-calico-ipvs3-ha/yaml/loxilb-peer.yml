@@ -37,7 +37,7 @@ spec:
 #                operator: DoesNotExist
       containers:
       - name: loxilb-peer-app
-        image: "ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
+        image: "ghcr.io/loxilb-io/loxilb-inference-gateway:main"
         command: [ "/root/loxilb-io/loxilb/loxilb", "--peer" ]
         ports:
         - containerPort: 11111

@@ -55,7 +55,7 @@ VIP=20.20.20.1
 CFG=llb1_config
 CFGDIR="$(cd "$(dirname "$0")" && pwd)"
 
-UP_NEW_IMAGE="${UP_NEW_IMAGE:-${LOXILB_DOCKER_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}}"
+UP_NEW_IMAGE="${UP_NEW_IMAGE:-${LOXILB_DOCKER_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}}"
 UP_OLD_IMAGE="${UP_OLD_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:v0.9.8.9-rc.1-u24}"
 [[ "$UP_NEW_IMAGE" != *"/"* && "$UP_NEW_IMAGE" != *":"* ]] && UP_NEW_IMAGE="ghcr.io/loxilb-io/loxilb-inference-gateway:$UP_NEW_IMAGE"
 [[ "$UP_OLD_IMAGE" != *"/"* && "$UP_OLD_IMAGE" != *":"* ]] && UP_OLD_IMAGE="ghcr.io/loxilb-io/loxilb-inference-gateway:$UP_OLD_IMAGE"

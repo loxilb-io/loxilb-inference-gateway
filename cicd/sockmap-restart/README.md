@@ -39,12 +39,12 @@ An exited container fails the step at once, with its exit code and the
 the failing boot is kept next to it.
 
 ```bash
-LOXILB_IMAGE=ghcr.io/loxilb-io/loxilb-inference-gateway:latest ./validation.sh
+LOXILB_IMAGE=ghcr.io/loxilb-io/loxilb-inference-gateway:main ./validation.sh
 ```
 
 | variable | default | meaning |
 |---|---|---|
-| `LOXILB_IMAGE` | `ghcr.io/loxilb-io/loxilb-inference-gateway:latest` | image under test |
+| `LOXILB_IMAGE` | `ghcr.io/loxilb-io/loxilb-inference-gateway:main` | image under test |
 | `RESTARTS` | `2` | restarts driven |
 | `READY_TIMEOUT` | `90` | seconds allowed for ready after each boot |
 | `OUT_DIR` | `./artifacts` | evidence directory |

@@ -15,7 +15,7 @@ source ./sockmap_common.sh
 # Override the default loxilb image with the sockmap-test build.
 # LOXILB_IMAGE selects a different tag. For CPU measurement use :sockmap-nodebug,
 # built with -DHAVE_PROXY_NO_EXTRA_DEBUG, which drops the per-recv() logging.
-lxdocker="${LOXILB_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}"
+lxdocker="${LOXILB_IMAGE:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}"
 
 sockmap_init_artifacts
 

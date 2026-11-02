@@ -6,7 +6,7 @@
 # to the sockmap branch or is a product-wide defect.
 #
 # Method: apply the same load in a configuration where sockmap plays no part at all.
-#   - image: ghcr.io/loxilb-io/loxilb-inference-gateway:latest (a main build)
+#   - image: ghcr.io/loxilb-io/loxilb-inference-gateway:main (a main build)
 #   - main's API has no sockMapAccel/sockMapMode field, so the rule is plain fullproxy
 #   - loxilb is started WITHOUT --sockmapsupport, so no sockmap BPF is attached
 # A death under these conditions confirms a pre-existing defect unrelated to sockmap.
@@ -23,7 +23,7 @@ source ./sockmap_common.sh
 sockmap_init_artifacts
 
 ATTEMPTS=${1:-3}
-IMG=${IMG:-ghcr.io/loxilb-io/loxilb-inference-gateway:latest}
+IMG=${IMG:-ghcr.io/loxilb-io/loxilb-inference-gateway:main}
 VIP=10.10.10.254; VP=2090; BP=9089
 CONC=${CONC:-128}; PAR=${PAR:-4}
 OUT=${OUT:-/tmp/latestrepro}; mkdir -p "$OUT"
