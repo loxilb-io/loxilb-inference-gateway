@@ -365,22 +365,16 @@ func (gbh *GoBgpH) AdvertiseRoute(rtPrefix string, pLen int, nh string, pref uin
 		Med: med,
 	})
 
-	a5, _ := apb.New(&api.AsPathAttribute{
-		Segments: []*api.AsSegment{
-			{
-				Type:    1, // SET
-				Numbers: []uint32{gbh.localAs},
-			},
-		},
-	})
-
 	if ipv4 {
 		apiFamily = &api.Family{Afi: api.Family_AFI_IP, Safi: api.Family_SAFI_UNICAST}
 	} else {
 		apiFamily = &api.Family{Afi: api.Family_AFI_IP6, Safi: api.Family_SAFI_UNICAST}
 	}
 
-	attrs := []*apb.Any{a1, a2, a3, a4, a5}
+	// No AS_PATH: this path is locally originated. goBGP prepends the local AS
+	// towards an eBGP peer and sends an empty AS_PATH to an iBGP peer. Our own AS
+	// here reads as a loop to goBGP's export filter and to any standard iBGP peer.
+	attrs := []*apb.Any{a1, a2, a3, a4}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
