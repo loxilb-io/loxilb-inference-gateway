@@ -12,13 +12,6 @@ are the policy. `inference.externalEndpointPicker` points every pool at an
 Endpoint Picker (EPP) instead, which the gateway asks per request over
 ext_proc. The chart does not deploy the picker; install it beside the release.
 
-The picker client is not in loxilb-inference-gateway `main` yet, so the
-`loxilb-igw` image defaults to the interim build that has it,
-`nxinho/loxilb-epp:epp-cluster8` (fork `inhogog2/loxilb-inference-gateway`,
-branch `codex/epp-phase1`, linux/amd64 only). It does not enforce credential
-policies: kube-loxilb refuses pools with `auth` on it. Override
-`loxilb-igw.image.repository` / `.tag` for another build.
-
 ## Install
 
 The operator's guide, from prerequisites to troubleshooting, is
@@ -81,7 +74,7 @@ in `crds/` that exist, and loxilb replays the snapshot it left on the node.
 | `inference.gatewayClass`, `inference.gateway` | the GatewayClass and Gateway (namespace `llm` by default) |
 | `inference.pools[]` | pod selector + targetPort, `modelName`, `epselect`, `sseMode`, free `annotations`, `auth`, `route` |
 | `inference.externalEndpointPicker` | `enabled`, the picker Service `name` and `port` (9002), `failureMode` (FailOpen / FailClose) |
-| `loxilb-igw.*` | image (default `nxinho/loxilb-epp:epp-cluster8`), flags (`loxilb.*`), hostPath persistence for `/etc/loxilb` and the audit dir (its parent is mounted; loxilb creates the 0700 directory itself), optional trust ConfigMap at `/run/integration-ca`, management Service |
+| `loxilb-igw.*` | image, flags (`loxilb.*`), hostPath persistence for `/etc/loxilb` and the audit dir (its parent is mounted; loxilb creates the 0700 directory itself), optional trust ConfigMap at `/run/integration-ca`, management Service |
 | `kube-loxilb.*` | image, `cidrPools`, `setRoles`, `loxiURL` (external loxilb), `extraArgs`, the wait-for-loxilb initContainer |
 | `crds.*` | pre-install check, `installGatewayAPI` |
 | `tests.*` | `helm test` images and the loxilb URL they call |

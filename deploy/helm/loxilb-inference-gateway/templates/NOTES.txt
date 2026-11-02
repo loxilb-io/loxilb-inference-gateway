@@ -3,7 +3,6 @@
 {{- $gw := .Values.inference.gateway }}
 {{- $gwNs := include "loxilb-inference-gateway.gatewayNamespace" . }}
 {{- $epp := .Values.inference.externalEndpointPicker }}
-{{- $eppImage := and $igw.enabled (eq ($igw.image.repository | toString) "nxinho/loxilb-epp") }}
 {{- $authPools := include "loxilb-inference-gateway.authPools" . -}}
 {{- $hasKeyStore := false -}}
 {{- range (($igw.loxilb | default dict).extraArgs | default list) }}{{ if hasPrefix "--aikey-db-host" (toString .) }}{{ $hasKeyStore = true }}{{ end }}{{ end -}}
@@ -48,7 +47,7 @@ Prerequisites (checked by the pre-install hook)
   or set crds.installGatewayAPI=true to have the hook apply them (Kubernetes >= 1.30).
   A failed hook leaves its pod behind: kubectl -n {{ .Release.Namespace }} logs job/{{ include "loxilb-inference-gateway.fullname" . }}-crd-precheck
 {{- end }}
-{{- if or $authPools $epp.enabled $eppImage (and $klb.enabled (eq ($klb.image.tag | toString) "latest")) }}
+{{- if or $authPools $epp.enabled (and $klb.enabled (eq ($klb.image.tag | toString) "latest")) }}
 
 Warnings
 {{- if $authPools }}
@@ -58,12 +57,6 @@ Warnings
     rules WITHOUT the authentication declared here. The chart cannot tell which
     kube-loxilb runs: check `kubectl -n {{ .Release.Namespace }} get crd jwtauthprofiles.jwtauthprofile.loxilb.io`
     is served and the rule reads back with api_key_auth.
-{{- if $eppImage }}
-  ! loxilb-igw runs the interim Endpoint Picker build ({{ $igw.image.repository }}:{{ $igw.image.tag }}),
-    which does not list api_key_auth / jwt_auth_profile in its /version
-    features: kube-loxilb refuses these pools on it (AuthNotSupported) instead
-    of serving them unauthenticated.
-{{- end }}
 {{- if $jwtProfiles }}
   ! JWT mode needs a cluster-scoped JWTAuthProfile for each of: {{ join ", " $jwtProfiles }}.
     kube-loxilb holds the rule (ProfileNotFound) until the profile exists and is
@@ -86,11 +79,6 @@ Warnings
     The gateway calls the picker only if it lists "epp" in /version features
     ({{ include "loxilb-inference-gateway.loxilbURL" . }}/netlox/v1/version);
     on one that does not, kube-loxilb {{ if eq ($epp.failureMode | toString) "FailClose" }}refuses the rule (EndpointPickerUnsupported){{ else }}sends the rule without the picker{{ end }}.
-{{- end }}
-{{- if $eppImage }}
-  ! loxilb-igw runs the interim Endpoint Picker build {{ $igw.image.repository }}:{{ $igw.image.tag }}
-    (linux/amd64 only), the default until loxilb-inference-gateway main has the
-    picker client. Set loxilb-igw.image to use another build.
 {{- end }}
 {{- if and $klb.enabled (eq ($klb.image.tag | toString) "latest") }}
   ! kube-loxilb image tag is "latest". No published tag carries the
