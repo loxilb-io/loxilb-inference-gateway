@@ -27,7 +27,7 @@ loxilb-igw:
   # so the umbrella's hooks and tests see the effective values.
   # image:
   #   repository: ghcr.io/loxilb-io/loxilb-inference-gateway
-  #   tag: latest
+  #   tag: v0.9.9.1
 
 kube-loxilb:
   enabled: true
@@ -141,7 +141,8 @@ inference:
   #   FailClose  no picker reachable: 503 epp_unavailable, nothing reaches the
   #              model servers; also while the Service does not exist.
   # Only a gateway listing "epp" in /version features calls the picker (main
-  # builds since 2026-10-27 do). On any other, kube-loxilb sends a FailOpen rule without
+  # builds since 2026-10-27 and v0.9.9.1 do). On any other, kube-loxilb sends a
+  # FailOpen rule without
   # the picker and refuses a FailClose one (EndpointPickerUnsupported).
   # Per-pool `annotations` tune the call: loxilb.io/epp-timeout-ms (default
   # 3000) and loxilb.io/epp-plaintext: "true" for a picker without TLS. A pool

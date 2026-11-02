@@ -9,10 +9,11 @@ enabled: true
 image:
   # A build that lists "epp", "api_key_auth" and "jwt_auth_profile" in its
   # /version features serves Endpoint Picker and authenticated pools alike;
-  # main has all three since the picker client was merged (2026-10-27).
+  # v0.9.9.1 has all three, as main has since the picker client was merged
+  # (2026-10-27).
   repository: ghcr.io/loxilb-io/loxilb-inference-gateway
   # Empty: the chart's appVersion.
-  tag: latest
+  tag: v0.9.9.1
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
