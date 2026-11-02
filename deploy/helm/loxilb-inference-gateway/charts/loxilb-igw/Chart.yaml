@@ -4,7 +4,7 @@ description: >-
   loxilb-inference-gateway data plane and management API as an in-cluster
   DaemonSet, with the headless Service kube-loxilb discovers it by.
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: latest
 home: https://github.com/loxilb-io/loxilb-inference-gateway
 sources:
