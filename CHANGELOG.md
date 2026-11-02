@@ -9,16 +9,13 @@ build component (e.g. `v0.9.8.7`), plus `-rc.N` for a release candidate — so t
 upstream baseline is readable at a glance. The reported version is derived from
 the release tag at build time, never pinned in source. Changes inherited from an
 upstream loxilb sync are summarized here by their upstream version; only the
-inference-gateway delta is enumerated in detail. See
-[docs/UPSTREAM-SYNC.md](docs/UPSTREAM-SYNC.md) for the sync and tagging model.
+inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
 ## [v0.9.9.1] - 2026-11-02
 
-`v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither was given its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. <!-- OWNER REVIEW PENDING -->
-Every AI capability is opt-in per load-balancer rule; with none enabled the
-binary behaves exactly like upstream loxilb.
+`v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.
 
 ### Added
 
@@ -65,7 +62,7 @@ binary behaves exactly like upstream loxilb.
   `policy_store_unavailable` instead of being admitted on zero limits.
   (docs/AI-KEY-STORE.md, "Data-path isolation")
 - **P/D decode selection counters: `loxilb_ai_pd_decode_selected_total{path=hint|score|score_kv,model}`
-  and `loxilb_ai_pd_decode_kv_fill_total{model}`** (OWNER REVIEW PENDING). Both
+  and `loxilb_ai_pd_decode_kv_fill_total{model}`**. Both
   are seeded per model so a first event shows in `increase()`. `kv_fill` rising
   means the pool is being scored without a fresh KV reading. (docs 10 §3.6, 11)
 - **`GET /netlox/v1/version` lists the gateway-only capabilities of the build
@@ -102,7 +99,7 @@ binary behaves exactly like upstream loxilb.
   points every pool at an Endpoint Picker Service the operator deploys;
   kube-loxilb `feat/auth-annotation` resolves it onto the rule, and the
   gateway follows the picker with `FailOpen` / `FailClose` as declared. The
-  `loxilb-igw` image defaults to `ghcr.io/loxilb-io/loxilb-inference-gateway:v0.9.9.1`, which carries the picker client and lists `epp` beside the credential features. <!-- OWNER REVIEW PENDING -->
+  `loxilb-igw` image defaults to `ghcr.io/loxilb-io/loxilb-inference-gateway:v0.9.9.1` (Ubuntu 22.04 base), which carries the picker client and lists `epp` beside the credential features.
 - **P/D occupancy gauges.** Three new metrics read the P/D load at each
   collection: `loxilb_pd_prefill_inflight` and `loxilb_pd_decode_inflight`
   (the admission units held on prefill and on decode endpoints now) and
@@ -227,7 +224,8 @@ binary behaves exactly like upstream loxilb.
   delayed, pause count and duration, currently-paused connections, and the
   configured rate and burst. The bundled AI dashboard gains a token-quota row
   and a byte-shaper row. `GET /metrics` is exempt from management-plane bearer
-  auth so a scraper needs no credential.
+  auth so a scraper needs no credential, except under `--mgmt-profile remote-tls`,
+  which asks for credentials.
 
 - **Request priority: objectives and classes.** A request on an AI-gateway
   rule has a priority and a class (`critical`, `standard`, `sheddable`). It
@@ -315,33 +313,34 @@ binary behaves exactly like upstream loxilb.
   `external_labels.cluster`; the MCP module's copy of the alert rules
   must equal the default package's.
 
-- **TensorRT-LLM (`trtllm-serve`) is a supported engine:** KV-exact routing, prefill/decode disaggregation and admission guards, with an attestation adapter and drain-ownership enforcement. (#71, #93) <!-- OWNER REVIEW PENDING -->
-- **llama.cpp (`llama-server`) is a supported engine (`kvEngineType: "llamacpp"`):** plain L7 load balancing with CHWBL or session affinity. KV and P/D rule shapes are refused on it. A create probes every endpoint's `/props` and warns about fleet skew; it never refuses for it. (#72) <!-- OWNER REVIEW PENDING -->
-- **SGLang prefill/decode disaggregation:** `pd_disagg_mode` with `kvEngineType=sglang`, the `pdBootstrapPort` service argument, the `loxilb_pd_sg_*` families, and bounded Tier-1.5 cold-start seeding (`LOXILB_KV_COLDSTART_SEED_N`, `LOXILB_KV_COLDSTART_MIN_BLOCKS`). (#69) <!-- OWNER REVIEW PENDING -->
-- **CHWBL on plain-LB rules:** an endpoint that keeps answering 5xx is demoted and re-admitted only by a real origin success; a chat body with no system message hashes the opening of its first user message, so user-only traffic co-locates; all five CHWBL/WRR_HASH settings take effect from the API through read-back. (#73, #165) <!-- OWNER REVIEW PENDING -->
-- **Strict KV-exact routing per model and engine:** model-prompt profiles, contract-bound engine attestation for vLLM, SGLang and TensorRT-LLM, in-process chat-template execution, and refusal of strict requests the engine would render differently. `GET /config/ai/model-profiles` reads the published profiles, `GET /status/capabilities` says whether this gateway can accept such rules before a client tries, and `docs/SUPPORTED-MODELS.md` with `scripts/models/install-models.sh` lists and stages the qualified models. (#82-#88, #93, #99, #103, #253, #294, #303, #321) <!-- OWNER REVIEW PENDING -->
-- **Separate credential planes on PostgreSQL:** `api_key_auth: "required" | "disabled"` per load-balancer service, independent of `sse_mode` and `pd_disagg_mode`; each plane has its own store, database role, schema and cache. See Upgrade notes. (#80, docs/AI-KEY-STORE.md) <!-- OWNER REVIEW PENDING -->
-- **JWT admission on the inference data plane:** named issuer profiles under `/config/ai/jwtauthprofile`, bound to a rule by `jwt_auth_profile`, with `loxilb_ai_jwt_validation_total{tenant,reason}` and `loxilb_ai_jwks_refresh_total{profile,outcome}`. (#168, #179) <!-- OWNER REVIEW PENDING -->
-- **Four-level rate-limit ladder:** every rate and quota resolves as explicit row, then configured default (rule over global), then unlimited, most specific first, so a tenant limit bounds the sum of its users. Adds `/config/ai/user/ratelimit`, `/config/ai/ratelimit/defaults`, enforcement of an API key's own `tokens_per_min`, and PATCH of a key's rate fields. (#181) <!-- OWNER REVIEW PENDING -->
-- **Capacity admission gate, configurable per rule:** `fc_mode` and per-rule ceilings, read back with the source of each value; a bounded FIFO queue (`fc_max_queue_depth`, `fc_max_queue_wait_ms`); an adaptive ceiling and endpoint warm-up; a per-tenant share of a pool (`fc_tenant_max_share_pct`, refused with 429 `admission_tenant_share`); admission headers on admitted responses (`fc_expose_headers`); the `loxilb_ai_admission_*` families and admission alerts. (#281, #286, #288, #289, #291, #297, #306) <!-- OWNER REVIEW PENDING -->
-- **Audit trail:** a durable local record of every management change, written before the change is applied (a failed write answers 503 `audit_unavailable`), and of the inference path's completions, token settlements and refusals. `GET /audit/status`, a delegated originator (`X-Loxilb-Originator`, trusted only on an account with `delegation_allowed`), a runtime audit policy, remote sinks (`/audit/sink`, `/audit/sinks/{name}`) kept in the configuration document, and the `loxilb_audit_*` families. (#272, #276, #277, #280, #282, #326, #329, #330) <!-- OWNER REVIEW PENDING -->
-- **Configuration that survives a restart:** a restore touches only the domains its document declares (`included_domains`) and verifies content digests; L7 policies, CORS, certificates and tracing are persisted; a document declares its external recovery dependencies and a required one is verified before anything is changed; persists are crash-consistent with a lineage generation; `--config-boot-profile` chooses strict or compat; `GET /status/ready` reports the boot replay's outcome; secret values in documents are encrypted under a node-local secret. (#95, #105-#108) <!-- OWNER REVIEW PENDING -->
-- **Management exposure and maintenance:** `--mgmt-profile legacy|appliance-local|remote-tls` (default `legacy`, unchanged) validated before any socket binds; `PUT/GET /maintenance` freezes configuration changes with an idempotent enter and leave; `GET /diagnostics` assembles what the gateway knows about itself. (#128, #129) <!-- OWNER REVIEW PENDING -->
-- **Sockmap acceleration per service:** `sockMapMode: off | both | request | response` on plaintext TCP full-proxy services, gated per direction so `api_key_auth` can accelerate responses, isolated by address and direction, and a `sockmapreset` call stops acceleration on connections already running. Needs `--sockmapsupport`. (#176, #195, #228, #259) <!-- OWNER REVIEW PENDING -->
-- **A client that half-closes keeps its answer:** `half_close_mode: hold` on a service, with `/config/halfclose` for process-wide settings and `defaultMode`. Off by default. (#325, #336) <!-- OWNER REVIEW PENDING -->
-- **Backend TLS by certificate ID:** `POST /config/cert` takes `usage` (`server`, `ca`, `client`), a rule verifies its backends and presents a client certificate by ID, and a rule GET reports what the listener installed in `backend_tls_effective`. (#342-#344) <!-- OWNER REVIEW PENDING -->
-- **Per-rule prefill timeout:** `pd_prefill_timeout_sec` (0..3600) overrides the process default for one P/D service. (#337) <!-- OWNER REVIEW PENDING -->
-- **Source controls on full-proxy rules:** `allowedSources` and `connectionLimit` are enforced on them, optional aggregate SYN, connection-SYN, UDP packet and byte budgets sit beside the per-source limits, and `--xdp-native` attaches XDP in native mode on the interfaces it names. (#380, #384, docs/security/ddos-and-admission-fullproxy.md) <!-- OWNER REVIEW PENDING -->
-- **MCP 2026-07-28 stateless mode:** the opt-in, immutable rule field `mcp_protocol_version` validates and selects a backend per request; legacy session transport on existing rules is unchanged. (#391) <!-- OWNER REVIEW PENDING -->
-- **Endpoint Picker:** a load-balancer rule can delegate endpoint selection for a request to an external picker (Gateway API Inference Extension); the build lists `epp` under `features` in `GET /version`. (#468) <!-- OWNER REVIEW PENDING -->
-- **Relay and stream knobs:** `LLB_PROXY_WORKERS` (1..32, default 4), `LLB_SSE_STALL_ABORT_SEC` (default 0, off), `LOXILB_KV_TOKENIZE_BYTES_PER_TOKEN` (4..256, default 16), with `loxilb_proxy_stream_abandoned_total{reason}`, `loxilb_proxy_stream_abandon_age_seconds{reason}`, `loxilb_kv_exact_stage_seconds{stage,outcome}`, `loxilb_kv_exact_prompt_blocks` and `loxilb_kv_exact_overlap_blocks`. (#385, #386, #388, #389) <!-- OWNER REVIEW PENDING -->
-- **Monitoring contract:** a generated, versioned metric ownership manifest; per-backend traffic, `config_dirty`, KV freshness and HA peer exporters; recording rules, KV, P/D, persistence and policy alerts, and Alertmanager. `GET /version` also names the `product`. (#64, #118-#126, #154) <!-- OWNER REVIEW PENDING -->
+- **TensorRT-LLM (`trtllm-serve`) is a supported engine:** KV-exact routing, prefill/decode disaggregation and admission guards, with an attestation adapter and drain-ownership enforcement. (#71, #93)
+- **llama.cpp (`llama-server`) is a supported engine (`kvEngineType: "llamacpp"`):** plain L7 load balancing with CHWBL or session affinity. KV and P/D rule shapes are refused on it. A create probes every endpoint's `/props` and warns about fleet skew; it never refuses for it. (#72)
+- **SGLang prefill/decode disaggregation:** `pd_disagg_mode` with `kvEngineType=sglang`, the `pdBootstrapPort` service argument, the `loxilb_pd_sg_*` families, and bounded Tier-1.5 cold-start seeding (`LOXILB_KV_COLDSTART_SEED_N`, `LOXILB_KV_COLDSTART_MIN_BLOCKS`). (#69)
+- **CHWBL on plain-LB rules:** with `cb_enable`, an endpoint that keeps answering 5xx is demoted and re-admitted only by a real origin success; all five CHWBL/WRR_HASH settings take effect from the API through read-back. (#73, #165)
+- **Strict KV-exact routing per model and engine:** model-prompt profiles, contract-bound engine attestation for vLLM, SGLang and TensorRT-LLM, in-process chat-template execution, and refusal of strict requests the engine would render differently. `GET /config/ai/model-profiles` reads the published profiles, `GET /status/capabilities` says whether this gateway can accept such rules before a client tries, and `docs/SUPPORTED-MODELS.md` with `scripts/models/install-models.sh` lists and stages the qualified models. (#82, #93, #100, #103, #253, #294, #303, #321)
+- **Separate credential planes on PostgreSQL:** `api_key_auth: "required" | "disabled"` per load-balancer service, independent of `sse_mode` and `pd_disagg_mode` (unset resolves to `disabled`); each plane has its own store, database role, schema and cache. See Upgrade notes. (#80, docs/AI-KEY-STORE.md)
+- **JWT admission on the inference data plane:** named issuer profiles under `/config/ai/jwtauthprofile`, enforced on a rule that names one in `jwt_auth_profile`, with `loxilb_ai_jwt_validation_total{tenant,reason}` and `loxilb_ai_jwks_refresh_total{profile,outcome}`. (#168, #179)
+- **Four-level rate-limit ladder:** every rate and quota resolves as explicit row, then configured default (rule over global), then unlimited, most specific first, so a tenant limit bounds the sum of its users. Adds `/config/ai/user/ratelimit`, `/config/ai/ratelimit/defaults` and PATCH of a key's rate fields. An API key's own `tokens_per_min` was stored and ignored before; it is now enforced, so a key that has one starts being limited on upgrade. (#181, #182)
+- **Capacity admission gate, configurable per rule:** `fc_mode` and per-rule ceilings, read back with the source of each value; a bounded FIFO queue (`fc_max_queue_depth`, `fc_max_queue_wait_ms`); an adaptive ceiling and endpoint warm-up; a per-tenant share of a pool (`fc_tenant_max_share_pct`, refused with 429 `admission_tenant_share`); admission headers on admitted responses (`fc_expose_headers`); the `loxilb_ai_admission_*` families and admission alerts. (#281, #286, #288, #289, #291, #297, #306)
+- **Audit trail, on by default:** a durable local record under `--audit-dir` (default `/var/log/loxilb/audit`) of every management change, written before the change is applied (a failed write answers 503 `audit_unavailable`), and of the inference path's completions, token settlements and refusals. If the directory cannot be prepared the gateway starts and refuses every audited management call; `--audit-required` makes it refuse to start instead. Without an authentication service a record's actor is `none`. Also `GET /audit/status`, a delegated originator (`X-Loxilb-Originator`, trusted only on an account with `delegation_allowed`), a runtime audit policy, remote sinks (`/audit/sink`, `/audit/sinks/{name}`) kept in the configuration document, and the `loxilb_audit_*` families. (#272, #276, #277, #280, #282, #326, #329, #330)
+- **Configuration that survives a restart:** a restore touches only the domains its document declares (`included_domains`) and verifies content digests; L7 policies, CORS, certificates and tracing are persisted; a document declares its external recovery dependencies and a required one is verified before anything is changed; persists are crash-consistent with a lineage generation; `--config-boot-profile` chooses strict or compat; `GET /status/ready` reports the boot replay's outcome; secret values in documents are encrypted under a node-local secret kept beside the document, so a volume backup holds both. (#95, #105)
+- **Management exposure and maintenance:** `--mgmt-profile legacy|appliance-local|remote-tls` (default `legacy`, unchanged) validated before any socket binds, and `remote-tls` also asks for credentials on `GET /metrics`; `PUT/GET /maintenance` freezes configuration changes with an idempotent enter and leave; `GET /diagnostics` assembles what the gateway knows about itself. (#128, #129, #159)
+- **Sockmap acceleration per service:** `sockMapMode: off | both | request | response` on plaintext TCP full-proxy services, gated per direction so `api_key_auth` can accelerate responses, isolated by address and direction, refused where the data plane rewrites every request in the accelerated direction, and a `sockmapreset` call stops acceleration on connections already running. Needs `--sockmapsupport`. (#176, #195, #211, #226, #228, #259)
+- **A client that half-closes keeps its answer:** `half_close_mode: hold` on a service, with `/config/halfclose` for process-wide settings and `defaultMode`. Off by default. (#325, #336)
+- **Backend TLS by certificate ID:** `POST /config/cert` takes `usage` (`server`, `ca`, `client`), a rule verifies its backends and presents a client certificate by ID, a `GET` never returns a key, and a rule GET reports what the listener installed in `backend_tls_effective`. (#342-#344)
+- **Per-rule prefill timeout:** `pd_prefill_timeout_sec` (0..3600; 0 or omitted keeps the process default, 30 seconds or `LLB_PD_PREFILL_TIMEOUT_SEC`) applies to one P/D service. (#337)
+- **Source controls on full-proxy rules:** `allowedSources` is enforced by a firewall pair the rule owns and `connectionLimit` at accept. Optional aggregate SYN, connection-SYN, UDP packet and byte budgets sit beside the per-source limits, and `--xdp-native` attaches XDP in native mode on the interfaces it names. (#380, #384, docs/security/ddos-and-admission-fullproxy.md)
+- **MCP 2026-07-28 stateless mode:** the opt-in, immutable rule field `mcp_protocol_version` validates and selects a backend per request; legacy session transport on existing rules is unchanged. (#391)
+- **Endpoint Picker:** a load-balancer rule can delegate endpoint selection for a request to an external picker (Gateway API Inference Extension); the build lists `epp` under `features` in `GET /version`. (#468)
+- **Relay and stream knobs:** `LLB_PROXY_WORKERS` (1..32, default 4), `LLB_SSE_STALL_ABORT_SEC` (1..86400, default 0, off), `LOXILB_KV_TOKENIZE_BYTES_PER_TOKEN` (4..256, default 16), with `loxilb_proxy_stream_abandoned_total{reason}`, `loxilb_proxy_stream_abandon_age_seconds{reason}`, `loxilb_kv_exact_stage_seconds{stage,outcome}`, `loxilb_kv_exact_prompt_blocks` and `loxilb_kv_exact_overlap_blocks`. (#385, #386, #388, #389)
+- **Monitoring contract:** a generated, versioned metric ownership manifest; per-backend traffic, `config_dirty`, KV freshness and HA peer exporters; recording rules, KV, P/D, persistence and policy alerts, and Alertmanager. `GET /version` also names the `product`. (#64, #118, #120-#122, #124-#126, #154)
+- **`loxilb_ai_tokens_missing_total{reason}` counts 2xx AI responses that carried no usage object** (`response_complete`, `h2_stream_close`, `connection_close`, `stream_estimated`, and an `unknown` backstop). Only `stream_estimated` is charged. (#186, #201)
 
 ### Changed
 
 - **With `LLB_PD_DECODE_KV_WEIGHT=W` (default 0 = off), the P/D decode min-load
   score adds the endpoint's scraped KV-cache usage (`vllm:kv_cache_usage_perc` /
-  `sglang:token_usage`) × W/100** (OWNER REVIEW PENDING). Unknown or stale
+  `sglang:token_usage`) × W/100**. Unknown or stale
   readings take the fleet mean; pools that report no usage family behave as
   before. Session-pinned decode, prefill selection and admission are unchanged.
   (docs 10 §3.6, 11)
@@ -582,16 +581,15 @@ binary behaves exactly like upstream loxilb.
   `--loglevel debug`; use the audit trail or `loxilb_ai_*` counters instead.
   Store-outage and fault lines are unchanged.
 
-- **`GET /metrics` asks for credentials under `--mgmt-profile remote-tls`.** A scraper on that profile needs one; every other profile is unchanged. (#159) <!-- OWNER REVIEW PENDING -->
-- **The default log level is `info`,** and per-request data-path lines are emitted at debug. (#257) <!-- OWNER REVIEW PENDING -->
-- **A client that stops reading an SSE stream is paused at 768 KiB of unread data,** not 12 MiB. Clients that read normally see no change; HTTP/2 keeps the binary mark. (#387) <!-- OWNER REVIEW PENDING -->
-- **`loxilb_system_cpu_utilization_percent` is scoped to the container the gateway runs in,** not the whole host. A dashboard or alert read as host CPU needs another source. (#68) <!-- OWNER REVIEW PENDING -->
-- **`loxilb_ai_tokens_missing_total` counts non-streamed responses too and gains a `reason` label** (`response_complete`, `h2_stream_close`, `connection_close`, `stream_estimated`). Only `stream_estimated` is charged. (#186, #201) <!-- OWNER REVIEW PENDING -->
-- **Full-proxy rules on one listener must agree.** A rule whose `security`, backend TLS policy or `allowedSources` differs from the rule already on that address, port and protocol is refused with 400, and the rule API waits for the data plane's answer. A saved configuration still restores whole, and the log names each disagreeing rule. (#343, #383) <!-- OWNER REVIEW PENDING -->
-- **Proxy-only mode refuses what it cannot enforce.** An ipfilter add, a firewall add and a rule's `allowedSources` answer 400 there; they were accepted and did nothing. (#380) <!-- OWNER REVIEW PENDING -->
-- **`sockMapMode` is refused where the data plane rewrites every request in the accelerated direction,** and without `--sockmapsupport`. (#195, #211, #226) <!-- OWNER REVIEW PENDING -->
-- **Connection-heavy traffic costs less:** listeners are polled by their own worker with batched accepts, backend connects no longer hold a relay worker for a round trip, receive buffers are recycled, and a rule's connection list is constant-time. `LLB_MALLOC_MMAP_THRESHOLD` overrides the pinned allocator threshold. (#258, #261, #262) <!-- OWNER REVIEW PENDING -->
-- **Packaged dependencies refreshed:** GoBGP v3.35.0, Go 1.26.9, grpc v1.83.2, x/net v0.60.0, and the Ubuntu runtime packages at image build. (#223, #381, #393) <!-- OWNER REVIEW PENDING -->
+- **The default `--loglevel` is `info`,** not `debug`. Per-request AI lines are in the entry above. (#257)
+- **A client that stops reading a chunked or SSE response on HTTP/1.1 is paused at 768 KiB of unread data,** not 12 MiB. Clients that read normally see no change; HTTP/2 keeps the binary mark. (#387)
+- **`loxilb_system_cpu_utilization_percent` is scoped to the container the gateway runs in,** not the whole host. The host value is `loxilb_host_cpu_utilization_percent`. (#68)
+- **Full-proxy rules on one listener must agree.** A rule whose `security`, backend TLS policy or `allowedSources` differs from the rule already on that address, port and protocol (for `allowedSources`, also an overlapping port range) is refused with 400, and the rule API waits for the data plane's answer. A saved configuration still restores whole, and the log names each disagreeing rule. (#343, #383)
+- **Proxy-only mode refuses what it cannot enforce.** An ipfilter add, a firewall add, security-rate settings and a rule's `allowedSources` answer 400 naming the mode; they used to answer success and do nothing. (#380, #384)
+- **Relay changes for connection-heavy traffic:** listeners are polled by their own worker with batched accepts, a backend connect no longer holds a relay worker for a round trip, receive buffers are recycled, and a rule's connection list is constant-time. `LLB_MALLOC_MMAP_THRESHOLD` overrides the pinned allocator threshold. (#258, #261, #262)
+- **Dependencies refreshed:** images and packages build with Go 1.26.9; both images carry GoBGP v3.35.0; the gateway uses grpc v1.83.2 and x/net v0.60.0; Ubuntu runtime packages are upgraded at image build. (#223, #381, #393)
+- **A CHWBL chat body with no system message now hashes the first 256 bytes of its first user message,** so user-only traffic co-locates. `LLB_LLM_USER_PREFIX_FALLBACK_LEN` overrides the length and `0` restores the old behaviour. (#73)
+- **`architecture` in the device status reports the machine name, and sizes round upward with unit promotion;** filesystem selection can differ from GNU `df`. (#458)
 
 ### Fixed
 
@@ -981,56 +979,58 @@ binary behaves exactly like upstream loxilb.
   `api_key_auth` declaration, and on a rule whose response direction is
   carried by `sockMapMode`, a backend's `X-Api-Key` passes through as well.
 
-- **`GET /logs` could not page back through older history** — page two re-read the newest page forwards — paging now walks backwards and covers every line once. (#65) <!-- OWNER REVIEW PENDING -->
-- **A rule with `security=3` read back as accepted while programming no TLS mode** — the API enum allowed a value the data path has no branch for — it is refused with 422. (#66) <!-- OWNER REVIEW PENDING -->
-- **Policer refusals answered a bare 500** — a below-floor rate and the egress-without-hooks refusal missed the validation class — both answer 400 with the reason, and a rate refusal names the field. (#92, #169) <!-- OWNER REVIEW PENDING -->
-- **IPsec and VXLAN failures answered 200** — 22 error paths used the success responder — they answer their classified 404, 409, 400 or 500. (#112) <!-- OWNER REVIEW PENDING -->
-- **A global rate-limit default answered 404 when `rule_ident` was also sent** — the store was keyed on it although the API ignores it for that scope — it is ignored as declared. (#210) <!-- OWNER REVIEW PENDING -->
-- **A removed or lifted quota kept being enforced** — a removed per-user model quota and a lifted tenant token quota stayed in force — both stop on the change. (#215) <!-- OWNER REVIEW PENDING -->
-- **Rate-limiter state did not sync on an HA pair serving only L7 AI traffic** — the push loop skipped its tick without dialling, and only session sync or key invalidation dialled — the push loop connects for itself. (#224) <!-- OWNER REVIEW PENDING -->
-- **A restore failed on a host with no config directory** — publishing a file did not create it — the directory is created. (#249) <!-- OWNER REVIEW PENDING -->
-- **A load-balancer `POST` took about a second under load** — the data-path worker slept between queue drains — it wakes on its queue. (#257) <!-- OWNER REVIEW PENDING -->
-- **A config write about three seconds after another answered 503 "restore in progress" with no restore running** — auto-persist took the gate a restore holds — writes wait out the capture. (#260) <!-- OWNER REVIEW PENDING -->
-- **A valid request on an unprovisioned server was told its arguments were malformed** — server preconditions shared the malformed-argument answer — they answer 412. (#263) <!-- OWNER REVIEW PENDING -->
-- **`connectionLimit` could not be set through REST** — POST, PATCH and GET did not carry it — all three do. (#275) <!-- OWNER REVIEW PENDING -->
-- **A create body without its object crashed three create handlers, and a panicking handler left no audit result** — the body was not checked and the gate did not record panics — the body is refused and the result recorded. (#285) <!-- OWNER REVIEW PENDING -->
-- **A rule whose TLS context could not be built stopped the gateway** — the data plane asserted on it — the rule fails with its reason in the log and the gateway keeps serving. (#340) <!-- OWNER REVIEW PENDING -->
-- **A certificate delete or rotation reported success when the rules could not be consulted** — the failed call was read as an answer — it answers 500, and nothing is deleted. (#352) <!-- OWNER REVIEW PENDING -->
-- **A backend TLS failure reached the client as an empty reply or a cut-off response** — the leg's failure paths wrote no complete answer — the client gets a complete `backend_unreachable`, 502 on HTTP/1.1 and 503 on HTTP/2. (#354) <!-- OWNER REVIEW PENDING -->
-- **A kept-alive HTTP/1.1 client kept the old backend TLS policy after a replace or rotation** — its backend connection outlived the change — the connection closes after any answer in flight, at most 30 seconds later. (#355) <!-- OWNER REVIEW PENDING -->
-- **An audit sink could lose records while reading `connected`** — a socket write was taken for an acknowledgment — what was not acknowledged is sent again, and a segment is pruned once. (#357) <!-- OWNER REVIEW PENDING -->
-- **Frontend mTLS broke after an endpoint update** — a rule taking over a kept listener inherited the previous rule's TLS setup — it is judged by its own arguments. (#359) <!-- OWNER REVIEW PENDING -->
-- **A cluster standby refused every full-proxy rule, so a new master had none after failover** — the VIP is not bound on a standby — the rule is kept and installed on takeover, and a refused install says whose problem it is. (#362) <!-- OWNER REVIEW PENDING -->
-- **A replace or merge-patch answered 200 or `lbrule-exists` and kept the old value** — one half of the path dropped several accepted values — `name`, `probeTimeout`, `probeRetries`, endpoint values and `mtls_frontend` are applied. (#363) <!-- OWNER REVIEW PENDING -->
-- **A replace the data plane refused left the rule not serving and showing the refused values** — the request was stored before the push — the rule returns to what it was. (#364) <!-- OWNER REVIEW PENDING -->
-- **A client that read a rule and sent it back dropped timeouts, TLS and HSTS settings, and a created certificate's minted ID was unknown** — GET did not serialize them and the create answered empty — both are answered. (#365) <!-- OWNER REVIEW PENDING -->
-- **A `tls_ciphers` string the TLS library rejects answered 412** — it was reported as a gateway condition — it answers 400 naming the field. (#366) <!-- OWNER REVIEW PENDING -->
-- **A proxy-only gateway could not restore its own snapshot on restart** — the disabled security-rate domain touched absent kernel maps — that state is normalized without them. (#374) <!-- OWNER REVIEW PENDING -->
-- **Logout answered 200 and the Bearer session stayed usable** — the revoke hashed the whole `Authorization` header — it revokes the token itself. (#378) <!-- OWNER REVIEW PENDING -->
-- **Deleting one pool on a shared listener removed source rules a remaining pool still needed** — the entries were owned per pool — they stay until the last interested pool goes. (#383) <!-- OWNER REVIEW PENDING -->
-- **A rule with equal `port` and `portMax` returned success while TCP clients timed out** — the control plane built a range mark the data plane treats as a singleton — equal bounds are one port. (#397) <!-- OWNER REVIEW PENDING -->
-- **An HTTP/1.1 backend connection failure answered 502 with no audit completion** — the local response path skipped the recorder — one completion is recorded. (#399) <!-- OWNER REVIEW PENDING -->
-- **BGP policy bindings were lost across a restore** — capture omitted the assignments — schema 1.12 carries them, and a replacement that would discard live ones is refused before it starts. (#403) <!-- OWNER REVIEW PENDING -->
-- **A certificate path that could not be read crashed boot or a rule add** — any stat error other than not-found dereferenced nil — it reads as absent and is logged once. (#456) <!-- OWNER REVIEW PENDING -->
-- **Device, filesystem and process status reads failed intermittently** — the SIGCHLD reaper took their children's exit status — they read kernel files directly. `architecture` now reports the machine name, and sizes round upward. (#458, #460) <!-- OWNER REVIEW PENDING -->
-- **`GET` of BFD sessions answered 500 on a gateway with none** — a lifecycle hint was read as availability — it answers 200 with an empty list. (#464) <!-- OWNER REVIEW PENDING -->
-- **An HA gateway could wedge at boot adding a BFD session** — session add and the receive path took two locks in opposite order — the lock is not held across the BFD table. (#475) <!-- OWNER REVIEW PENDING -->
-- **A restarted HA node could take MASTER back with no synced conntrack, and a rolling restart lost sessions on failback** — only the first boot BFD session waited for the initial sync — every add waits while that gate is open. (#482) <!-- OWNER REVIEW PENDING -->
-- **A container with `--sockmapsupport` did not come back after `docker restart`** — the mount script trusted the directory, not the mount — the cgroup2 mount is verified at boot. (#486) <!-- OWNER REVIEW PENDING -->
+- **`GET /logs` could not page back through older history** — page two re-read the newest page forwards — paging now walks backwards and covers every line once. (#65)
+- **A rule with `security=3` was stored and read back but served plaintext** — the API enum allowed a value the data path has no branch for — it is refused with 422. (#66)
+- **Policer refusals answered a bare 500** — a below-floor rate and the egress-without-hooks refusal missed the validation class — both answer 400 with the reason, and a rate refusal names the field. (#92, #169)
+- **IPsec and VXLAN failures answered 200 with the error in `result`** — those paths used the success responder — they answer their classified 404, 409, 400 or 500, so a client must read the status. (#112)
+- **A global rate-limit default answered 404 when `rule_ident` was also sent** — the store was keyed on it although the API ignores it for that scope — it is ignored as declared. (#210)
+- **A removed or lifted quota kept being enforced** — a removed per-user model quota and a lifted tenant token quota stayed in force — both stop on the change. (#215)
+- **Rate-limiter state did not sync on an HA pair serving only L7 AI traffic** — the push loop skipped its tick without dialling, and only session sync or key invalidation dialled — the push loop connects for itself, so such a pair now exchanges quota state; see Upgrade notes. (#224)
+- **A restore failed on a host with no config directory** — publishing a file did not create it — the directory is created. (#249)
+- **A load-balancer `POST` could take about a second under load** — the data-path worker slept up to one second between queue drains — it wakes on its queue. (#257)
+- **A config write about three seconds after another answered 503 "restore in progress" with no restore running** — auto-persist, after its 3-second quiet period, took the gate a restore holds — writes wait out the capture. (#260)
+- **A valid request on an unprovisioned server was told its arguments were malformed** — server preconditions shared the malformed-argument answer — they answer 412. (#263)
+- **`connectionLimit` could not be set through REST** — POST, PATCH and GET did not carry it — all three do. (#275)
+- **A create body without its object crashed three create handlers** — the body was not checked — it is refused. (#285)
+- **A panicking management handler left no audit result** — the gate did not record panics — the result is recorded. (#285)
+- **A rule whose TLS context could not be built stopped the gateway** — the data plane asserted on it — the rule fails with its reason in the log and the gateway keeps serving. (#340)
+- **A certificate delete or rotation reported success when the rules could not be consulted** — the failed call was read as an answer — it answers 500, and nothing is deleted. (#352)
+- **On a rule that re-encrypts to its backends, a backend TLS failure reached the client as an empty reply or a cut-off response** — the leg's failure paths wrote no complete answer — the client gets a complete `backend_unreachable`, 502 on HTTP/1.1 and 503 on HTTP/2. (#354)
+- **On a non-AI-gateway rule, a kept-alive HTTP/1.1 client kept the old backend TLS policy after a replace or rotation** — its backend connection outlived the change — an idle connection closes within about a second, one in flight after its answer, and an answer still owed at 30 seconds is cut. (#355)
+- **An audit sink could lose records while reading `connected`** — a socket write was taken for an acknowledgment — what was not acknowledged is sent again, and a segment is pruned once. (#357)
+- **A rule taking over a kept listener ran with the previous rule's TLS setup, so after an endpoint update trusted clients were refused, a rule requiring a client certificate could serve a client with none, and an HTTP/2 backend rule was not served** — the kept listener's setup was reused — the rule is judged by its own arguments. (#359)
+- **A cluster standby refused every full-proxy rule with 400, so a new master had none after failover** — the VIP is not bound on a standby — the rule is kept and installed on takeover, and a refused install says whose problem it is. (#362)
+- **A replace or merge-patch answered 200 or `lbrule-exists` and kept the old value** — one half of the path dropped several accepted values — `name`, `probeTimeout`, `probeRetries`, endpoint values and `mtls_frontend` are applied, and a `name` that changes the cluster instance or VIP handling is refused with 409. (#363)
+- **A replace the data plane refused left the rule not serving and showing the refused values** — the request was stored before the push — the rule returns to what it was. (#364)
+- **A client that read a rule and sent it back dropped its timeouts, TLS and HSTS settings** — GET did not serialize them — GET returns them. (#365)
+- **A created certificate's minted ID could not be learned** — the create answered empty — the answer carries the ID. (#365)
+- **A `tls_ciphers` string the TLS library rejects answered 412 on a rule that terminates TLS** — it was reported as a gateway condition — it answers 400 naming the field, and on a replace the rule is untouched. (#366)
+- **A proxy-only gateway could not restore its own snapshot on restart** — the disabled security-rate domain touched absent kernel maps — that state is normalized without them. (#374)
+- **Logout answered 200 and the Bearer session stayed usable** — the revoke hashed the whole `Authorization` header — it revokes the token itself, and the old token answers 401. (#378)
+- **Deleting one pool on a shared listener removed source rules a remaining pool still needed, so a denied client could reach that pool** — the entries were owned per pool — they stay until the last interested pool goes. (#383)
+- **A rule with equal `port` and `portMax` returned success while TCP clients timed out** — the control plane built a range mark the data plane treats as a singleton — equal bounds are one port. (#397)
+- **An HTTP/1.1 backend connection failure answered 502 with no audit completion** — the local response path skipped the recorder — one completion is recorded. (#399)
+- **BGP policy bindings were lost across a restore** — capture omitted the assignments — schema 1.12 carries them (older documents do not gain them), and a replacement that would discard live ones is refused before it starts. (#403)
+- **A certificate path that could not be read crashed boot or a rule add** — any stat error other than not-found dereferenced nil — it reads as absent and is logged once. (#456)
+- **Device, filesystem and process status reads failed intermittently** — the SIGCHLD reaper took their children's exit status — they read kernel files directly. (#458, #460)
+- **`GET` of BFD sessions answered 500 on a gateway with none** — a lifecycle hint was read as availability — it answers 200 with an empty list. (#464)
+- **An HA gateway could wedge at boot adding a BFD session** — session add and the receive path took two locks in opposite order — the lock is not held across the BFD table. (#475)
+- **A restarted HA node could take MASTER back with no synced conntrack, and a rolling restart lost sessions on failback** — only the first boot BFD session waited for the initial sync — every boot add waits for that sync and its cool-off; adds after it are not delayed. (#482)
+- **A container with `--sockmapsupport` did not come back after `docker restart`** — the mount script trusted the directory, not the mount — the cgroup2 mount is verified at boot. (#486)
 
 ### Upstream
 
-- Based on upstream loxilb `d6adfb77` (after `v0.9.8.6`), with selected upstream fixes ported; loxilb-ebpf pin `f00d8b3f7de5b70e3971167a791ce5a3cf5d78e4`. <!-- OWNER REVIEW PENDING -->
+- Based on upstream loxilb `d6adfb77` (after `v0.9.8.6`), with selected upstream fixes ported; loxilb-ebpf pin `f00d8b3f7de5b70e3971167a791ce5a3cf5d78e4`.
 
 ### Notes
 
-- **Bundled loxicmd:** `3f75f2c945edc585315bb5f923ddd70e57346cc7`, set by `ARG LOXICMD_TAG` in every Dockerfile. <!-- OWNER REVIEW PENDING -->
+- **Bundled loxicmd:** `3f75f2c945edc585315bb5f923ddd70e57346cc7`, set by `ARG LOXICMD_TAG` in every Dockerfile.
 - This release preserves full upstream loxilb functionality; classic L4/L7
   load balancing is unchanged and documented upstream.
 
 ### Upgrade notes
 
-- **Streaming no longer implies API-key enforcement, and MySQL/MariaDB is gone.** A rule that relied on its streaming flag to enforce keys must declare `api_key_auth: "required"`; unset resolves to `disabled`, and every quota write warns while nothing enforces. The `--database*` flags are replaced by `--mgmt-db-*`, and the data plane uses `--aikey-db-*`. Both stores are PostgreSQL. (#80, docs/AI-KEY-STORE.md) <!-- OWNER REVIEW PENDING -->
+- **Streaming no longer implies API-key enforcement, and MySQL/MariaDB is gone.** A rule that relied on its streaming flag to enforce keys must declare `api_key_auth: "required"`; unset resolves to `disabled`, and every quota write warns while nothing enforces. The `--database*` flags are replaced by `--mgmt-db-*`, and the data plane uses `--aikey-db-*`. Both stores are PostgreSQL. Keys are no longer read from the old database: a gateway upgraded with `--userservice` but no `--aikey-db-host` has no key store and admits requests without a key, so move them first. (#80, docs/AI-KEY-STORE.md)
 
 - **Mixed credential policies on one listener are refused.** A snapshot that
   holds fullproxy rules with different `api_key_auth` / `jwt_auth_profile` on
