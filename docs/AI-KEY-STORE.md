@@ -117,15 +117,13 @@ It no longer is: the two planes share nothing, and key checking now depends on
 this store alone.
 
 **A gateway upgraded with `--userservice` still set but no `--aikey-db-host`
-has no key store, and admits requests without a key.** The keys are not read
-from the old database any more — the tables are not even created there. Nothing
-in the traffic distinguishes this from working correctly, because the requests
-that used to be allowed are still allowed; it is the ones that used to be
-rejected that changed. The gateway says so once at startup of the first such
-request:
+has no key store.** A rule with `api_key_auth: "required"` answers 503
+`policy_store_unavailable`, and a rule that declares nothing admits requests
+without a key. The keys are not read from the old database any more — the tables
+are not even created there. The gateway says so once, on the first such request:
 
 ```
-[AIGateway] No API-key store configured (--aikey-db-host unset): requests are admitted without a key
+[AIGateway] No API-key store configured (--aikey-db-host unset): services with api_key_auth=required are refusing requests with 503
 ```
 
 Provision this store and point `--aikey-db-*` at it. The existing keys can be

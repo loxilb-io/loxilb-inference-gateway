@@ -1030,7 +1030,7 @@ inference-gateway delta is enumerated in detail.
 
 ### Upgrade notes
 
-- **Streaming no longer implies API-key enforcement, and MySQL/MariaDB is gone.** A rule that relied on its streaming flag to enforce keys must declare `api_key_auth: "required"`; unset resolves to `disabled`, and every quota write warns while nothing enforces. The `--database*` flags are replaced by `--mgmt-db-*`, and the data plane uses `--aikey-db-*`. Both stores are PostgreSQL. Keys are no longer read from the old database: a gateway upgraded with `--userservice` but no `--aikey-db-host` has no key store and admits requests without a key, so move them first. (#80, docs/AI-KEY-STORE.md)
+- **Streaming no longer implies API-key enforcement, and MySQL/MariaDB is gone.** A rule that relied on its streaming flag to enforce keys must declare `api_key_auth: "required"`; unset resolves to `disabled`, and every quota write warns while nothing enforces. The `--database*` flags are replaced by `--mgmt-db-*`, and the data plane uses `--aikey-db-*`. Both stores are PostgreSQL. Keys are no longer read from the old database, so move them first. With no `--aikey-db-host`, a rule with `api_key_auth: "required"` answers 503 `policy_store_unavailable`, and a rule that declares nothing admits requests without a key. (#80, docs/AI-KEY-STORE.md)
 
 - **Mixed credential policies on one listener are refused.** A snapshot that
   holds fullproxy rules with different `api_key_auth` / `jwt_auth_profile` on
