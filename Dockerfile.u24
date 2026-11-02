@@ -206,9 +206,9 @@ RUN cd /root/loxilb-io/loxilb/ && \
 
 # Build gobgp from source: the upstream prebuilt v3.29.0 binaries carry a
 # vulnerable Go stdlib and grpc; building with the toolchain above and a
-# patched grpc keeps the exact gobgp version while clearing both CVEs.
-RUN git clone --depth 1 --branch v3.29.0 https://github.com/osrg/gobgp.git /tmp/gobgp && \
-    cd /tmp/gobgp && go get google.golang.org/grpc@v1.82.1 && go mod tidy && \
+# patched grpc updates the identified vulnerable runtime dependency set.
+RUN git clone --depth 1 --branch v3.35.0 https://github.com/osrg/gobgp.git /tmp/gobgp && \
+    cd /tmp/gobgp && go get google.golang.org/grpc@v1.83.2 golang.org/x/net@v0.60.0 && go mod tidy && \
     go build -o /usr/sbin/gobgp ./cmd/gobgp && go build -o /usr/sbin/gobgpd ./cmd/gobgpd && \
     cd / && rm -rf /tmp/gobgp /root/go/pkg /root/.cache/go-build
 
