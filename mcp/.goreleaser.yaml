@@ -74,6 +74,10 @@ homebrew_casks:
     homepage: "https://github.com/loxilb-io/loxilb-inference-gateway"
     description: "Standalone MCP bridge for loxilb-inference-gateway"
     license: "Apache-2.0"
+    # A pre-release tag must not change what `brew install` serves. GoReleaser:
+    # "If set to auto, the release will not be uploaded to the homebrew tap
+    # in case there is an indicator for prerelease in the tag e.g. v1.0.0-rc1".
+    skip_upload: auto
     # The default URL is derived from the (prefix-stripped) version, which is
     # not where the assets live — the release sits on the `mcp/vX.Y.Z` tag. The
     # slash stays literal: this is byte-for-byte the `browser_download_url`

@@ -176,7 +176,8 @@ That single tag triggers the workflow to build all six binaries, write
 `SHA256SUMS`, publish a GitHub Release on the `mcp/vX.Y.Z` tag, push the
 `ghcr.io/loxilb-io/loxilb-mcp` multi-arch image, and update the Homebrew cask.
 A tag carrying a pre-release suffix publishes its own image tag but does **not**
-move `:latest`, which stays on the last stable release.
+move `:latest` and does **not** update the Homebrew cask: both stay on the last
+stable release.
 
 Two implementation notes, since GoReleaser OSS has no monorepo support: the
 workflow runs it from `mcp/` and passes the prefix-stripped version via
