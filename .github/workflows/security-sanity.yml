@@ -150,14 +150,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
-      # The :latest image is the base; the binary built from this change is overlaid
+      # The :main image is the base; the binary built from this change is overlaid
       # (make docker-cp) so every scenario below runs the change, not the published image.
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:main || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:main .
       - run: bash cicd/common/reflect-echo/docker-build.sh
-      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:main
       - run: sudo -E env "PATH=$PATH" make docker-cp
       - run: docker exec -dit loxilb mkllb_bpffs
-      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:main
       - run: docker stop loxilb && docker rm loxilb
 
       - name: C unit layers of the security controls

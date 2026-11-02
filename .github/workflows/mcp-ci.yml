@@ -38,7 +38,7 @@ defaults:
 
 env:
   # The gateway image tag Stage-1 pulls and runs (see the stage1 job, D19).
-  STAGE1_IMAGE_TAG: latest-u24
+  STAGE1_IMAGE_TAG: main-u24
 
 jobs:
   test:
@@ -106,8 +106,8 @@ jobs:
   # nettest hosts on the cicd/common.sh topology — observe, the L4 and typed-AI
   # create -> traffic -> confirm-delete round-trips, the jwt credential policy,
   # viewer guardrails, the API-key lifecycle and the diagnose/report tools.
-  # ubuntu-22.04 on purpose: the scenario runs the published :latest gateway
-  # image, and common.sh maps a 24.04 host to :latest-u24, whose eBPF
+  # ubuntu-22.04 on purpose: the scenario runs the published :main gateway
+  # image, and common.sh maps a 24.04 host to :main-u24, whose eBPF
   # programs the 6.x-azure kernel of the hosted 24.04 runner refuses (E2BIG).
   # The ai-ops legs report [SKIP] when the API-key store answers 503 in the
   # plain image; that is the scenario's own verdict, not a failure.
@@ -137,9 +137,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
       # D19: Stage-1 drives a main-built gateway image, chosen by this one
-      # variable. latest-u24 is rebuilt from main on every push that touches
+      # variable. main-u24 is rebuilt from main on every push that touches
       # the gateway and daily at 10:00 UTC (docker-image-u24.yml); :latest
-      # is a dispatch-only build (docker-image.yml) and lags main by weeks.
+      # and :latest-u24 move only on a final release (release.yml).
       # common.sh honours LOXILB_DOCKER_IMAGE as a bare tag.
       - name: pull the testbed images
         run: |

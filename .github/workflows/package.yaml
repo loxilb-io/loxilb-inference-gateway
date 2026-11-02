@@ -12,7 +12,7 @@ name: OS-Package-Nightly
 # demand) straight from source via the same packaging/build-pkgs.sh path
 # release.yml uses, and attaches it to a single rolling "vlatest" PRE-RELEASE.
 # It never moves any versioned tag, never touches the container images
-# (Docker-Multi-Arch / Build-CI-Ubuntu-24 already publish :latest / :latest-u24
+# (Docker-Multi-Arch / Build-CI-Ubuntu-24 already publish :main / :main-u24
 # on push-to-main), and never supersedes release.yml.
 #
 # Package version: <base>-nightly.<YYYYMMDD>, which build-pkgs.sh renders as

@@ -91,9 +91,9 @@ jobs:
         port: 22
         script_stop: true
         script: |
-            sudo docker image pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+            sudo docker image pull ghcr.io/loxilb-io/loxilb-inference-gateway:main
             sudo docker rm -f loxilb || true
-            sudo docker run -u root --cap-add SYS_ADMIN --net host  --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+            sudo docker run -u root --cap-add SYS_ADMIN --net host  --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:main
             sleep 20
             sudo docker exec loxilb /root/loxilb-io/loxilb/loxilb -v
       

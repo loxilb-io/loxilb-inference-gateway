@@ -22,7 +22,7 @@ on:
       tagName:
         description: 'Tag Name'
         required: true
-        default: 'latest'
+        default: 'main'
       sourceTag:
         description: 'Source git ref used inside Dockerfile builds; defaults to main unless overridden'
         required: false
@@ -30,7 +30,7 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/loxilb-io/loxilb-inference-gateway
-  TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tagName || 'latest' }}
+  TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tagName || 'main' }}
   BUILD_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.sourceTag != '' && github.event.inputs.sourceTag || (github.event_name == 'workflow_dispatch' && github.event.inputs.tagName != 'latest' && github.event.inputs.tagName || 'main') }}
 
 jobs:

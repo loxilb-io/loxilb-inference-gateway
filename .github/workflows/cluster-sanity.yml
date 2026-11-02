@@ -38,10 +38,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
-      - run: docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:main || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:main .
+      - run: docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:main
       - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
-      - run: id=`docker ps -f name=loxilb | cut  -d " "  -f 1 | grep -iv  "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: id=`docker ps -f name=loxilb | cut  -d " "  -f 1 | grep -iv  "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:main
       - run: docker stop loxilb && docker rm loxilb
       - run: |
              cd cicd/cluster1/

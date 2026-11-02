@@ -73,12 +73,12 @@ runs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ inputs.ghcr-token }}
-    - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+    - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:main || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:main .
       shell: bash
     # reflect-echo backend image (KV-cache scenarios) — always built from the local context
     - run: bash cicd/common/reflect-echo/docker-build.sh
       shell: bash
-    - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+    - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:main
       shell: bash
     # Built as the product image is (Dockerfile: EXTRA_CFLAGS="-DHAVE_SOCKOPS"):
     # without the define a gateway started with --sockmapsupport aborts at
@@ -136,7 +136,7 @@ runs:
         echo "loxicmd create lb --help names --fc-wake-policy: $(docker exec loxilb loxicmd create lb --help 2>&1 | grep -c -- --fc-wake-policy || true)"
     - run: docker exec -dit loxilb mkllb_bpffs
       shell: bash
-    - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+    - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:main
       shell: bash
     - run: docker stop loxilb && docker rm loxilb
       shell: bash

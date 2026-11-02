@@ -59,7 +59,7 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository)
     env:
       KV_OLD_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:${{ inputs.oldTag || vars.PERSIST_UPGRADE_OLD_TAG || 'v0.9.8.9-rc.1-u24' }}
-      LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:main
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,7 +110,7 @@ jobs:
           ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}
       - name: AI-QoS rate-limiter HA sync (two nodes, shared key store)
         env:
-          LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+          LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:main
         run: |
           cd cicd/ai-qos-ha-sync/
           rc=0
