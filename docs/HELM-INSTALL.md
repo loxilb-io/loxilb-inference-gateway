@@ -7,7 +7,10 @@ rules, and the GatewayClass, Gateway, InferencePool and HTTPRoute objects that
 describe your model-server pools. This guide is for operators who install the
 chart on their own cluster. The chart's own [README](../deploy/helm/loxilb-inference-gateway/README.md)
 has the values table; `cicd/k3d-helm-inference-gwapi` is a complete, runnable
-example on a throw-away k3d cluster.
+example on a throw-away k3d cluster. To evaluate the chart on a cluster you
+already have, [HELM-TESTBED.md](HELM-TESTBED.md) installs it in one command,
+together with an Endpoint Picker, Keycloak, an API-key store and a syslog
+receiver, and checks the result.
 
 Throughout, the release is called `igw` and installed into `kube-system`, the
 namespace the chart was validated in. Model servers live in a namespace called
