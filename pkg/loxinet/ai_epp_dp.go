@@ -112,6 +112,22 @@ func eppRuleUnregister(ruleNum uint64) {
 	eppRulesMu.Unlock()
 }
 
+// eppHealthReport is the read-only EPP view a rule GET carries: connection
+// state, when it changed (RFC3339) and the last request-phase error. The
+// connection is opened on first ask, so a rule that never sent a request
+// still learns whether its EPP is reachable.
+func eppHealthReport(r *ruleEnt) (state, since, lastErr string) {
+	cfg, ok := eppRuleLookup(uint32(r.ruleNum))
+	if !ok {
+		cfg = epp.RuleCfg{Endpoint: r.eppEndpoint, FailureMode: r.eppFailureMode, TimeoutMs: r.eppTimeoutMs, Plaintext: r.eppPlaintext}
+	}
+	h := eppClient.Health(cfg)
+	if !h.Since.IsZero() {
+		since = h.Since.UTC().Format(time.RFC3339)
+	}
+	return h.State, since, h.LastError
+}
+
 func eppRuleLookup(svcID uint32) (epp.RuleCfg, bool) {
 	eppRulesMu.RLock()
 	cfg, ok := eppRules[svcID]

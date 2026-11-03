@@ -5106,10 +5106,25 @@ func init() {
               "type": "string",
               "x-nullable": false
             },
+            "eppLastError": {
+              "description": "Read-only: the last request-phase error the gateway got from this EPP (connection refused, deadline, NOT_SERVING, ...); empty once the connection is up again. Ignored on create or replace.",
+              "type": "string",
+              "x-nullable": false
+            },
             "eppPlaintext": {
               "default": false,
               "description": "true connects to the EPP without TLS. The default (false) uses TLS without certificate verification, matching the insecureSkipVerify DestinationRule the llm-d charts install for the EPP's self-signed certificate. Only meaningful with eppEndpoint; accepted but inert otherwise.",
               "type": "boolean",
+              "x-nullable": false
+            },
+            "eppState": {
+              "description": "Read-only, reported on GET for rules with an eppEndpoint: the gateway's connection to the EPP. up = the gRPC connection is ready; connecting = dialing or idle, not yet proven; down = the dial fails and gRPC is backing off; unknown = no connection attempted yet. Sampled every 5 seconds whether or not requests flow, so an idle EPP that dies is reported within a few seconds. Ignored on create or replace.",
+              "type": "string",
+              "x-nullable": false
+            },
+            "eppStateSince": {
+              "description": "Read-only: RFC3339 time at which eppState last changed. Ignored on create or replace.",
+              "type": "string",
               "x-nullable": false
             },
             "eppTimeoutMs": {

@@ -86,6 +86,26 @@ rule, so the sidecar addresses have to be listed. `FailClose` is refused with
 `pd_disagg_mode` because the ladder would then be unreachable and the P/D
 members could never serve.
 
+## Is the EPP up? Three read-only fields on the rule
+
+`GET /netlox/v1/config/loadbalancer/all` (and the single-rule GET) report,
+for every rule with an `eppEndpoint`, what the gateway currently sees of
+that EPP:
+
+| Field | Meaning |
+|---|---|
+| `eppState` | `up` — the gRPC connection to the EPP is ready. `connecting` — dialing, or idle and not yet proven. `down` — the dial fails and gRPC is backing off. `unknown` — no connection attempted yet. |
+| `eppStateSince` | RFC3339 time `eppState` last changed. |
+| `eppLastError` | The last request-phase error from this EPP (connection refused, deadline, `NOT_SERVING`, ...). Cleared once the connection is up again. |
+
+The state is sampled every 5 seconds on every cached EPP connection whether
+or not requests flow, so an idle EPP that dies shows `down` within a few
+seconds, and a freshly created rule goes `connecting` → `up`/`down` on its
+own. The fields are ignored on create and replace, so a GET body can be
+re-POSTed unchanged. They describe the connection, not the EPP's own health
+endpoint: an EPP that accepts connections but answers `NOT_SERVING` shows
+`up` with the refusal in `eppLastError` after the next request.
+
 ## A listener kept after its last rule is deleted
 
 Deleting the last rule of a VIP:port keeps the fullproxy listener socket

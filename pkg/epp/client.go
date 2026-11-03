@@ -170,6 +170,7 @@ type Client struct {
 	conns map[string]*connEntry
 	// Resets counts the cached connections dropped by dead-peer detection.
 	Resets atomic.Int64
+	done   chan struct{} // closed by Close; stops the health probe loop
 }
 
 type connEntry struct {
@@ -177,17 +178,31 @@ type connEntry struct {
 	// silent counts consecutive request phases on this connection that
 	// timed out without any frame from the EPP; any received frame zeroes it.
 	silent atomic.Int32
+	// health, sampled by the probe loop and by Health() (see health.go).
+	hmu       sync.Mutex
+	state     string
+	since     time.Time
+	lastErr   string
+	lastErrAt time.Time
+	lastOKAt  time.Time
 }
 
-// NewClient makes an empty connection pool.
+// NewClient makes an empty connection pool and starts its health probe.
 func NewClient() *Client {
-	return &Client{conns: make(map[string]*connEntry)}
+	c := &Client{conns: make(map[string]*connEntry), done: make(chan struct{})}
+	go c.probeLoop()
+	return c
 }
 
-// Close drops every connection.
+// Close drops every connection and stops the health probe.
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	select {
+	case <-c.done:
+	default:
+		close(c.done)
+	}
 	for k, e := range c.conns {
 		e.cc.Close()
 		delete(c.conns, k)
@@ -345,7 +360,9 @@ func (c *Client) Submit(ctx context.Context, cfg RuleCfg, req *Request) (*Decisi
 	case o := <-opened:
 		if o.err != nil {
 			cancel()
-			return &Decision{Status: StatusError, Err: fmt.Errorf("epp: open stream: %w", o.err)}, nil
+			err := fmt.Errorf("epp: open stream: %w", o.err)
+			e.noteErr(err)
+			return &Decision{Status: StatusError, Err: err}, nil
 		}
 		stream = o.stream
 	case <-timer.C:
@@ -356,7 +373,9 @@ func (c *Client) Submit(ctx context.Context, cfg RuleCfg, req *Request) (*Decisi
 		// of each waiting the deadline (dead-peer detection is for a
 		// connection that is up and silent, not for one that never came up).
 		cancel()
-		return &Decision{Status: StatusError, Err: fmt.Errorf("epp: no connection within %s: %w", deadline, context.DeadlineExceeded)}, nil
+		err := fmt.Errorf("epp: no connection within %s: %w", deadline, context.DeadlineExceeded)
+		e.noteErr(err)
+		return &Decision{Status: StatusError, Err: err}, nil
 	case <-ctx.Done():
 		cancel()
 		return &Decision{Status: StatusError, Err: fmt.Errorf("epp: request abandoned: %w", ctx.Err())}, nil
@@ -383,6 +402,11 @@ func (c *Client) Submit(ctx context.Context, cfg RuleCfg, req *Request) (*Decisi
 		e.silent.Store(0)
 	} else if dec.Status != StatusOK && errors.Is(dec.Err, context.DeadlineExceeded) {
 		c.silentTimeout(connKey(cfg), e)
+	}
+	if dec.Status == StatusError {
+		e.noteErr(dec.Err)
+	} else {
+		e.noteOK()
 	}
 	if dec.Status != StatusOK {
 		s.Abort()

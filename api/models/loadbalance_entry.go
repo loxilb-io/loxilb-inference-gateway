@@ -747,6 +747,15 @@ type LoadbalanceEntryServiceArguments struct {
 	// true connects to the EPP without TLS. The default (false) uses TLS without certificate verification, matching the insecureSkipVerify DestinationRule the llm-d charts install for the EPP's self-signed certificate. Only meaningful with eppEndpoint; accepted but inert otherwise.
 	EppPlaintext bool `json:"eppPlaintext,omitempty"`
 
+	// Read-only, reported on GET for rules with an eppEndpoint: the gateway's connection to the EPP. up = the gRPC connection is ready; connecting = dialing or idle, not yet proven; down = the dial fails and gRPC is backing off; unknown = no connection attempted yet. Sampled every 5 seconds whether or not requests flow, so an idle EPP that dies is reported within a few seconds. Ignored on create or replace.
+	EppState string `json:"eppState,omitempty"`
+
+	// Read-only: RFC3339 time at which eppState last changed. Ignored on create or replace.
+	EppStateSince string `json:"eppStateSince,omitempty"`
+
+	// Read-only: the last request-phase error the gateway got from this EPP (connection refused, deadline, NOT_SERVING, ...); empty once the connection is up again. Ignored on create or replace.
+	EppLastError string `json:"eppLastError,omitempty"`
+
 	// Longest wait, in milliseconds, for the EPP's request-phase decision (destination, header and body mutations) before the request is treated as an EPP failure and eppFailureMode applies. The wait starts when the request is submitted and includes connecting to the EPP when no connection is up. Omitted or 0 resolves to 3000. Only meaningful with eppEndpoint; accepted but inert otherwise.
 	// Maximum: 600000
 	// Minimum: 0

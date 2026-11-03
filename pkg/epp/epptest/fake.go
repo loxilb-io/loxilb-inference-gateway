@@ -217,6 +217,18 @@ func Start(t *testing.T, f *Fake, serverTLS bool) (addr string, stop func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return startOn(t, f, lis, serverTLS)
+}
+
+// StartOn serves the fake, plaintext, on an existing listener (to bring an
+// EPP back on the address a rule already names).
+func StartOn(t *testing.T, f *Fake, lis net.Listener) (addr string, stop func()) {
+	t.Helper()
+	return startOn(t, f, lis, false)
+}
+
+func startOn(t *testing.T, f *Fake, lis net.Listener, serverTLS bool) (addr string, stop func()) {
+	t.Helper()
 	var opts []grpc.ServerOption
 	if serverTLS {
 		opts = append(opts, grpc.Creds(credentials.NewServerTLSFromCert(SelfSignedCert(t))))
