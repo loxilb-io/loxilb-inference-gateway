@@ -6,6 +6,7 @@
 package loxinet
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
@@ -81,6 +82,40 @@ func eppPdTestRule(t *testing.T, port uint16, eppAddr string, eps ...cmn.LbEndPo
 	return serv
 }
 
+// eppPdKeepAlive is one client connection that sends several requests in a
+// row (HTTP/1.1 keep-alive), the way most clients talk to the gateway.
+type eppPdKeepAlive struct {
+	conn net.Conn
+	rd   *bufio.Reader
+	port uint16
+}
+
+func eppPdDial(t *testing.T, port uint16) *eppPdKeepAlive {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(eppTestVIP, fmt.Sprint(port)), 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return &eppPdKeepAlive{conn: conn, rd: bufio.NewReader(conn), port: port}
+}
+
+func (k *eppPdKeepAlive) send(body string, timeout time.Duration) (int, string, error) {
+	k.conn.SetDeadline(time.Now().Add(timeout))
+	req := fmt.Sprintf("POST /v1/completions HTTP/1.1\r\nHost: %s:%d\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
+		eppTestVIP, k.port, len(body), body)
+	if _, err := k.conn.Write([]byte(req)); err != nil {
+		return 0, "", err
+	}
+	resp, err := http.ReadResponse(k.rd, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b), nil
+}
+
 // EPP-primary P/D: a rule that names an EPP and runs pd_disagg_mode. While
 // the EPP answers, its candidate (the decode pod's routing sidecar, ep_role 0)
 // is served plainly - the gateway's own prefill/decode machine stays out of
@@ -150,6 +185,39 @@ func TestEppOnPdDisaggRule(t *testing.T) {
 		if !strings.Contains(dec, `"max_tokens":16`) || !strings.Contains(dec, `"remote_block_ids"`) {
 			t.Fatalf("decode leg lacks the original request or the relayed kv_transfer_params: %q", dec)
 		}
+		eppTestSettled(t)
+	})
+
+	t.Run("kept connection: a refused submit after a pinned request still runs the P/D legs", func(t *testing.T) {
+		f := epptest.New("echo")
+		f.Dest = eppAddr(sidecar)
+		addr, stop := epptest.Start(t, f, false)
+		defer stop()
+		eppPdTestRule(t, 28214, addr, prefill, decode, sidecar)
+		k := eppPdDial(t, 28214)
+		p0, d0, s0 := hits(seenP), hits(seenD), hits(seenS)
+		code, resp, err := k.send(body, 8*time.Second)
+		if err != nil || code != 200 || !strings.Contains(resp, `"served":"sidecar"`) {
+			t.Fatalf("request 1: code=%d resp=%q err=%v (want the sidecar's answer)", code, resp, err)
+		}
+		eppTestResponsePhase(t, f, "200", eppAddr(sidecar))
+		// The EPP's in-flight cap is full: the next submit is refused before a
+		// stream id exists, the earliest FailOpen there is.
+		saved := eppMaxInflight
+		eppMaxInflight = 0
+		defer func() { eppMaxInflight = saved }()
+		code, resp, err = k.send(body, 10*time.Second)
+		if err != nil || code != 200 || !strings.Contains(resp, `"served":"decode"`) {
+			t.Fatalf("request 2: code=%d resp=%q err=%v (want the decode engine's answer)", code, resp, err)
+		}
+		if hits(seenP) != p0+1 || hits(seenD) != d0+1 || hits(seenS) != s0+1 {
+			t.Fatalf("hits prefill %d->%d decode %d->%d sidecar %d->%d: want the first request on the sidecar and the second as one prefill leg + one decode leg",
+				p0, hits(seenP), d0, hits(seenD), s0, hits(seenS))
+		}
+		if probe := bodyOf(seenP); !strings.Contains(probe, `"max_tokens":1`) || !strings.Contains(probe, "kv_transfer_params") {
+			t.Fatalf("the pin of request 1 leaked into request 2: prefill leg is not the probe: %q", probe)
+		}
+		eppMaxInflight = saved
 		eppTestSettled(t)
 	})
 }
