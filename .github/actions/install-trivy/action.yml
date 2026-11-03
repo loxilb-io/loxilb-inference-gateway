@@ -1,0 +1,126 @@
+name: Install Trivy (pinned)
+description: >
+  Installs one pinned Trivy binary and puts it on PATH, so the release CVE
+  gate cannot fail on a download. The binary is verified against a SHA-256
+  pinned here, whichever source it comes from: the actions cache, the GitHub
+  release tarball (retried), or the multi-arch GHCR image (pinned by digest).
+  The release tarball and the GHCR image carry a byte-identical binary, so one
+  pin per architecture covers both sources. Run aquasecurity/trivy-action
+  with `skip-setup-trivy: true` after this step.
+
+# To bump Trivy, change all five values together:
+#   - TRIVY_VERSION
+#   - SHA256_X64 and SHA256_ARM64: sha256 of the `trivy` binary inside
+#     trivy_<v>_Linux-64bit.tar.gz and trivy_<v>_Linux-ARM64.tar.gz
+#   - TRIVY_IMAGE: the manifest-list digest of ghcr.io/aquasecurity/trivy:<v>
+# The cache key includes the binary pin, so a bump never restores an old binary.
+
+inputs:
+  source:
+    description: >
+      `auto` (default): cache, then the release tarball, then the GHCR image.
+      `image`: skip the tarball and install from the GHCR image; the PR check
+      uses it to prove the fallback path.
+    required: false
+    default: auto
+
+outputs:
+  path:
+    description: Absolute path of the installed trivy binary
+    value: ${{ steps.install.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the pin for this runner
+      id: pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        TRIVY_VERSION=0.69.3
+        SHA256_X64=8266084a71d2e6a2333bc2c69b91c93c26dee9ef39ac2587ace2df54cc9b746b
+        SHA256_ARM64=d860265c7ebd8128c349d063c91e8f32b26b730d14c2ce85e187fef8be70d72d
+        TRIVY_IMAGE=ghcr.io/aquasecurity/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c
+        case "${RUNNER_ARCH}" in
+          X64)   asset=Linux-64bit; sha="$SHA256_X64";   platform=linux/amd64 ;;
+          ARM64) asset=Linux-ARM64; sha="$SHA256_ARM64"; platform=linux/arm64 ;;
+          *) echo "::error::no pinned Trivy binary for runner arch ${RUNNER_ARCH}"; exit 1 ;;
+        esac
+        {
+          echo "version=${TRIVY_VERSION}"
+          echo "asset=${asset}"
+          echo "sha256=${sha}"
+          echo "platform=${platform}"
+          echo "image=${TRIVY_IMAGE}"
+          echo "dir=${RUNNER_TEMP}/trivy-bin"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore the pinned binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pin.outputs.dir }}
+        key: trivy-bin-${{ steps.pin.outputs.version }}-${{ runner.arch }}-${{ steps.pin.outputs.sha256 }}
+
+    - name: Install and verify
+      id: install
+      shell: bash
+      env:
+        VERSION: ${{ steps.pin.outputs.version }}
+        ASSET: ${{ steps.pin.outputs.asset }}
+        WANT: ${{ steps.pin.outputs.sha256 }}
+        PLATFORM: ${{ steps.pin.outputs.platform }}
+        IMAGE: ${{ steps.pin.outputs.image }}
+        DIR: ${{ steps.pin.outputs.dir }}
+        SOURCE: ${{ inputs.source }}
+      run: |
+        set -euo pipefail
+        bin="${DIR}/trivy"
+        verified() { [ -f "$1" ] && [ "$(sha256sum "$1" | awk '{print $1}')" = "$WANT" ]; }
+
+        case "$SOURCE" in auto|image) ;; *) echo "::error::source must be auto or image, got '${SOURCE}'"; exit 1 ;; esac
+        if [ "$SOURCE" = auto ] && verified "$bin"; then
+          echo "pinned Trivy ${VERSION} restored from cache"
+        else
+          rm -rf "$DIR"; mkdir -p "$DIR"
+          tmp="$(mktemp -d)"
+          url="https://github.com/aquasecurity/trivy/releases/download/v${VERSION}/trivy_${VERSION}_${ASSET}.tar.gz"
+          # Source 1: the release tarball. -S prints curl's own error, so a
+          # failure says why (the setup-trivy script only exited with curl's
+          # code). --retry-all-errors also retries name-resolution failures.
+          if [ "$SOURCE" = auto ] && curl -fsSL --connect-timeout 20 --max-time 300 \
+                  --retry 5 --retry-delay 10 --retry-all-errors \
+                  -o "${tmp}/trivy.tgz" "$url" \
+             && tar -xzf "${tmp}/trivy.tgz" -C "$tmp" trivy \
+             && verified "${tmp}/trivy"; then
+            install -m 0755 "${tmp}/trivy" "$bin"
+            echo "pinned Trivy ${VERSION} installed from the release tarball"
+          else
+            if [ "$SOURCE" = auto ]; then
+              echo "::warning::Trivy release tarball unavailable or not matching the pin; trying the GHCR image"
+              getent hosts release-assets.githubusercontent.com || echo "release-assets.githubusercontent.com does not resolve on this runner"
+            fi
+            # Source 2: the multi-arch image, pinned by digest, pulled from the
+            # registry this job already uses.
+            for i in 1 2 3; do
+              docker pull -q --platform "$PLATFORM" "$IMAGE" && break
+              [ "$i" = 3 ] && { echo "::error::cannot pull ${IMAGE}"; exit 1; }
+              sleep 10
+            done
+            cid="$(docker create --platform "$PLATFORM" "$IMAGE")"
+            docker cp "${cid}:/usr/local/bin/trivy" "${tmp}/trivy"
+            docker rm "$cid" >/dev/null
+            if ! verified "${tmp}/trivy"; then
+              echo "::error::Trivy binary from ${IMAGE} does not match the pinned SHA-256 ${WANT}"
+              exit 1
+            fi
+            install -m 0755 "${tmp}/trivy" "$bin"
+            echo "pinned Trivy ${VERSION} installed from the GHCR image"
+          fi
+          rm -rf "$tmp"
+        fi
+
+        verified "$bin" || { echo "::error::installed Trivy does not match the pin"; exit 1; }
+        "$bin" --version
+        echo "$DIR" >> "$GITHUB_PATH"
+        echo "path=${bin}" >> "$GITHUB_OUTPUT"

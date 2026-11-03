@@ -1,0 +1,58 @@
+name: Trivy-Install-Check
+
+# Proves the pinned Trivy installer that the release CVE gate depends on,
+# on both runner architectures the release builds on, before a tag needs it.
+# Each source is exercised on its own: the default path (cache, then the
+# release tarball) and the GHCR image fallback. A scan of a small public
+# image then proves the installed binary can fetch its vulnerability DB.
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/install-trivy/**'
+      - '.github/workflows/trivy-install-check.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/trivy-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: trivy install ${{ matrix.runner }} ${{ matrix.source }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ ubuntu-24.04, ubuntu-24.04-arm ]
+        source: [ auto, image ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions/install-trivy
+          sparse-checkout-cone-mode: false
+
+      - name: Install Trivy (pinned)
+        id: trivy
+        uses: ./.github/actions/install-trivy
+        with:
+          source: ${{ matrix.source }}
+
+      - name: Trivy is on PATH and is the pinned binary
+        env:
+          INSTALLED: ${{ steps.trivy.outputs.path }}
+        run: |
+          set -euo pipefail
+          [ "$(command -v trivy)" = "$INSTALLED" ]
+          trivy --version
+
+      - name: Scan a small image (DB download works)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          skip-setup-trivy: true
+          image-ref: alpine:3.20
+          format: table
+          severity: CRITICAL
+          exit-code: '0'

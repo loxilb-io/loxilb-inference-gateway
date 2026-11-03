@@ -44,6 +44,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      # The pinned installer is a local action, so check out only that path.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions/install-trivy
+          sparse-checkout-cone-mode: false
+
+      - name: Install Trivy (pinned)
+        uses: ./.github/actions/install-trivy
+
       - name: Resolve image reference
         id: ref
         run: |
@@ -54,6 +63,7 @@ jobs:
       - name: Report (HIGH+, non-blocking)
         uses: aquasecurity/trivy-action@0.35.0
         with:
+          skip-setup-trivy: true
           image-ref: ${{ steps.ref.outputs.image }}
           severity: HIGH,CRITICAL
           exit-code: '0'
@@ -62,6 +72,7 @@ jobs:
       - name: Gate (CRITICAL with fix available)
         uses: aquasecurity/trivy-action@0.35.0
         with:
+          skip-setup-trivy: true
           image-ref: ${{ steps.ref.outputs.image }}
           severity: CRITICAL
           ignore-unfixed: true
