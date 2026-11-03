@@ -338,7 +338,7 @@ inference-gateway delta is enumerated in detail.
 
 ### Changed
 
-- **VIP routes reach eBGP peers with a shorter AS_PATH.** An eBGP peer now sees the gateway's AS once (`64512`) where it saw `64512 {64512}`, so the path counts as one AS hop instead of two. A peer or upstream policy that compares path length or matches the AS_SET can select differently. <!-- OWNER REVIEW PENDING -->
+- **eBGP peers now see a one-hop-shorter AS_PATH for VIPs, which can change best-path selection upstream.** A peer sees the gateway's AS once (`64512`) where it saw `64512 {64512}`. A peer or upstream policy that compares path length or matches the AS_SET can choose differently. Preference between the HA master and backup is unchanged; it comes from MED and local preference. <!-- OWNER REVIEW PENDING -->
 
 - **With `LLB_PD_DECODE_KV_WEIGHT=W` (default 0 = off), the P/D decode min-load
   score adds the endpoint's scraped KV-cache usage (`vllm:kv_cache_usage_perc` /
@@ -595,7 +595,9 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
-- **VIP routes reach iBGP peers without `allowas-in`.** The gateway put its own AS in the AS_PATH of the routes it originates, so a standard iBGP peer denied them with "as-path contains our own AS", and GoBGP v3.35.0 did not send them to iBGP peers at all. Present in v0.9.8.7. An iBGP peer now receives an empty AS_PATH. <!-- OWNER REVIEW PENDING -->
+- **Originated VIP routes carried our AS twice to eBGP peers and were denied by standard iBGP peers.** The gateway added its own AS to the AS_PATH of every route it originates. eBGP peers received `64512 {64512}`, a standard iBGP peer (no `allowas-in`) denied the route with "as-path contains our own AS", and GoBGP v3.35.0 did not send it to iBGP peers at all. Present since 2023, including v0.9.8.7. An originated route now carries no AS of ours: eBGP peers see `64512` and iBGP peers an empty AS_PATH. <!-- OWNER REVIEW PENDING -->
+
+- **A clustered gateway with BGP came back from a restart with no configuration.** Auto-persist (on by default) saves the BGP global config and neighbors in `snapshot.json`. On a clustered node `gobgpd` starts only after the cluster sync wait, so boot replay gave up after about 30 s, moved the whole snapshot aside as `snapshot.json.failed-*`, and started empty, load-balancer rules included. A snapshot that fails only because `gobgpd` is not up yet is now retried for up to 150 s after boot; config writes answer 503 until the replay settles, as before. A BGP neighbor add or delete made while `gobgpd` is starting answered 500; it now waits up to 30 s for `gobgpd`. <!-- OWNER REVIEW PENDING -->
 
 - **A management-store verdict is never reported as a store outcome.** Since
   the write-outcome contract, `POST /auth/users` with a username that exists
@@ -1031,6 +1033,11 @@ inference-gateway delta is enumerated in detail.
 - **Bundled loxicmd:** `3f75f2c945edc585315bb5f923ddd70e57346cc7`, set by `ARG LOXICMD_TAG` in every Dockerfile.
 - This release preserves full upstream loxilb functionality; classic L4/L7
   load balancing is unchanged and documented upstream.
+
+### Known issues
+
+- **`loxicmd delete lb` without `--bgp` leaves the VIP advertised.** The rule is removed but its route is not withdrawn, so peers keep sending traffic to an address with no rule. Present since v0.9.8.7. Workaround: delete a rule created with `--bgp` with `--bgp` as well. <!-- OWNER REVIEW PENDING -->
+- **govulncheck lists findings with no fix in this release.** GO-2026-6860 and GO-2026-6866 (`golang.org/x/net/html`, fixed in x/net 0.62.0) and GO-2026-5932 (`golang.org/x/crypto/openpgp`, no fix) are module-level: no affected function is in the binaries. GO-2026-4736 (GoBGP NEXT_HOP handling, no fixed version) is listed against GoBGP functions in `gobgp`, `gobgpd` and `loxilb`; its crash did not reproduce in 30 attempts against GoBGP v3. <!-- OWNER REVIEW PENDING -->
 
 ### Upgrade notes
 
