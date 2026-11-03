@@ -1,0 +1,3 @@
+_work/
+*.env
+!testbed.env.example
