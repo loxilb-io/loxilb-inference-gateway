@@ -178,13 +178,15 @@ x-loxilb-contract-relations:
       enforcement: server-static
       message: An Endpoint Picker (EPP) requires the fullproxy data path.
       evidence: pkg/loxinet/rules.go:eppArgsValidate
-    - id: LB-EPP-NO-PD
-      kind: requires
-      when: {field: /serviceArguments/eppEndpoint, operator: nonempty-string}
+    - id: LB-EPP-PD-FAILOPEN
+      kind: requires-all
+      when:
+        - {field: /serviceArguments/eppEndpoint, operator: nonempty-string}
+        - {field: /serviceArguments/pd_disagg_mode, operator: in, values: [true]}
       require:
-        - {field: /serviceArguments/pd_disagg_mode, operator: in, values: [false], missing: false}
+        - {field: /serviceArguments/eppFailureMode, operator: in, values: [FailOpen]}
       enforcement: server-static
-      message: An Endpoint Picker (EPP) rule must not enable loxilb's own P/D orchestration.
+      message: An Endpoint Picker (EPP) on a pd_disagg rule requires eppFailureMode=FailOpen; FailClose or an omitted failure mode is refused.
       evidence: pkg/loxinet/rules.go:eppArgsValidate
 paths:
   '/config/import':

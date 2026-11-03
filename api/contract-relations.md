@@ -19,6 +19,8 @@ a relationship does not grant permission for an otherwise invalid request.
   `value`; `nonempty-string` requires a string whose length is greater than zero.
   A missing value without a substitution makes the predicate false.
 - `requires` applies all `require` predicates when `when` is true.
+- `requires-all` takes a list of predicates as `when` and applies all
+  `require` predicates only when every `when` predicate is true.
 - `filtered-count` counts matching array elements and requires every declared
   minimum independently.
 - `sum-bound` applies each term's `missing` substitution, then its explicit

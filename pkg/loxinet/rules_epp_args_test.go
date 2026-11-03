@@ -13,7 +13,7 @@ import (
 )
 
 // The Endpoint Picker arguments of a rule: an EPP rule needs the fullproxy
-// data path and must not enable loxilb's own P/D orchestration; its empty
+// data path, and on a pd_disagg rule it needs eppFailureMode=FailOpen; its empty
 // failure mode and zero timeout resolve to FailClose / 3000 ms; a rule
 // without an EPP keeps every EPP field at zero (byte-identical to before).
 func TestEppArgsValidateResolvesDefaults(t *testing.T) {

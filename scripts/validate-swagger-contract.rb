@@ -5,7 +5,7 @@ require 'yaml'
 ROOT = File.expand_path('..', __dir__)
 FILES = %w[api/swagger.yml api/swagger-extras.yml].freeze
 PREDICATES = %w[in greater-than nonempty-string].freeze
-RELATION_KINDS = %w[requires filtered-count sum-bound conditional-join-byte-bound].freeze
+RELATION_KINDS = %w[requires requires-all filtered-count sum-bound conditional-join-byte-bound].freeze
 
 def check_yaml(node, path, errors)
   if node.is_a?(Psych::Nodes::Mapping)
@@ -92,7 +92,11 @@ else
     next if schema.nil?
 
     predicates = []
-    predicates << rule['when'] if rule.key?('when')
+    if kind == 'requires-all'
+      predicates.concat(Array(rule['when']))
+    elsif rule.key?('when')
+      predicates << rule['when']
+    end
     predicates.concat(Array(rule['require']))
     predicates.each do |predicate|
       unless predicate.is_a?(Hash) && PREDICATES.include?(predicate['operator'])
@@ -107,6 +111,9 @@ else
     case kind
     when 'requires'
       errors << "missing when for #{id}" unless rule['when'].is_a?(Hash)
+      errors << "missing require list for #{id}" if Array(rule['require']).empty?
+    when 'requires-all'
+      errors << "requires-all needs a list of at least two when predicates for #{id}" unless rule['when'].is_a?(Array) && rule['when'].length >= 2
       errors << "missing require list for #{id}" if Array(rule['require']).empty?
     when 'filtered-count'
       array_schema = resolve_schema_field(schema, rule['array'])
