@@ -13,7 +13,7 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
-## [v0.9.9.1] - 2026-11-02
+## [v0.9.9.1] - 2026-11-03
 
 `v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.
 
@@ -332,11 +332,14 @@ inference-gateway delta is enumerated in detail.
 - **Source controls on full-proxy rules:** `allowedSources` is enforced by a firewall pair the rule owns and `connectionLimit` at accept. Optional aggregate SYN, connection-SYN, UDP packet and byte budgets sit beside the per-source limits, and `--xdp-native` attaches XDP in native mode on the interfaces it names. (#380, #384, docs/security/ddos-and-admission-fullproxy.md)
 - **MCP 2026-07-28 stateless mode:** the opt-in, immutable rule field `mcp_protocol_version` validates and selects a backend per request; legacy session transport on existing rules is unchanged. (#391)
 - **Endpoint Picker:** a load-balancer rule can delegate endpoint selection for a request to an external picker (Gateway API Inference Extension); the build lists `epp` under `features` in `GET /version`. (#468)
+  - **With prefill/decode disaggregation:** a rule with `pd_disagg_mode: true` can name an EPP only with `eppFailureMode: FailOpen`. The EPP's pick (the decode pod's routing sidecar) is served as is; when the EPP gives no decision, the rule's own prefill/decode selection picks both endpoints and runs both legs. `FailClose`, or no `eppFailureMode`, is refused with 400 and the rule is not created. (#513)
 - **Relay and stream knobs:** `LLB_PROXY_WORKERS` (1..32, default 4), `LLB_SSE_STALL_ABORT_SEC` (1..86400, default 0, off), `LOXILB_KV_TOKENIZE_BYTES_PER_TOKEN` (4..256, default 16), with `loxilb_proxy_stream_abandoned_total{reason}`, `loxilb_proxy_stream_abandon_age_seconds{reason}`, `loxilb_kv_exact_stage_seconds{stage,outcome}`, `loxilb_kv_exact_prompt_blocks` and `loxilb_kv_exact_overlap_blocks`. (#385, #386, #388, #389)
 - **Monitoring contract:** a generated, versioned metric ownership manifest; per-backend traffic, `config_dirty`, KV freshness and HA peer exporters; recording rules, KV, P/D, persistence and policy alerts, and Alertmanager. `GET /version` also names the `product`. (#64, #118, #120-#122, #124-#126, #154)
 - **`loxilb_ai_tokens_missing_total{reason}` counts 2xx AI responses that carried no usage object** (`response_complete`, `h2_stream_close`, `connection_close`, `stream_estimated`, and an `unknown` backstop). Only `stream_estimated` is charged. (#186, #201)
 
 ### Changed
+
+- **eBGP peers now see a one-hop-shorter AS_PATH for VIPs, which can change best-path selection upstream.** A peer sees the gateway's AS once (`64512`) where it saw `64512 {64512}`. A peer or upstream policy that compares path length or matches the AS_SET can choose differently. Preference between the HA master and backup is unchanged; it comes from MED and local preference.
 
 - **With `LLB_PD_DECODE_KV_WEIGHT=W` (default 0 = off), the P/D decode min-load
   score adds the endpoint's scraped KV-cache usage (`vllm:kv_cache_usage_perc` /
@@ -587,11 +590,15 @@ inference-gateway delta is enumerated in detail.
 - **Full-proxy rules on one listener must agree.** A rule whose `security`, backend TLS policy or `allowedSources` differs from the rule already on that address, port and protocol (for `allowedSources`, also an overlapping port range) is refused with 400, and the rule API waits for the data plane's answer. A saved configuration still restores whole, and the log names each disagreeing rule. (#343, #383)
 - **Proxy-only mode refuses what it cannot enforce.** An ipfilter add, a firewall add, security-rate settings and a rule's `allowedSources` answer 400 naming the mode; they used to answer success and do nothing. (#380, #384)
 - **Relay changes for connection-heavy traffic:** listeners are polled by their own worker with batched accepts, a backend connect no longer holds a relay worker for a round trip, receive buffers are recycled, and a rule's connection list is constant-time. `LLB_MALLOC_MMAP_THRESHOLD` overrides the pinned allocator threshold. (#258, #261, #262)
-- **Dependencies refreshed:** images and packages build with Go 1.26.9; both images carry GoBGP v3.35.0; the gateway uses grpc v1.83.2 and x/net v0.60.0; Ubuntu runtime packages are upgraded at image build. (#223, #381, #393)
+- **Dependencies refreshed:** images and packages build with Go 1.26.10; both images carry GoBGP v3.35.0; the gateway uses grpc v1.83.2 and x/net v0.60.0; Ubuntu runtime packages are upgraded at image build. (#223, #381, #393)
 - **A CHWBL chat body with no system message now hashes the first 256 bytes of its first user message,** so user-only traffic co-locates. `LLB_LLM_USER_PREFIX_FALLBACK_LEN` overrides the length and `0` restores the old behaviour. (#73)
 - **`architecture` in the device status reports the machine name, and sizes round upward with unit promotion;** filesystem selection can differ from GNU `df`. (#458)
 
 ### Fixed
+
+- **Originated VIP routes carried our AS twice to eBGP peers and were denied by standard iBGP peers.** The gateway added its own AS to the AS_PATH of every route it originates. eBGP peers received `64512 {64512}`, a standard iBGP peer (no `allowas-in`) denied the route with "as-path contains our own AS", and GoBGP v3.35.0 did not send it to iBGP peers at all. Present since 2023, including v0.9.8.7. An originated route now carries no AS of ours: eBGP peers see `64512` and iBGP peers an empty AS_PATH.
+
+- **A clustered gateway with BGP came back from a restart with no configuration.** Auto-persist (on by default) saves the BGP global config and neighbors in `snapshot.json`. On a clustered node `gobgpd` starts only after the cluster sync wait, so boot replay gave up after about 30 s, moved the whole snapshot aside as `snapshot.json.failed-*`, and started empty, load-balancer rules included. A snapshot that fails only because `gobgpd` is not up yet is now retried for up to 150 s after boot; on a clustered node, config writes answer 503 for up to about two minutes after a restart, until the replay settles. A BGP neighbor add or delete made while `gobgpd` is starting answered 500; it now waits up to 30 s for `gobgpd`.
 
 - **A management-store verdict is never reported as a store outcome.** Since
   the write-outcome contract, `POST /auth/users` with a username that exists
@@ -1024,13 +1031,18 @@ inference-gateway delta is enumerated in detail.
 
 ### Notes
 
-- **Bundled loxicmd:** `3f75f2c945edc585315bb5f923ddd70e57346cc7`, set by `ARG LOXICMD_TAG` in every Dockerfile.
+- **Bundled loxicmd:** v0.9.9.2 (`1d9e9463f5732c8d170e08d85964f255ef5338f1`), set by `ARG LOXICMD_TAG` in every Dockerfile.
 - This release preserves full upstream loxilb functionality; classic L4/L7
   load balancing is unchanged and documented upstream.
 
+### Known issues
+
+- **`loxicmd delete lb` without `--bgp` leaves the VIP advertised.** The rule is removed but its route is not withdrawn, so peers keep sending traffic to an address with no rule. Present since v0.9.8.7. Workaround: delete a rule created with `--bgp` with `--bgp` as well.
+- **govulncheck lists findings with no fix in this release.** GO-2026-6860 and GO-2026-6866 (`golang.org/x/net/html`, fixed in x/net 0.62.0) and GO-2026-5932 (`golang.org/x/crypto/openpgp`, no fix) are module-level: no affected function is in the binaries. GO-2026-4736 (GoBGP NEXT_HOP handling, no fixed version) is listed against GoBGP functions in `gobgp`, `gobgpd` and `loxilb`; its crash did not reproduce in 30 attempts against GoBGP v3.
+
 ### Upgrade notes
 
-- **Streaming no longer implies API-key enforcement, and MySQL/MariaDB is gone.** A rule that relied on its streaming flag to enforce keys must declare `api_key_auth: "required"`; unset resolves to `disabled`, and every quota write warns while nothing enforces. The `--database*` flags are replaced by `--mgmt-db-*`, and the data plane uses `--aikey-db-*`. Both stores are PostgreSQL. Keys are no longer read from the old database: a gateway upgraded with `--userservice` but no `--aikey-db-host` has no key store and admits requests without a key, so move them first. (#80, docs/AI-KEY-STORE.md)
+- **Streaming no longer implies API-key enforcement, and MySQL/MariaDB is gone.** A rule that relied on its streaming flag to enforce keys must declare `api_key_auth: "required"`; unset resolves to `disabled`, and every quota write warns while nothing enforces. The `--database*` flags are replaced by `--mgmt-db-*`, and the data plane uses `--aikey-db-*`. Both stores are PostgreSQL. Keys are no longer read from the old database, so move them first. With no `--aikey-db-host`, a rule with `api_key_auth: "required"` answers 503 `policy_store_unavailable`, and a rule that declares nothing admits requests without a key. (#80, docs/AI-KEY-STORE.md)
 
 - **Mixed credential policies on one listener are refused.** A snapshot that
   holds fullproxy rules with different `api_key_auth` / `jwt_auth_profile` on

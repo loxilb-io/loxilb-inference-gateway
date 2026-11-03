@@ -48,8 +48,8 @@ RUN mkdir -p /opt/loxilb /usr/lib64 && \
     wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && \
     tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
     # GoLang
-    wget https://go.dev/dl/go1.26.9.linux-${arch}.tar.gz && \
-    tar -xzf go1.26.9.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.26.9.linux-${arch}.tar.gz && \
+    wget https://go.dev/dl/go1.26.10.linux-${arch}.tar.gz && \
+    tar -xzf go1.26.10.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.26.10.linux-${arch}.tar.gz && \
     # kTLS-enabled OpenSSL (build dependency of the TLS proxy path)
     wget https://github.com/openssl/openssl/releases/download/openssl-3.4.1/openssl-3.4.1.tar.gz && tar -xzf openssl-3.4.1.tar.gz && \
     cd openssl-3.4.1 && ./Configure enable-ktls '-Wl,-rpath,$(LIBRPATH)' --prefix=/usr/local/build && \

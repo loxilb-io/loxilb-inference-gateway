@@ -5,7 +5,7 @@ FROM ubuntu:24.04 as test-build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
-ARG LOXICMD_TAG=3f75f2c945edc585315bb5f923ddd70e57346cc7
+ARG LOXICMD_TAG=1d9e9463f5732c8d170e08d85964f255ef5338f1
 
 # Optional apt mirror override (e.g. --build-arg APT_MIRROR=mirror.kakao.com)
 # for build hosts far from / flaky to archive.ubuntu.com. Empty = default
@@ -53,9 +53,9 @@ RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
     else \
         apt-get update && apt-get install -y gcc-multilib && rm -rf /var/lib/apt/lists/*; \
     fi && \
-    wget https://go.dev/dl/go1.26.9.linux-${arch}.tar.gz && \
-    tar -xzf go1.26.9.linux-${arch}.tar.gz --directory /usr/local/ && \
-    rm go1.26.9.linux-${arch}.tar.gz
+    wget https://go.dev/dl/go1.26.10.linux-${arch}.tar.gz && \
+    tar -xzf go1.26.10.linux-${arch}.tar.gz --directory /usr/local/ && \
+    rm go1.26.10.linux-${arch}.tar.gz
 
 # Install build tools (split to reduce layer size)
 RUN apt-get update && \

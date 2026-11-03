@@ -1828,7 +1828,7 @@ func applySnapshotBoot() bool {
 	}
 	engine := snapshot.NewEngine(hooks, cmn.Version, hostname, opt.Opts.ConfigPath)
 
-	const bootRetries = 15
+	start := time.Now()
 	for attempt := 1; ; attempt++ {
 		result, err := engine.Restore(raw, snapshot.RestoreOptions{Boot: true})
 		if err != nil {
@@ -1855,7 +1855,7 @@ func applySnapshotBoot() bool {
 			})
 			return true
 		}
-		if attempt < bootRetries && subsystemStartupErrors(result.Errors) {
+		if bootRetryAllowed(attempt, time.Since(start), result.Errors) {
 			tk.LogIt(tk.LogWarning, "nlp: boot snapshot: attempt %d hit subsystem startup ordering (%v); retrying\n",
 				attempt, result.Errors)
 			time.Sleep(2 * time.Second)

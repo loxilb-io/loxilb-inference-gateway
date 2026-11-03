@@ -38,6 +38,8 @@ import (
 	nlp "github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apb "google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -365,22 +367,16 @@ func (gbh *GoBgpH) AdvertiseRoute(rtPrefix string, pLen int, nh string, pref uin
 		Med: med,
 	})
 
-	a5, _ := apb.New(&api.AsPathAttribute{
-		Segments: []*api.AsSegment{
-			{
-				Type:    1, // SET
-				Numbers: []uint32{gbh.localAs},
-			},
-		},
-	})
-
 	if ipv4 {
 		apiFamily = &api.Family{Afi: api.Family_AFI_IP, Safi: api.Family_SAFI_UNICAST}
 	} else {
 		apiFamily = &api.Family{Afi: api.Family_AFI_IP6, Safi: api.Family_SAFI_UNICAST}
 	}
 
-	attrs := []*apb.Any{a1, a2, a3, a4, a5}
+	// No AS_PATH: this path is locally originated. goBGP prepends the local AS
+	// towards an eBGP peer and sends an empty AS_PATH to an iBGP peer. Our own AS
+	// here reads as a loop to goBGP's export filter and to any standard iBGP peer.
+	attrs := []*apb.Any{a1, a2, a3, a4}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -1012,25 +1008,58 @@ func (gbh *GoBgpH) BGPNeighMod(add bool, neigh net.IP, ras uint32, rPort uint32,
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	if add {
-		_, err = gbh.client.AddPeer(ctx,
-			&api.AddPeerRequest{
-				Peer: peer,
-			})
-
-	} else {
-		_, err = gbh.client.DeletePeer(ctx,
-			&api.DeletePeerRequest{
-				Address: neigh.String(),
-			})
-	}
+	err = bgpRetryUnavailable(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+		var rerr error
+		if add {
+			_, rerr = gbh.client.AddPeer(ctx,
+				&api.AddPeerRequest{
+					Peer: peer,
+				})
+		} else {
+			_, rerr = gbh.client.DeletePeer(ctx,
+				&api.DeletePeerRequest{
+					Address: neigh.String(),
+				})
+		}
+		return rerr
+	})
 	if err != nil {
 		return -1, err
 	}
 	return 0, nil
+}
+
+// bgpRetryWait bounds how long a neighbor operation waits for gobgpd.
+// gobgpd is spawned seconds after the gateway starts and is respawned
+// when it exits, so a neighbor change in that window would otherwise
+// fail on a refused connection that a moment later succeeds.
+var (
+	bgpRetryWait  = 30 * time.Second
+	bgpRetrySleep = time.Sleep
+)
+
+// bgpRetryUnavailable runs op until it succeeds, fails with anything other
+// than gRPC Unavailable, or bgpRetryWait has passed.
+func bgpRetryUnavailable(op func() error) error {
+	delay := 250 * time.Millisecond
+	waited := time.Duration(0)
+	for {
+		err := op()
+		if status.Code(err) != codes.Unavailable || waited >= bgpRetryWait {
+			return err
+		}
+		if waited+delay > bgpRetryWait {
+			delay = bgpRetryWait - waited
+		}
+		tk.LogIt(tk.LogInfo, "[GoBGP] gobgpd not reachable yet, retrying in %v: %v\n", delay, err)
+		bgpRetrySleep(delay)
+		waited += delay
+		if delay < 4*time.Second {
+			delay *= 2
+		}
+	}
 }
 
 // createSelfNHpolicy - Routine to create policy statement
