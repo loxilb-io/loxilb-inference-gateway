@@ -12280,8 +12280,11 @@ definitions:
               Empty or omitted keeps the rule's own selection ladder (sel,
               kvExactMode, ...) and leaves the data path byte-identical to a
               rule without this field. A nonempty value requires mode=4
-              (fullproxy) and pd_disagg_mode=false; the rule's own selector
-              remains the FailOpen fallback. Candidates named by the EPP must
+              (fullproxy); the rule's own selection ladder remains the FailOpen
+              fallback. With pd_disagg_mode=true the EPP's decision is served
+              plainly (the picker orchestrates prefill/decode) and the rule's
+              own prefill/decode ladder is that fallback, so eppFailureMode
+              must be FailOpen. Candidates named by the EPP must
               still be endpoints of this rule and pass loxilb's local health,
               circuit-breaker and disabled checks. Accepts at most 255 UTF-8
               bytes. PATCH does not support this field.
