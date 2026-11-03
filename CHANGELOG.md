@@ -13,7 +13,7 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
-## [v0.9.9.1] - 2026-11-02
+## [v0.9.9.1] - 2026-11-03
 
 `v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.
 
@@ -338,6 +338,8 @@ inference-gateway delta is enumerated in detail.
 
 ### Changed
 
+- **VIP routes reach eBGP peers with a shorter AS_PATH.** An eBGP peer now sees the gateway's AS once (`64512`) where it saw `64512 {64512}`, so the path counts as one AS hop instead of two. A peer or upstream policy that compares path length or matches the AS_SET can select differently. <!-- OWNER REVIEW PENDING -->
+
 - **With `LLB_PD_DECODE_KV_WEIGHT=W` (default 0 = off), the P/D decode min-load
   score adds the endpoint's scraped KV-cache usage (`vllm:kv_cache_usage_perc` /
   `sglang:token_usage`) × W/100**. Unknown or stale
@@ -587,11 +589,13 @@ inference-gateway delta is enumerated in detail.
 - **Full-proxy rules on one listener must agree.** A rule whose `security`, backend TLS policy or `allowedSources` differs from the rule already on that address, port and protocol (for `allowedSources`, also an overlapping port range) is refused with 400, and the rule API waits for the data plane's answer. A saved configuration still restores whole, and the log names each disagreeing rule. (#343, #383)
 - **Proxy-only mode refuses what it cannot enforce.** An ipfilter add, a firewall add, security-rate settings and a rule's `allowedSources` answer 400 naming the mode; they used to answer success and do nothing. (#380, #384)
 - **Relay changes for connection-heavy traffic:** listeners are polled by their own worker with batched accepts, a backend connect no longer holds a relay worker for a round trip, receive buffers are recycled, and a rule's connection list is constant-time. `LLB_MALLOC_MMAP_THRESHOLD` overrides the pinned allocator threshold. (#258, #261, #262)
-- **Dependencies refreshed:** images and packages build with Go 1.26.9; both images carry GoBGP v3.35.0; the gateway uses grpc v1.83.2 and x/net v0.60.0; Ubuntu runtime packages are upgraded at image build. (#223, #381, #393)
+- **Dependencies refreshed:** images and packages build with Go 1.26.10; both images carry GoBGP v3.35.0; the gateway uses grpc v1.83.2 and x/net v0.60.0; Ubuntu runtime packages are upgraded at image build. (#223, #381, #393)
 - **A CHWBL chat body with no system message now hashes the first 256 bytes of its first user message,** so user-only traffic co-locates. `LLB_LLM_USER_PREFIX_FALLBACK_LEN` overrides the length and `0` restores the old behaviour. (#73)
 - **`architecture` in the device status reports the machine name, and sizes round upward with unit promotion;** filesystem selection can differ from GNU `df`. (#458)
 
 ### Fixed
+
+- **VIP routes reach iBGP peers without `allowas-in`.** The gateway put its own AS in the AS_PATH of the routes it originates, so a standard iBGP peer denied them with "as-path contains our own AS", and GoBGP v3.35.0 did not send them to iBGP peers at all. Present in v0.9.8.7. An iBGP peer now receives an empty AS_PATH. <!-- OWNER REVIEW PENDING -->
 
 - **A management-store verdict is never reported as a store outcome.** Since
   the write-outcome contract, `POST /auth/users` with a username that exists
