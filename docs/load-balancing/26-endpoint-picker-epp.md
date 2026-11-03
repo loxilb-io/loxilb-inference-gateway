@@ -63,6 +63,29 @@ rule's own selector. With the llm-d `max-score-picker` the EPP names one
 candidate, so under `FailClose` a single stale pod in the EPP's view is a
 `503` for that request; `FailOpen`, or the subset filter above, avoids it.
 
+## An EPP on a prefill/decode rule (EPP-primary P/D)
+
+A rule may name an EPP **and** set `pd_disagg_mode: true`, provided
+`eppFailureMode` is `FailOpen`. The two never act on the same request:
+
+- **The EPP answers.** Its destination (a decode pod's routing sidecar in the
+  llm-d layout, `ep_role: 0`) is served plainly, header mutations such as
+  `x-prefiller-host-port` included. The EPP and the sidecar run the prefill
+  leg; the gateway's own prefill/decode machine stays out of that request.
+- **The EPP gives no decision** (unreachable, timeout, `NOT_SERVING`, every
+  candidate rejected). FailOpen hands the request to the rule's own ladder,
+  which on a `pd_disagg_mode` rule is the prefill/decode ladder: a prefill
+  endpoint (`ep_role: 1`) and a decode endpoint (`ep_role: 2`) are selected
+  and the gateway runs both legs itself, exactly as on a rule without an EPP.
+
+The endpoint list therefore carries three kinds of members for one decode
+pod fleet: the engines the gateway drives directly (`ep_role: 1` prefill,
+`ep_role: 2` decode, each with `nixl_port`) and the sidecar addresses the EPP
+names (`ep_role: 0`). A candidate the EPP names must still be a member of the
+rule, so the sidecar addresses have to be listed. `FailClose` is refused with
+`pd_disagg_mode` because the ladder would then be unreachable and the P/D
+members could never serve.
+
 ## A listener kept after its last rule is deleted
 
 Deleting the last rule of a VIP:port keeps the fullproxy listener socket

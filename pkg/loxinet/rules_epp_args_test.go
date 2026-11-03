@@ -68,7 +68,8 @@ func TestEppArgsValidateRejects(t *testing.T) {
 	}{
 		{"not fullproxy", cmn.LbServiceArg{EppEndpoint: "epp:9002"}, cmn.LBModeDefault, "mode=fullproxy"},
 		{"dsr", cmn.LbServiceArg{EppEndpoint: "epp:9002"}, cmn.LBModeDSR, "mode=fullproxy"},
-		{"pd disagg", cmn.LbServiceArg{EppEndpoint: "epp:9002", PDDisaggMode: true}, cmn.LBModeFullProxy, "pd_disagg_mode"},
+		{"pd disagg default FailClose", cmn.LbServiceArg{EppEndpoint: "epp:9002", PDDisaggMode: true}, cmn.LBModeFullProxy, "eppFailureMode=FailOpen"},
+		{"pd disagg FailClose", cmn.LbServiceArg{EppEndpoint: "epp:9002", PDDisaggMode: true, EppFailureMode: cmn.EppFailureModeFailClose}, cmn.LBModeFullProxy, "eppFailureMode=FailOpen"},
 		{"bad failure mode", cmn.LbServiceArg{EppEndpoint: "epp:9002", EppFailureMode: "Retry"}, cmn.LBModeFullProxy, "eppFailureMode"},
 		{"timeout over max", cmn.LbServiceArg{EppEndpoint: "epp:9002", EppTimeoutMs: cmn.EppTimeoutMsMax + 1}, cmn.LBModeFullProxy, "eppTimeoutMs"},
 		{"no port", cmn.LbServiceArg{EppEndpoint: "epp.svc"}, cmn.LBModeFullProxy, "host:port"},
@@ -88,5 +89,18 @@ func TestEppArgsValidateRejects(t *testing.T) {
 				t.Fatalf("defaults resolved on a refused rule: %+v", serv)
 			}
 		})
+	}
+}
+
+// An EPP on a pd_disagg rule is the EPP-primary P/D shape: the picker's
+// decision is served plainly and the rule's own prefill/decode ladder is
+// the FailOpen fallback. Only FailOpen makes that fallback reachable.
+func TestEppArgsValidateAcceptsPdDisaggFailOpen(t *testing.T) {
+	serv := cmn.LbServiceArg{EppEndpoint: "epp:9002", PDDisaggMode: true, EppFailureMode: cmn.EppFailureModeFailOpen}
+	if err := eppArgsValidate(&serv, cmn.LBModeFullProxy); err != nil {
+		t.Fatalf("pd_disagg_mode + FailOpen refused: %v", err)
+	}
+	if serv.EppFailureMode != cmn.EppFailureModeFailOpen || serv.EppTimeoutMs != cmn.EppDefaultTimeoutMs {
+		t.Fatalf("defaults not resolved: %+v", serv)
 	}
 }

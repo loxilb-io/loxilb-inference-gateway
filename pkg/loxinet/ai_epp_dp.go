@@ -46,7 +46,7 @@ import (
 
 // eppMaxInflight bounds the requests waiting on EPPs at once; a submit
 // past it is refused (sid 0) and the rule's failure mode applies.
-const eppMaxInflight = 65536
+var eppMaxInflight int64 = 65536 // var so a test can force the "already waiting" refusal
 
 var (
 	eppClient   = epp.NewClient()
