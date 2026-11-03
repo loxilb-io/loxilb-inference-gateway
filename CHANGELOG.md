@@ -1030,7 +1030,7 @@ inference-gateway delta is enumerated in detail.
 
 ### Notes
 
-- **Bundled loxicmd:** `3f75f2c945edc585315bb5f923ddd70e57346cc7`, set by `ARG LOXICMD_TAG` in every Dockerfile.
+- **Bundled loxicmd:** v0.9.9.2 (`1d9e9463f5732c8d170e08d85964f255ef5338f1`), set by `ARG LOXICMD_TAG` in every Dockerfile.
 - This release preserves full upstream loxilb functionality; classic L4/L7
   load balancing is unchanged and documented upstream.
 

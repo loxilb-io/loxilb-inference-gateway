@@ -5,7 +5,7 @@ FROM ubuntu:24.04 as test-build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
-ARG LOXICMD_TAG=3f75f2c945edc585315bb5f923ddd70e57346cc7
+ARG LOXICMD_TAG=1d9e9463f5732c8d170e08d85964f255ef5338f1
 
 # Optional apt mirror override (e.g. --build-arg APT_MIRROR=mirror.kakao.com)
 # for build hosts far from / flaky to archive.ubuntu.com. Empty = default
