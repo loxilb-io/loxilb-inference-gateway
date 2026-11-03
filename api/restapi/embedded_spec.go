@@ -22525,23 +22525,31 @@ func init() {
       {
         "enforcement": "server-static",
         "evidence": "pkg/loxinet/rules.go:eppArgsValidate",
-        "id": "LB-EPP-NO-PD",
-        "kind": "requires",
-        "message": "An Endpoint Picker (EPP) rule must not enable loxilb's own P/D orchestration.",
+        "id": "LB-EPP-PD-FAILOPEN",
+        "kind": "requires-all",
+        "message": "An Endpoint Picker (EPP) on a pd_disagg rule requires eppFailureMode=FailOpen; FailClose or an omitted failure mode is refused.",
         "require": [
           {
-            "field": "/serviceArguments/pd_disagg_mode",
-            "missing": false,
+            "field": "/serviceArguments/eppFailureMode",
             "operator": "in",
             "values": [
-              false
+              "FailOpen"
             ]
           }
         ],
-        "when": {
-          "field": "/serviceArguments/eppEndpoint",
-          "operator": "nonempty-string"
-        }
+        "when": [
+          {
+            "field": "/serviceArguments/eppEndpoint",
+            "operator": "nonempty-string"
+          },
+          {
+            "field": "/serviceArguments/pd_disagg_mode",
+            "operator": "in",
+            "values": [
+              true
+            ]
+          }
+        ]
       }
     ],
     "scope": "#/definitions/LoadbalanceEntry",
@@ -49260,23 +49268,31 @@ func init() {
       {
         "enforcement": "server-static",
         "evidence": "pkg/loxinet/rules.go:eppArgsValidate",
-        "id": "LB-EPP-NO-PD",
-        "kind": "requires",
-        "message": "An Endpoint Picker (EPP) rule must not enable loxilb's own P/D orchestration.",
+        "id": "LB-EPP-PD-FAILOPEN",
+        "kind": "requires-all",
+        "message": "An Endpoint Picker (EPP) on a pd_disagg rule requires eppFailureMode=FailOpen; FailClose or an omitted failure mode is refused.",
         "require": [
           {
-            "field": "/serviceArguments/pd_disagg_mode",
-            "missing": false,
+            "field": "/serviceArguments/eppFailureMode",
             "operator": "in",
             "values": [
-              false
+              "FailOpen"
             ]
           }
         ],
-        "when": {
-          "field": "/serviceArguments/eppEndpoint",
-          "operator": "nonempty-string"
-        }
+        "when": [
+          {
+            "field": "/serviceArguments/eppEndpoint",
+            "operator": "nonempty-string"
+          },
+          {
+            "field": "/serviceArguments/pd_disagg_mode",
+            "operator": "in",
+            "values": [
+              true
+            ]
+          }
+        ]
       }
     ],
     "scope": "#/definitions/LoadbalanceEntry",
