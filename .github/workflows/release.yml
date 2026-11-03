@@ -189,9 +189,16 @@ jobs:
           path: cli-attestation-${{ matrix.variant }}-${{ matrix.arch }}.json
           if-no-files-found: error
 
+      # Pinned, checksum-verified Trivy with a retried download and a GHCR
+      # fallback. The action's own setup step downloads without a retry, and
+      # with no cached binary on arm64 one failed download failed the release.
+      - name: Install Trivy (pinned)
+        uses: ./.github/actions/install-trivy
+
       - name: Trivy gate (CRITICAL + fixable) — blocks publish
         uses: aquasecurity/trivy-action@0.35.0
         with:
+          skip-setup-trivy: true
           image-ref: ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}-${{ matrix.arch }}
           format: table
           severity: CRITICAL
