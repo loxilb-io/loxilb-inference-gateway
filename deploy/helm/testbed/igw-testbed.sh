@@ -119,7 +119,15 @@ wait_for() {
 }
 
 ensure_ns() {
-  if ! k get ns "$1" >/dev/null 2>&1; then
+  local phase
+  phase=$(k get ns "$1" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  # A namespace a previous `down` is still deleting takes nothing new.
+  if [ "$phase" = Terminating ]; then
+    say "namespace $1 is still being deleted, waiting"
+    wait_for 300 "namespace $1 to be deleted" sh -c "! kubectl get ns $1 >/dev/null 2>&1"
+    phase=""
+  fi
+  if [ -z "$phase" ]; then
     k create ns "$1" >/dev/null
     k label ns "$1" "$MANAGED_LABEL" >/dev/null
   fi
@@ -698,7 +706,8 @@ cmd_down() {
   for ns in "$AIGW_NS" "$LLM_NS"; do
     if [ "$(k get ns "$ns" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null)" = igw-testbed ]; then
       say "delete namespace $ns"
-      k delete ns "$ns" --wait=false >/dev/null
+      # Waits, so an `up` right after starts on a namespace that is gone.
+      k delete ns "$ns" --timeout=300s >/dev/null
     fi
   done
   say "down: done. CRDs and loxilb's node-local snapshot (/etc/loxilb) are left in place"
