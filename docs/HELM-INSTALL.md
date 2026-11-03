@@ -385,7 +385,7 @@ in this chart version.
        extraArgs:
          - --aikey-db-host=postgres.aigw.svc
          - --aikey-db-port=5432
-         - --aikey-db-user=aigw
+         - --aikey-db-user=aigwuser
          - --aikey-db-name=loxilb
          - --aikey-db-password-file=/run/secrets/aikey-db/password
      extraVolumes:
