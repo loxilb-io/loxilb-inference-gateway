@@ -3355,8 +3355,14 @@ func eppArgsValidate(serv *cmn.LbServiceArg, mode cmn.LBMode) error {
 	if mode != cmn.LBModeFullProxy {
 		return errors.New("eppEndpoint requires mode=fullproxy (the EPP decides per HTTP request)")
 	}
-	if serv.PDDisaggMode {
-		return errors.New("eppEndpoint is incompatible with pd_disagg_mode=true (the EPP orchestrates P/D itself)")
+	// pd_disagg_mode with an EPP: the picker's decision is served plainly
+	// (the EPP and the decode pod's routing sidecar run the prefill leg);
+	// only when the picker gives no decision does the rule's own
+	// prefill/decode ladder take the request. That fall-through exists
+	// only under FailOpen, so FailClose + pd_disagg_mode would carry P/D
+	// endpoints no request can ever reach.
+	if serv.PDDisaggMode && serv.EppFailureMode != cmn.EppFailureModeFailOpen {
+		return errors.New("eppEndpoint with pd_disagg_mode=true requires eppFailureMode=FailOpen (the rule's own prefill/decode ladder is the fallback)")
 	}
 	if serv.EppFailureMode == "" {
 		serv.EppFailureMode = cmn.EppFailureModeFailClose
