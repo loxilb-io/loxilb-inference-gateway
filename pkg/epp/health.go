@@ -6,19 +6,24 @@
 package epp
 
 import (
+	"context"
 	"time"
 
 	tk "github.com/loxilb-io/loxilib"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 // Health is what the gateway knows about one EPP address: the state of its
 // gRPC connection, sampled every HealthProbeInterval whether or not requests
 // flow, and the last request-phase outcome seen on it.
 type Health struct {
-	// State is "up" (the connection is ready), "connecting" (dialing or
-	// idle, not yet proven), "down" (the dial fails and gRPC is backing
-	// off) or "unknown" (no connection has been attempted yet).
+	// State is "up" (the connection is ready and the EPP answered the last
+	// liveness ping), "connecting" (dialing, or idle and not yet proven),
+	// "down" (the dial fails, or the EPP stopped answering pings) or
+	// "unknown" (no connection has been attempted yet).
 	State string
 	// Since is when State last changed.
 	Since time.Time
@@ -42,6 +47,9 @@ const (
 // without a request. A variable so tests can shorten it.
 var HealthProbeInterval = 5 * time.Second
 
+// HealthProbeTimeout bounds the liveness RPC of one probe.
+var HealthProbeTimeout = 2 * time.Second
+
 func healthState(s connectivity.State) string {
 	switch s {
 	case connectivity.Ready:
@@ -53,10 +61,62 @@ func healthState(s connectivity.State) string {
 	}
 }
 
-// sample asks gRPC to (re)connect if it is idle and records the state.
+// ping proves the peer is alive with one standard gRPC health Check. An
+// EPP that does not serve the health service answers UNIMPLEMENTED, which is
+// an answer: the connection carries RPCs. No answer within
+// HealthProbeTimeout (a peer that vanished without closing the connection,
+// e.g. a force-deleted pod, leaves the socket looking open) is down.
+func (e *connEntry) ping() error {
+	ctx, cancel := context.WithTimeout(context.Background(), HealthProbeTimeout)
+	defer cancel()
+	_, err := healthpb.NewHealthClient(e.cc).Check(ctx, &healthpb.HealthCheckRequest{})
+	if err == nil {
+		return nil
+	}
+	switch status.Code(err) {
+	case codes.Unimplemented, codes.NotFound, codes.InvalidArgument, codes.PermissionDenied, codes.Unauthenticated:
+		return nil // the peer answered
+	}
+	return err
+}
+
+// probe re-dials an idle connection, samples its state and, when it looks
+// up, proves it with a ping. Run by the probe loop, not by Health(), so a
+// GET never waits on the EPP.
+func (e *connEntry) probe(key string) {
+	e.cc.Connect()
+	st := healthState(e.cc.GetState())
+	var perr error
+	if st == HealthUp {
+		if perr = e.ping(); perr != nil {
+			st = HealthDown
+		}
+	}
+	e.record(key, st, perr)
+}
+
+// sample is the cheap part of a probe (no RPC), used by Health() for a
+// connection the loop has not visited yet.
 func (e *connEntry) sample(key string) {
 	e.cc.Connect()
 	st := healthState(e.cc.GetState())
+	if st == HealthUp {
+		// A ready socket proves nothing by itself: keep what the last ping
+		// established (up, or down for a peer that stopped answering), and
+		// report connecting until the loop has pinged a new connection.
+		e.hmu.Lock()
+		known := e.state
+		e.hmu.Unlock()
+		if known == HealthUp || known == HealthDown {
+			st = known
+		} else {
+			st = HealthConnecting
+		}
+	}
+	e.record(key, st, nil)
+}
+
+func (e *connEntry) record(key, st string, perr error) {
 	e.hmu.Lock()
 	prev := e.state
 	if st != prev {
@@ -65,6 +125,10 @@ func (e *connEntry) sample(key string) {
 		if st == HealthUp {
 			e.lastErr = ""
 		}
+	}
+	if perr != nil {
+		e.lastErr = "probe: " + perr.Error()
+		e.lastErrAt = time.Now()
 	}
 	e.hmu.Unlock()
 	if st != prev && prev != "" {
@@ -98,9 +162,10 @@ func (e *connEntry) health() Health {
 	return h
 }
 
-// Health reports the connection to the EPP named by cfg. The connection is
-// opened if the rule has not sent a request yet, so a freshly created rule
-// shows "connecting" and then "up" or "down" within a probe interval.
+// Health reports the connection to the EPP named by cfg without waiting on
+// the EPP. The connection is opened if the rule has not sent a request yet,
+// so a freshly created rule shows "connecting" and then, once the probe loop
+// has pinged it, "up" or "down" within a probe interval.
 func (c *Client) Health(cfg RuleCfg) Health {
 	e, err := c.conn(cfg)
 	if err != nil {
@@ -126,7 +191,7 @@ func (c *Client) probeLoop() {
 			}
 			c.mu.Unlock()
 			for k, e := range snapshot {
-				e.sample(k)
+				e.probe(k)
 			}
 		}
 	}

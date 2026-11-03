@@ -7,6 +7,7 @@ package epp_test
 
 import (
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -94,5 +95,77 @@ func TestClientHealthUnreachableAddress(t *testing.T) {
 	h := waitHealth(t, c, epp.RuleCfg{Endpoint: addr, Plaintext: true}, epp.HealthDown)
 	if h.State != epp.HealthDown {
 		t.Fatalf("state=%q", h.State)
+	}
+}
+
+// freezeProxy forwards TCP to an upstream until frozen; frozen, it keeps
+// every socket open and forwards nothing - the shape of a peer whose pod
+// vanished without closing (packets black-holed, no FIN, no RST).
+type freezeProxy struct {
+	frozen atomic.Bool
+	l      net.Listener
+}
+
+func newFreezeProxy(t *testing.T, upstream string) *freezeProxy {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &freezeProxy{l: l}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			u, err := net.Dial("tcp", upstream)
+			if err != nil {
+				c.Close()
+				continue
+			}
+			pipe := func(dst, src net.Conn) {
+				buf := make([]byte, 32*1024)
+				for {
+					n, err := src.Read(buf)
+					if err != nil {
+						return
+					}
+					if p.frozen.Load() {
+						select {} // hold the socket open, deliver nothing
+					}
+					if _, err := dst.Write(buf[:n]); err != nil {
+						return
+					}
+				}
+			}
+			go pipe(u, c)
+			go pipe(c, u)
+		}
+	}()
+	return p
+}
+
+// A peer that stops answering without closing the connection is reported
+// down by the liveness ping, not left "up" on an open socket.
+func TestClientHealthDetectsSilentPeer(t *testing.T) {
+	saved, savedTO := epp.HealthProbeInterval, epp.HealthProbeTimeout
+	epp.HealthProbeInterval, epp.HealthProbeTimeout = 100*time.Millisecond, 300*time.Millisecond
+	defer func() { epp.HealthProbeInterval, epp.HealthProbeTimeout = saved, savedTO }()
+
+	f := epptest.New("echo")
+	up, stop := epptest.Start(t, f, false)
+	defer stop()
+	px := newFreezeProxy(t, up)
+	c := epp.NewClient()
+	defer c.Close()
+	cfg := epp.RuleCfg{Endpoint: px.l.Addr().String(), Plaintext: true, TimeoutMs: 1000}
+
+	waitHealth(t, c, cfg, epp.HealthUp)
+	px.frozen.Store(true)
+	h := waitHealth(t, c, cfg, epp.HealthDown)
+	if h.LastError == "" {
+		t.Fatalf("silent peer reported down without a reason: %+v", h)
 	}
 }
