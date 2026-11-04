@@ -88,8 +88,10 @@ later. That branch has the Gateway API inference integration, carries the
 credential-policy annotations into the loxilb rule and manages the
 `JWTAuthProfile` CRD the chart ships. Older integration branches work for pools
 without authentication but install authenticated pools **without** their
-policy (§8). The `fc-*` flow-control annotations (§3) need ca558a6 or later;
-an older kube-loxilb does not read them.
+policy (§8). Several pools on one listener (§3) need 307eb26 or later; an
+older kube-loxilb serves one of them and reports `ExternalIPUnavailable` on the
+others. The `fc-*` flow-control annotations (§3) need ca558a6 or later; an
+older kube-loxilb does not read them.
 
 ```bash
 git clone --depth 1 -b feat/auth-annotation https://github.com/loxilb-io/kube-loxilb.git
@@ -242,11 +244,14 @@ effect. Without one, kube-loxilb leaves them out of the rule and raises
 [inference gateway guide](https://github.com/loxilb-io/kube-loxilb/blob/feat/auth-annotation/INFERENCE_GATEWAY.md#flow-control-annotations).
 
 Every pool attaches to every listener of the Gateway and becomes its own
-LoadBalancer Service on the Gateway address and the listener port. Two pools on
-one listener therefore compete for the same address and port, and kube-loxilb
-reports `ExternalIPUnavailable` on the one that loses. The validated layout is
-one pool per Gateway; routing several models through one port is not expressed
-by this chart yet.
+LoadBalancer Service on the Gateway address and the listener port. Several
+pools on one listener share that address and port, and the gateway tells their
+rules apart by the `model` a request names, so each pool needs its own
+`modelName`; one of them may leave it unset and takes the requests no other
+pool names. Two pools with the same `modelName`, or both without one, would make
+one rule: kube-loxilb serves the older pool and raises `ListenerRouteConflict`
+on the other until one of them changes or goes. The pools on a listener must
+also declare the same credential policy (§8, condition 4).
 
 ## 4. Install
 
@@ -545,15 +550,17 @@ kubectl -n kube-system logs deploy/igw-kube-loxilb
 
 | Reason | Meaning | What to do |
 |---|---|---|
-| `ExternalIPUnavailable` | no address and port could be allocated; retried | another pool or Service already holds the VIP and listener port, or `cidrPools` is exhausted |
+| `ExternalIPUnavailable` | no address and port could be allocated; retried | a Service that is not one of the Gateway's pools already holds the VIP and listener port, or `cidrPools` is exhausted |
 | `InvalidInferenceConfig` | the annotations are malformed or combine options loxilb rejects | fix the pool fields or free-form `annotations` |
 | `InferenceGatewayRequired` | the loxilb reached is plain upstream loxilb, not loxilb-inference-gateway | check `loxilb-igw.image` or `kube-loxilb.loxiURL` |
 | `LoxiLBRejected`, `RuleMissing` | the gateway refused the rule, or the rule disappeared from it | read the gateway's answer in the kube-loxilb log; the gateway's own log names the reason |
 | `AuthNotSupported` | the pool declares a policy and a gateway does not enforce it | upgrade the gateway image; the rule is not sent to that peer |
 | `ListenerAuthConflict` | another pool on the same listener declares a different policy | §8, condition 4 |
+| `ListenerRouteConflict` | an older pool on the same listener has the same `modelName`, or like this one none | give the pools on a listener different `modelName`s (§3) |
 | `EndpointPickerUnsupported` | a `FailClose` pool on a gateway without the picker client | use a gateway image that lists `epp` (§2.3, §9) |
 | `ProfileNotFound`, `ProfileNotProgrammed` | the named `JWTAuthProfile` does not exist, or is not on every gateway yet | create it, then check its `PROGRAMMED` column and `status.peers` |
 | `KvExactTokenizerRequired`, `GPUMonitoringDisabled` | the routing mode needs a tokenizer or GPU monitoring that is not armed in loxilb | configure loxilb for that mode or choose another `epselect` |
+| `FlowControlIgnored` | the pool sets `fc-*` annotations but is not an AI-gateway service; the rule is installed without them | set `sseMode: true`, an `auth.mode` or `loxilb.io/pd-disagg` (§3) |
 
 Other symptoms:
 
