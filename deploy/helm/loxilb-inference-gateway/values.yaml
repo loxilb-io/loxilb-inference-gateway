@@ -116,6 +116,9 @@ inference:
       epselect: chwbl                    # loxilb.io/epselect: chwbl | gpuaware | wrr-hash
       sseMode: true                      # loxilb.io/sse-mode (also arms API-key / rate-limit enforcement)
       # Any other loxilb.io/* annotation, verbatim (kv-exact-mode, pd-disagg, chwbl-*, ...).
+      # The fc-* annotations set the capacity admission gate (loxilb.io/fc-mode,
+      # fc-max-outstanding, fc-max-queue-depth, ...; kube-loxilb ca558a6 or
+      # later). They act only with sseMode, an auth.mode or pd-disagg.
       annotations: {}
       # Rendered as loxilb.io/api-key-auth and loxilb.io/jwt-auth-profile.
       # kube-loxilb feat/auth-annotation (830fa59) or later carries them into

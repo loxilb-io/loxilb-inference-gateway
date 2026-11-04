@@ -88,7 +88,8 @@ later. That branch has the Gateway API inference integration, carries the
 credential-policy annotations into the loxilb rule and manages the
 `JWTAuthProfile` CRD the chart ships. Older integration branches work for pools
 without authentication but install authenticated pools **without** their
-policy (§8).
+policy (§8). The `fc-*` flow-control annotations (§3) need ca558a6 or later;
+an older kube-loxilb does not read them.
 
 ```bash
 git clone --depth 1 -b feat/auth-annotation https://github.com/loxilb-io/kube-loxilb.git
@@ -214,11 +215,31 @@ Each pool field maps to an annotation kube-loxilb reads:
 | `epselect` | `loxilb.io/epselect` | endpoint selection: `chwbl`, `gpuaware`, `wrr-hash` |
 | `sseMode` | `loxilb.io/sse-mode` | SSE-aware streaming; also arms API-key and rate-limit enforcement on the rule |
 | `auth.mode`, `auth.jwtAuthProfile` | `loxilb.io/api-key-auth`, `loxilb.io/jwt-auth-profile` | credential policy, §8; `none` renders no annotation |
-| `annotations` | verbatim | any other `loxilb.io/*` annotation (`kv-exact-mode`, `pd-disagg`, `chwbl-*`, …) |
+| `annotations` | verbatim | any other `loxilb.io/*` annotation (`kv-exact-mode`, `pd-disagg`, `chwbl-*`, `fc-*`, …) |
 | `route.hostnames`, `route.matches` | HTTPRoute `hostnames`, `rules[0].matches` | optional; an empty `matches` routes the `/` prefix |
 
 `lbmode=fullproxy` and `usepodnetwork=yes` are imposed by kube-loxilb on every
 InferencePool and are therefore not values.
+
+The capacity admission gate ([flow control](load-balancing/23-ai-admission-flow-control.md))
+is set per pool through `annotations`, one `loxilb.io/fc-<field>` annotation for
+each `fc_*` field of the rule, with `_` written as `-`:
+
+```yaml
+      sseMode: true
+      annotations:
+        loxilb.io/fc-mode: "enforce"
+        loxilb.io/fc-max-outstanding: "96"     # the pool
+        loxilb.io/fc-ep-max-inflight: "32"     # each endpoint
+        loxilb.io/fc-max-queue-depth: "96"
+        loxilb.io/fc-max-queue-wait-ms: "15000"
+```
+
+The gate runs only on an AI-gateway service, so a pool needs `sseMode: true`,
+an `auth.mode` other than `none`, or `loxilb.io/pd-disagg` for these to take
+effect. Without one, kube-loxilb leaves them out of the rule and raises
+`FlowControlIgnored` on the pool. The full list is in kube-loxilb's
+[inference gateway guide](https://github.com/loxilb-io/kube-loxilb/blob/feat/auth-annotation/INFERENCE_GATEWAY.md#flow-control-annotations).
 
 Every pool attaches to every listener of the Gateway and becomes its own
 LoadBalancer Service on the Gateway address and the listener port. Two pools on
