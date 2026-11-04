@@ -41,6 +41,7 @@ struct proxy_ent {
   uint8_t inv;
   uint8_t protocol;
 };
+#include "datapath_detach_linux.h"
 int proxy_update_ep_health(struct proxy_ent *key, int ep_index, uint8_t inactive);
 int proxy_update_ep_health_by_ip(struct proxy_ent *key, uint32_t ep_ip, uint8_t inactive);
 // Health keyed on the endpoint ADDRESS. An endpoint index numbers one pool's eps[], and
@@ -439,12 +440,21 @@ type CtErrorStats struct {
 	SCTPErr      uint64 `json:"sctpErr"`      // idx 4: SCTP error (CT_SCTP_ERR)
 }
 
+type datapathLinkPrograms struct {
+	index int
+	ids   C.struct_llb_link_programs
+}
+
 // DpEbpfH - context container
 type DpEbpfH struct {
 	securityStatsMu          sync.RWMutex
 	securityStatsGenerations [16]uint64
 	ticker                   *time.Ticker
-	tDone                    chan bool
+	stop                     chan struct{}
+	shutdownOnce             sync.Once
+	linkMu                   sync.Mutex
+	linkPrograms             map[string]datapathLinkPrograms
+	egressHooks              C.int
 	trigGC                   chan bool
 	gcTS                     time.Time
 	gcTiVal                  uint
@@ -454,7 +464,6 @@ type DpEbpfH struct {
 	CtSync                   bool
 	RssEn                    bool
 	ToMapCh                  chan interface{}
-	ToFinCh                  [mapNotifierWorkers]chan int
 	mtx                      sync.RWMutex
 	ctMap                    map[string]*DpCtInfo
 
@@ -519,11 +528,11 @@ func dpEbpfTicker() {
 	defer func() {
 		if e := recover(); e != nil {
 			tk.LogIt(tk.LogCritical, "%s: %s", e, debug.Stack())
+			if mh.dp != nil {
+				mh.dp.DpHooks.DpEbpfUnInit()
+			}
+			os.Exit(1)
 		}
-		if mh.dp != nil {
-			mh.dp.DpHooks.DpEbpfUnInit()
-		}
-		os.Exit(1)
 	}()
 
 	tbls := []int{int(C.LL_DP_RTV4_STATS_MAP),
@@ -539,7 +548,7 @@ func dpEbpfTicker() {
 			continue
 		}
 		select {
-		case <-mh.dpEbpf.tDone:
+		case <-mh.dpEbpf.stop:
 			return
 		case <-mh.dpEbpf.ctBcast:
 			tk.LogIt(tk.LogDebug, "CT Bcast\n")
@@ -667,6 +676,12 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 
 	DpEbpfDPLogLevel(&cfg, logLevel)
 
+	var llb0Before C.struct_llb_link_programs
+	if !disBPF {
+		if intf, err := net.InterfaceByName("llb0"); err == nil {
+			llb0Before = C.llb_link_programs(C.int(intf.Index), cfg.egr_hooks)
+		}
+	}
 	C.loxilb_main(&cfg)
 
 	// Make sure to unload eBPF programs at init time
@@ -693,14 +708,18 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 	}
 
 	ne := new(DpEbpfH)
-	ne.tDone = make(chan bool)
+	ne.linkPrograms = make(map[string]datapathLinkPrograms)
+	ne.egressHooks = cfg.egr_hooks
+	if !disBPF {
+		if intf, err := net.InterfaceByName("llb0"); err == nil {
+			ne.recordDatapathAttach(intf.Name, intf.Index, llb0Before)
+		}
+	}
+	ne.stop = make(chan struct{})
 	ne.trigGC = make(chan bool)
 	ne.gcTS = time.Now()
 	ne.gcTiVal = ctGCTiValDefault
 	ne.ToMapCh = make(chan interface{}, mapNotifierChLen)
-	for i := 0; i < mapNotifierWorkers; i++ {
-		ne.ToFinCh[i] = make(chan int)
-	}
 	ne.ctBcast = make(chan bool)
 	ne.ticker = time.NewTicker(dpEbpfLinuxTiVal * time.Second)
 	ne.ctMap = make(map[string]*DpCtInfo)
@@ -778,7 +797,7 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 
 	go dpEbpfTicker()
 	for i := 0; i < mapNotifierWorkers; i++ {
-		go dpMapNotifierWorker(ne.ToFinCh[i], ne.ToMapCh)
+		go dpMapNotifierWorker(ne.stop, ne.ToMapCh)
 	}
 
 	// KV binding-dataplane contract: hand the control plane its setter
@@ -800,60 +819,28 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 	return ne
 }
 
-// DpEbpfUnInit - uninitialize the ebpf dp subsystem
+// DpEbpfUnInit stops worker loops and detaches this instance's datapath.
 func (e *DpEbpfH) DpEbpfUnInit() {
+	e.shutdownOnce.Do(func() {
+		// A worker can be busy in CGO. Closing the channel signals both
+		// workers immediately, without using the detach deadline to wait.
+		close(e.stop)
+		e.ticker.Stop()
+		e.linkMu.Lock()
+		defer e.linkMu.Unlock()
 
-	// bounded sends on the unbuffered control
-	// channels. The receivers (dpEbpfTicker + dpMapNotifierWorker) block
-	// inside CGO calls during a shutdown, so a bare `e.tDone <- true`
-	// would wedge the SIGINT handler indefinitely (this is the EVIDENCE
-	// hang). On send-timeout we log and proceed; the second-
-	// SIGINT escalation path in loxinet.go is the safety net that
-	// guarantees process exit even if the eBPF cleanup below stalls.
-	select {
-	case e.tDone <- true:
-	case <-time.After(1 * time.Second):
-		tk.LogIt(tk.LogWarning, "[shutdown] eBPF tDone send timed out — ticker may be in CGO\n")
-	}
-	for i := 0; i < mapNotifierWorkers; i++ {
-		select {
-		case e.ToFinCh[i] <- 1:
-		case <-time.After(500 * time.Millisecond):
-			tk.LogIt(tk.LogWarning, "[shutdown] eBPF ToFinCh[%d] send timed out\n", i)
+		for name, link := range e.linkPrograms {
+			var detached C.int
+			ret := C.llb_shutdown_detach(C.int(link.index), link.ids, &detached)
+			if detached > 0 {
+				tk.LogIt(tk.LogInfo, "[shutdown] detached %d datapath programs on %s\n", int(detached), name)
+			}
+			if ret < 0 {
+				tk.LogIt(tk.LogWarning, "[shutdown] detach datapath on %s: %v\n", name, syscall.Errno(-ret))
+			}
 		}
-	}
-
-	tk.LogIt(tk.LogInfo, "ebpf uninit : %s\n", debug.Stack())
-
-	// Make sure to unload eBPF programs
-	ifList, err := net.Interfaces()
-	if err != nil {
-		return
-	}
-
-	tk.LogIt(tk.LogInfo, "ebpf uninit begin\n")
-
-	for _, intf := range ifList {
-
-		tk.LogIt(tk.LogInfo, "ebpf unload - %s\n", intf.Name)
-		ifStr := C.CString(intf.Name)
-		section := C.CString(string(C.TC_LL_SEC_DEFAULT))
-		C.llb_dp_link_attach(ifStr, section, C.LL_BPF_MOUNT_TC, 1)
-
-		// Conditional XDP detachment based on HAVE_DP_IP_FILTER compile flag
-		// If IP filter enabled: detach XDP from all interfaces (hybrid XDP+TC architecture)
-		// Otherwise: detach XDP only from llb0 or RSS-enabled interfaces (legacy behavior)
-		if xdpAllInterfaces || e.RssEn || intf.Name == "llb0" {
-			xSection := C.CString(string(C.XDP_LL_SEC_DEFAULT))
-			C.llb_dp_link_attach(ifStr, xSection, C.LL_BPF_MOUNT_XDP, 1)
-			C.free(unsafe.Pointer(xSection))
-		}
-
-		C.free(unsafe.Pointer(ifStr))
-		C.free(unsafe.Pointer(section))
-	}
-
-	C.llb_unload_kern_all()
+		C.llb_unload_kern_all()
+	})
 }
 
 func convNetIP2DPv6Addr(addr unsafe.Pointer, goIP net.IP) {
@@ -877,28 +864,63 @@ func convDPv6Addr2NetIP(addr unsafe.Pointer) net.IP {
 	return goIP
 }
 
+// Record only IDs installed by this attach or already owned by this instance.
+func (e *DpEbpfH) recordDatapathAttach(name string, index int, before C.struct_llb_link_programs) {
+	after := C.llb_link_programs(C.int(index), e.egressHooks)
+	previous := e.linkPrograms[name]
+	if previous.index != index {
+		previous = datapathLinkPrograms{}
+	}
+	owned := func(old, before, after C.__u32) C.__u32 {
+		if after != before || after == old {
+			return after
+		}
+		return 0
+	}
+	e.linkPrograms[name] = datapathLinkPrograms{index: index, ids: C.struct_llb_link_programs{
+		skb:     owned(previous.ids.skb, before.skb, after.skb),
+		drv:     owned(previous.ids.drv, before.drv, after.drv),
+		ingress: owned(previous.ids.ingress, before.ingress, after.ingress),
+		egress:  owned(previous.ids.egress, before.egress, after.egress),
+	}}
+}
+
 // loadEbpfPgm - load loxilb eBPF program to an interface
 func (e *DpEbpfH) loadEbpfPgm(name string) int {
 	if mh.disBPF {
 		return 0
 	}
-	ifStr := C.CString(name)
-	xSection := C.CString(string(C.XDP_LL_SEC_DEFAULT))
+	e.linkMu.Lock()
+	defer e.linkMu.Unlock()
+	select {
+	case <-e.stop:
+		return 0
+	default:
+	}
 	link, err := nlp.LinkByName(name)
 	if err != nil {
 		tk.LogIt(tk.LogWarning, "[DP] Port %s not found\n", name)
 		return -1
 	}
 
+	index := link.Attrs().Index
+	before := C.llb_link_programs(C.int(index), e.egressHooks)
+	ifStr := C.CString(name)
+	defer C.free(unsafe.Pointer(ifStr))
+
 	// Conditional XDP attachment based on HAVE_DP_IP_FILTER compile flag
 	// If IP filter enabled: attach XDP to all interfaces (hybrid XDP+TC architecture)
 	// Otherwise: attach XDP only to llb0 or RSS-enabled interfaces (legacy behavior)
 	if xdpAllInterfaces || e.RssEn || name == "llb0" {
+		xSection := C.CString(string(C.XDP_LL_SEC_DEFAULT))
 		C.llb_dp_link_attach(ifStr, xSection, C.LL_BPF_MOUNT_XDP, 0)
+		C.free(unsafe.Pointer(xSection))
 	}
 
 	section := C.CString(string(C.TC_LL_SEC_DEFAULT))
 	C.llb_dp_link_attach(ifStr, section, C.LL_BPF_MOUNT_TC, 0)
+	C.free(unsafe.Pointer(section))
+	e.recordDatapathAttach(name, index, before)
 
 	filters, err := nlp.FilterList(link, nlp.HANDLE_MIN_INGRESS)
 	if err != nil {
@@ -914,9 +936,6 @@ func (e *DpEbpfH) loadEbpfPgm(name string) int {
 			}
 		}
 	}
-	C.free(unsafe.Pointer(ifStr))
-	C.free(unsafe.Pointer(xSection))
-	C.free(unsafe.Pointer(section))
 	return int(ret)
 }
 
@@ -924,6 +943,13 @@ func (e *DpEbpfH) loadEbpfPgm(name string) int {
 func (e *DpEbpfH) unLoadEbpfPgm(name string) int {
 	if mh.disBPF {
 		return 0
+	}
+	e.linkMu.Lock()
+	defer e.linkMu.Unlock()
+	select {
+	case <-e.stop:
+		return 0
+	default:
 	}
 	ifStr := C.CString(name)
 	xSection := C.CString(string(C.XDP_LL_SEC_DEFAULT))
@@ -940,6 +966,15 @@ func (e *DpEbpfH) unLoadEbpfPgm(name string) int {
 	C.free(unsafe.Pointer(ifStr))
 	C.free(unsafe.Pointer(section))
 	C.free(unsafe.Pointer(xSection))
+	if previous, ok := e.linkPrograms[name]; ok {
+		current := C.llb_link_programs(C.int(previous.index), e.egressHooks)
+		if (previous.ids.skb == 0 || current.skb != previous.ids.skb) &&
+			(previous.ids.drv == 0 || current.drv != previous.ids.drv) &&
+			(previous.ids.ingress == 0 || current.ingress != previous.ids.ingress) &&
+			(previous.ids.egress == 0 || current.egress != previous.ids.egress) {
+			delete(e.linkPrograms, name)
+		}
+	}
 	return int(ret)
 }
 
@@ -4799,16 +4834,16 @@ func dpCtTombstone(flowKey string, pkey []byte) {
 }
 
 // dpMapNotifierWorker - Work on any map notifications
-func dpMapNotifierWorker(f chan int, ch chan interface{}) {
+func dpMapNotifierWorker(stop <-chan struct{}, ch chan interface{}) {
 	// Stack trace logger
 	defer func() {
 		if e := recover(); e != nil {
 			tk.LogIt(tk.LogCritical, "%s: %s", e, debug.Stack())
+			if mh.dp != nil {
+				mh.dp.DpHooks.DpEbpfUnInit()
+			}
+			os.Exit(1)
 		}
-		if mh.dp != nil {
-			mh.dp.DpHooks.DpEbpfUnInit()
-		}
-		os.Exit(1)
 	}()
 
 	for {
@@ -4818,7 +4853,7 @@ func dpMapNotifierWorker(f chan int, ch chan interface{}) {
 			case *DpCtInfo:
 				dpCTMapNotifierWorker(mq)
 			}
-		case <-f:
+		case <-stop:
 			return
 		}
 	}

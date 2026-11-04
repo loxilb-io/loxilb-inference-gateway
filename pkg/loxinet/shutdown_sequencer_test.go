@@ -17,7 +17,7 @@
 // Tests for the staged shutdown sequencer.
 //
 // These tests are intentionally `package loxinet` (internal) so they can
-// override the unexported function-pointer variables `shutdownRESTFn`,
+// override the unexported function-pointer variables
 // `shutdownWorkersFn`, `shutdownDocaFn`, `shutdownEbpfFn` to verify call
 // ordering without dragging in the full DOCA / eBPF subsystems.
 
@@ -89,10 +89,26 @@ func TestRunShutdownStage_Error(t *testing.T) {
 	}
 }
 
+func TestMapNotifierReturnsOnShutdown(t *testing.T) {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		dpMapNotifierWorker(stop, nil)
+	}()
+	close(stop)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("map notifier did not return after shutdown")
+	}
+}
+
 // TestShutdownStagesOrdering — substitutes each stage function with a
 // recording stub and asserts the staged sequencer (the helper that the
 // loxinet.go signal handler calls) invokes them in the order
-// [rest, workers, doca, ebpf]. We test the stage-function-pointer
+// [workers, doca, ebpf]. We test the stage-function-pointer
 // indirection so the loxinet.go signal-handler integration can be unit-
 // tested without driving real syscalls.
 func TestShutdownStagesOrdering(t *testing.T) {
@@ -102,12 +118,10 @@ func TestShutdownStagesOrdering(t *testing.T) {
 	)
 
 	// Save and restore the unexported function-pointer vars.
-	origREST := shutdownRESTFn
 	origWorkers := shutdownWorkersFn
 	origDoca := shutdownDocaFn
 	origEbpf := shutdownEbpfFn
 	defer func() {
-		shutdownRESTFn = origREST
 		shutdownWorkersFn = origWorkers
 		shutdownDocaFn = origDoca
 		shutdownEbpfFn = origEbpf
@@ -121,20 +135,18 @@ func TestShutdownStagesOrdering(t *testing.T) {
 			return nil
 		}
 	}
-	shutdownRESTFn = rec("rest")
 	shutdownWorkersFn = rec("workers")
 	shutdownDocaFn = rec("doca")
 	shutdownEbpfFn = rec("ebpf")
 
 	// Drive the same sequence the loxinet.go SIGINT handler will drive.
-	runShutdownStage("rest", 200*time.Millisecond, shutdownRESTFn)
 	runShutdownStage("workers", 200*time.Millisecond, shutdownWorkersFn)
 	runShutdownStage("doca", 200*time.Millisecond, shutdownDocaFn)
 	runShutdownStage("ebpf", 200*time.Millisecond, shutdownEbpfFn)
 
 	mu.Lock()
 	defer mu.Unlock()
-	want := []string{"rest", "workers", "doca", "ebpf"}
+	want := []string{"workers", "doca", "ebpf"}
 	if len(order) != len(want) {
 		t.Fatalf("expected %d stages, got %d (%v)", len(want), len(order), order)
 	}
