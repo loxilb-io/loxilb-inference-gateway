@@ -54,9 +54,8 @@ func TestEppStateOnRuleGet(t *testing.T) {
 	if mh.zr == nil || mh.dpEbpf == nil {
 		t.Skip("loxinet harness not initialized (run the whole package as root)")
 	}
-	saved := epp.HealthProbeInterval
-	epp.HealthProbeInterval = 100 * time.Millisecond
-	defer func() { epp.HealthProbeInterval = saved }()
+	pi, pt := epp.SetHealthProbe(100*time.Millisecond, 2*time.Second)
+	defer epp.SetHealthProbe(pi, pt)
 	_, ep, _ := eppTestBackendSeen(t, "a")
 
 	f := epptest.New("echo")

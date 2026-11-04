@@ -34,9 +34,8 @@ func waitHealth(t *testing.T, c *epp.Client, cfg epp.RuleCfg, want string) epp.H
 // listens on its address, up again when it is back - sampled by the probe
 // loop, so a rule that sends no requests sees the change too.
 func TestClientHealthFollowsTheEPP(t *testing.T) {
-	saved := epp.HealthProbeInterval
-	epp.HealthProbeInterval = 100 * time.Millisecond
-	defer func() { epp.HealthProbeInterval = saved }()
+	pi, pt := epp.SetHealthProbe(100*time.Millisecond, 2*time.Second)
+	defer epp.SetHealthProbe(pi, pt)
 
 	f := epptest.New("echo")
 	addr, stop := epptest.Start(t, f, false)
@@ -84,9 +83,8 @@ func TestClientHealthFollowsTheEPP(t *testing.T) {
 
 // A rule whose EPP address never answers is reported down, with the reason.
 func TestClientHealthUnreachableAddress(t *testing.T) {
-	saved := epp.HealthProbeInterval
-	epp.HealthProbeInterval = 100 * time.Millisecond
-	defer func() { epp.HealthProbeInterval = saved }()
+	pi, pt := epp.SetHealthProbe(100*time.Millisecond, 2*time.Second)
+	defer epp.SetHealthProbe(pi, pt)
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
 	addr := l.Addr().String()
 	l.Close()
@@ -150,9 +148,8 @@ func newFreezeProxy(t *testing.T, upstream string) *freezeProxy {
 // A peer that stops answering without closing the connection is reported
 // down by the liveness ping, not left "up" on an open socket.
 func TestClientHealthDetectsSilentPeer(t *testing.T) {
-	saved, savedTO := epp.HealthProbeInterval, epp.HealthProbeTimeout
-	epp.HealthProbeInterval, epp.HealthProbeTimeout = 100*time.Millisecond, 300*time.Millisecond
-	defer func() { epp.HealthProbeInterval, epp.HealthProbeTimeout = saved, savedTO }()
+	pi, pt := epp.SetHealthProbe(100*time.Millisecond, 300*time.Millisecond)
+	defer epp.SetHealthProbe(pi, pt)
 
 	f := epptest.New("echo")
 	up, stop := epptest.Start(t, f, false)

@@ -7,6 +7,7 @@ package epp
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	tk "github.com/loxilb-io/loxilib"
@@ -17,7 +18,7 @@ import (
 )
 
 // Health is what the gateway knows about one EPP address: the state of its
-// gRPC connection, sampled every HealthProbeInterval whether or not requests
+// gRPC connection, sampled every probe interval whether or not requests
 // flow, and the last request-phase outcome seen on it.
 type Health struct {
 	// State is "up" (the connection is ready and the EPP answered the last
@@ -42,13 +43,24 @@ const (
 	HealthUnknown    = "unknown"
 )
 
-// HealthProbeInterval is how often every cached connection is re-dialed if
-// it dropped and its state re-sampled, so an idle EPP that dies is noticed
-// without a request. A variable so tests can shorten it.
-var HealthProbeInterval = 5 * time.Second
+// The probe interval (how often every cached connection is re-dialed if it
+// dropped and pinged, so an idle EPP that dies is noticed without a
+// request) and the deadline of one liveness RPC. Atomics, read by the probe
+// loop while a test may shorten them.
+var (
+	healthProbeInterval atomic.Int64
+	healthProbeTimeout  atomic.Int64
+)
 
-// HealthProbeTimeout bounds the liveness RPC of one probe.
-var HealthProbeTimeout = 2 * time.Second
+func init() { SetHealthProbe(5*time.Second, 2*time.Second) }
+
+// SetHealthProbe sets the probe interval and the per-ping deadline; it
+// returns the previous values so a test can restore them.
+func SetHealthProbe(interval, timeout time.Duration) (prevInterval, prevTimeout time.Duration) {
+	prevInterval = time.Duration(healthProbeInterval.Swap(int64(interval)))
+	prevTimeout = time.Duration(healthProbeTimeout.Swap(int64(timeout)))
+	return
+}
 
 func healthState(s connectivity.State) string {
 	switch s {
@@ -64,10 +76,10 @@ func healthState(s connectivity.State) string {
 // ping proves the peer is alive with one standard gRPC health Check. An
 // EPP that does not serve the health service answers UNIMPLEMENTED, which is
 // an answer: the connection carries RPCs. No answer within
-// HealthProbeTimeout (a peer that vanished without closing the connection,
+// the probe timeout (a peer that vanished without closing the connection,
 // e.g. a force-deleted pod, leaves the socket looking open) is down.
 func (e *connEntry) ping() error {
-	ctx, cancel := context.WithTimeout(context.Background(), HealthProbeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(healthProbeTimeout.Load()))
 	defer cancel()
 	_, err := healthpb.NewHealthClient(e.cc).Check(ctx, &healthpb.HealthCheckRequest{})
 	if err == nil {
@@ -177,13 +189,11 @@ func (c *Client) Health(cfg RuleCfg) Health {
 
 // probeLoop samples every cached connection until Close.
 func (c *Client) probeLoop() {
-	t := time.NewTicker(HealthProbeInterval)
-	defer t.Stop()
 	for {
 		select {
 		case <-c.done:
 			return
-		case <-t.C:
+		case <-time.After(time.Duration(healthProbeInterval.Load())):
 			c.mu.Lock()
 			snapshot := make(map[string]*connEntry, len(c.conns))
 			for k, e := range c.conns {
