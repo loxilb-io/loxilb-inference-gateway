@@ -1504,6 +1504,14 @@ type LbServiceArg struct {
 	EppTimeoutMs uint32 `json:"eppTimeoutMs,omitempty"`
 	// EppPlaintext - true connects to the EPP without TLS.
 	EppPlaintext bool `json:"eppPlaintext,omitempty"`
+	// EppState - read-only, GET only: the gateway's connection to the EPP
+	// ("up", "connecting", "down", "unknown"); ignored on create.
+	EppState string `json:"eppState,omitempty"`
+	// EppStateSince - read-only, GET only: RFC3339 time EppState last changed.
+	EppStateSince string `json:"eppStateSince,omitempty"`
+	// EppLastError - read-only, GET only: last request-phase error from the
+	// EPP on this connection, empty once it answers again.
+	EppLastError string `json:"eppLastError,omitempty"`
 	// RestoreReplay - set by the snapshot engine when this rule add is a
 	// restore replay rather than a fresh POST. A replayed strict rule must
 	// NOT allocate a new KV-exact binding generation: the snapshot's

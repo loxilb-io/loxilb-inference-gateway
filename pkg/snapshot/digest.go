@@ -58,6 +58,8 @@ func NormalizeDomains(d *Domains) error {
 	for i := range d.LoadBalancer {
 		r := &d.LoadBalancer[i]
 		r.Serv.Oper = 0 // transient attach/detach opcode, not state
+		// The gateway's view of the rule's EPP is runtime state, not config.
+		r.Serv.EppState, r.Serv.EppStateSince, r.Serv.EppLastError = "", "", ""
 		// Sockmap-off has two spellings on the wire: a document written
 		// before the field existed carries nothing, while live state
 		// renders dataplane code 0 back as the canonical "off". They

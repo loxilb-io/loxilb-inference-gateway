@@ -1298,6 +1298,10 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.EppFailureMode = data.eppFailureMode
 		ret.Serv.EppTimeoutMs = data.eppTimeoutMs
 		ret.Serv.EppPlaintext = data.eppPlaintext
+		if data.eppEndpoint != "" {
+			// Read-only: what the gateway currently sees of this EPP.
+			ret.Serv.EppState, ret.Serv.EppStateSince, ret.Serv.EppLastError = eppHealthReport(data)
+		}
 		// CHWBL configuration (sel=8)
 		ret.Serv.CHWBLPrefixHashLevel = data.chwblPrefixHashLevel
 		ret.Serv.CHWBLPrefixHashFlags = data.chwblPrefixHashFlags

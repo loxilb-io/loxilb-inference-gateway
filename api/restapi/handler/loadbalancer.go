@@ -1391,6 +1391,11 @@ func serializeEppArguments(dst *models.LoadbalanceEntryServiceArguments, src cmn
 	if src.EppTimeoutMs != 0 {
 		dst.EppTimeoutMs = int64(src.EppTimeoutMs)
 	}
+	if src.EppState != "" {
+		dst.EppState = src.EppState
+		dst.EppStateSince = src.EppStateSince
+		dst.EppLastError = src.EppLastError
+	}
 	if src.EppPlaintext {
 		dst.EppPlaintext = true
 	}

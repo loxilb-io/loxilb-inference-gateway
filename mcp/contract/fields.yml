@@ -320,7 +320,7 @@ models:
       eppEndpoint:
         label: typed
         arg: epp_endpoint
-        desc_sha256: 6899d560611913731a9afc293ff18c37007a2a0dc24e6785d79e7c59f77aec20
+        desc_sha256: 0175fea8ee91441a45e12cdf74720e55396358d05ce9bd05b33223d906c98442
       eppFailureMode:
         label: typed
         arg: epp_failure_mode
@@ -333,6 +333,15 @@ models:
         label: typed
         arg: epp_plaintext
         desc_sha256: 4daf5e2b76541d6bd850a465653ab965e722872368b50c1ce8f97a76cd11afaf
+      eppState:
+        label: read-back
+        desc_sha256: 4934a460b783caf0f355d2e34686f7cdcdb54cdeb4337dcae058d23596d0a8e4
+      eppStateSince:
+        label: read-back
+        desc_sha256: 948591d770ec43022ff4a33c7699ea56417dc9c3854626e05a626344576eedf6
+      eppLastError:
+        label: read-back
+        desc_sha256: ae1b2c4ad540f9938317bb3cf1c02d8a077763fba06d17d29e6c1411409d6dbc
       mcp_protocol_version:
         label: extra-only
         desc_sha256: 09bb08ce1e9b5aef261bf4f8e13dc7d43e3b83fbdb8fcccee07e1d98d177208e
