@@ -104,3 +104,62 @@ func TestEppStateOnRuleGet(t *testing.T) {
 	}
 	eppTestSettled(t)
 }
+
+// Deleting rules drops the pooled EPP connection only once no rule names
+// that EPP; a rule moved to another EPP drops the old one the same way.
+func TestEppRuleDeleteForgetsTheConnection(t *testing.T) {
+	if mh.zr == nil || mh.dpEbpf == nil {
+		t.Skip("loxinet harness not initialized (run the whole package as root)")
+	}
+	_, ep, _ := eppTestBackendSeen(t, "a")
+	f := epptest.New("echo")
+	f.Dest = eppAddr(ep)
+	addr, stop := epptest.Start(t, f, false)
+	defer stop()
+	addr2, stop2 := epptest.Start(t, f, false)
+	defer stop2()
+	base := eppClient.Pooled()
+
+	r1 := eppTestRule(t, 28310, addr, cmn.EppFailureModeFailOpen, 2000, ep)
+	r2 := eppTestRule(t, 28312, addr, cmn.EppFailureModeFailOpen, 2000, ep)
+	eppRuleGet(t, 28310) // GET opens the connection
+	if n := eppClient.Pooled(); n != base+1 {
+		t.Fatalf("pooled=%d, want %d (two rules, one EPP, one connection)", n, base+1)
+	}
+	if _, err := mh.zr.Rules.DeleteLbRule(r1); err != nil {
+		t.Fatal(err)
+	}
+	if n := eppClient.Pooled(); n != base+1 {
+		t.Fatalf("pooled=%d after deleting one of two rules, want %d (the other still names the EPP)", n, base+1)
+	}
+	if s := eppRuleGet(t, 28312); s.EppState == "" {
+		t.Fatal("surviving rule lost its EPP state")
+	}
+	if _, err := mh.zr.Rules.DeleteLbRule(r2); err != nil {
+		t.Fatal(err)
+	}
+	if n := eppClient.Pooled(); n != base {
+		t.Fatalf("pooled=%d after deleting the last rule, want %d", n, base)
+	}
+
+	// A rule re-created on another EPP address drops the first address.
+	r3 := eppTestRule(t, 28314, addr, cmn.EppFailureModeFailOpen, 2000, ep)
+	eppRuleGet(t, 28314)
+	if n := eppClient.Pooled(); n != base+1 {
+		t.Fatalf("pooled=%d, want %d", n, base+1)
+	}
+	moved := r3
+	moved.EppEndpoint = addr2
+	if _, err := mh.zr.Rules.DeleteLbRule(r3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mh.zr.Rules.AddLbRule(moved, nil, nil, nil, []cmn.LbEndPointArg{ep}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(moved) })
+	eppRuleGet(t, 28314)
+	if n := eppClient.Pooled(); n != base+1 {
+		t.Fatalf("pooled=%d after moving the rule to another EPP, want %d (old address forgotten, new one pooled)", n, base+1)
+	}
+	eppTestSettled(t)
+}

@@ -105,7 +105,9 @@ the health service answers `UNIMPLEMENTED`, which counts as alive; a peer
 that vanished without closing the connection (a force-deleted pod leaves the
 socket looking open) fails the ping and shows `down` within one interval.
 So an idle EPP that dies is reported within a few seconds, and a freshly
-created rule goes `connecting` → `up`/`down` on its own. The fields are ignored on create and replace, so a GET body can be
+created rule goes `connecting` → `up`/`down` on its own. The connection is
+dropped, and the probing stops, when the last rule naming that EPP address
+is deleted or moved to another address. The fields are ignored on create and replace, so a GET body can be
 re-POSTed unchanged. They describe the connection, not the EPP's own health
 endpoint: an EPP that accepts connections but answers `NOT_SERVING` shows
 `up` with the refusal in `eppLastError` after the next request.

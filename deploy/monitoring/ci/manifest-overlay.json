@@ -992,7 +992,7 @@
     "evidence": "Exercised by the EPP request phase in epp-sanity.yml (epp-datapath lane, scripts/epp-test.sh) and cicd/k3d-incluster-inference-epp; the C data plane reports outcomes through the cgo exports below.",
     "writer_sources": [
      { "symbol": "RecordEppOutcome", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1639, "writes": "aiEppRequestsTotal" },
-     { "symbol": "llb_epp_metric_outcome", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 394, "call_line": 396, "calls": "RecordEppOutcome", "entry_point": "cgo-export" }
+     { "symbol": "llb_epp_metric_outcome", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 416, "call_line": 418, "calls": "RecordEppOutcome", "entry_point": "cgo-export" }
     ]
    },
    "loxilb_ai_epp_duration_seconds": {
@@ -1001,7 +1001,7 @@
     "evidence": "Exercised by the EPP request phase in epp-sanity.yml (epp-datapath lane, scripts/epp-test.sh) and cicd/k3d-incluster-inference-epp; the C data plane reports outcomes through the cgo exports below.",
     "writer_sources": [
      { "symbol": "RecordEppOutcome", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1639, "writes": "aiEppDurationSeconds" },
-     { "symbol": "run", "kind": "method", "receiver": "eppFlight", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 188, "call_line": 195, "calls": "RecordEppOutcome", "entry_point": "goroutine" }
+     { "symbol": "run", "kind": "method", "receiver": "eppFlight", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 210, "call_line": 217, "calls": "RecordEppOutcome", "entry_point": "goroutine" }
     ]
    },
    "loxilb_ai_epp_candidates_rejected_total": {
@@ -1010,7 +1010,7 @@
     "evidence": "Exercised by the EPP request phase in epp-sanity.yml (epp-datapath lane, scripts/epp-test.sh) and cicd/k3d-incluster-inference-epp; the C data plane reports outcomes through the cgo exports below.",
     "writer_sources": [
      { "symbol": "RecordEppCandidateRejected", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1649, "writes": "aiEppCandidatesRejectedTotal" },
-     { "symbol": "llb_epp_metric_rejected", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 400, "call_line": 402, "calls": "RecordEppCandidateRejected", "entry_point": "cgo-export" }
+     { "symbol": "llb_epp_metric_rejected", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 422, "call_line": 424, "calls": "RecordEppCandidateRejected", "entry_point": "cgo-export" }
     ]
    },
    "loxilb_ai_epp_inflight": {

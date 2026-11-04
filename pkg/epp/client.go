@@ -209,6 +209,33 @@ func (c *Client) Close() {
 	}
 }
 
+// Forget drops the pooled connection to cfg's EPP, if there is one, so the
+// probe loop stops visiting an address no rule names any more. The next
+// rule that names it opens a fresh connection.
+func (c *Client) Forget(cfg RuleCfg) {
+	key := connKey(cfg)
+	c.mu.Lock()
+	e, ok := c.conns[key]
+	if ok {
+		delete(c.conns, key)
+	}
+	c.mu.Unlock()
+	if ok {
+		e.cc.Close()
+	}
+}
+
+// Pooled reports how many EPP connections the pool holds (diagnostic).
+func (c *Client) Pooled() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.conns)
+}
+
+// SameConn reports whether two rule configurations share one pooled
+// connection (same address, same transport security).
+func SameConn(a, b RuleCfg) bool { return connKey(a) == connKey(b) }
+
 func connKey(cfg RuleCfg) string {
 	if cfg.Plaintext {
 		return cfg.Endpoint + "|plaintext"

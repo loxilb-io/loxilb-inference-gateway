@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-03T09:07:22+00:00",
-  "source_revision": "282f898dc798247f25949c609acb50b119cf846b"
+  "generated_at": "2026-11-04T02:16:51+00:00",
+  "source_revision": "aa475f1732e622ba3b5f700293a820bc5c2cbd63"
  },
  "contract": {
   "total": 354,
@@ -1636,8 +1636,8 @@
      "symbol": "llb_epp_metric_rejected",
      "kind": "func",
      "file": "pkg/loxinet/ai_epp_dp.go",
-     "def_line": 400,
-     "call_line": 402,
+     "def_line": 422,
+     "call_line": 424,
      "calls": "RecordEppCandidateRejected",
      "entry_point": "cgo-export"
     }
@@ -1675,8 +1675,8 @@
      "kind": "method",
      "receiver": "eppFlight",
      "file": "pkg/loxinet/ai_epp_dp.go",
-     "def_line": 188,
-     "call_line": 195,
+     "def_line": 210,
+     "call_line": 217,
      "calls": "RecordEppOutcome",
      "entry_point": "goroutine"
     }
@@ -1757,8 +1757,8 @@
      "symbol": "llb_epp_metric_outcome",
      "kind": "func",
      "file": "pkg/loxinet/ai_epp_dp.go",
-     "def_line": 394,
-     "call_line": 396,
+     "def_line": 416,
+     "call_line": 418,
      "calls": "RecordEppOutcome",
      "entry_point": "cgo-export"
     }

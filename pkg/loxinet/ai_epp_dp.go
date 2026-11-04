@@ -92,24 +92,46 @@ const eppRespQueue = 4
 // eppRuleRegister records (or clears) the EPP configuration of a rule by
 // its number. Called by the rule layer whenever a rule is stored.
 func eppRuleRegister(ruleNum uint64, serv *cmn.LbServiceArg) {
-	eppRulesMu.Lock()
-	defer eppRulesMu.Unlock()
 	if serv == nil || serv.EppEndpoint == "" {
-		delete(eppRules, uint32(ruleNum))
+		eppRuleUnregister(ruleNum)
 		return
 	}
-	eppRules[uint32(ruleNum)] = epp.RuleCfg{
+	cfg := epp.RuleCfg{
 		Endpoint:    serv.EppEndpoint,
 		FailureMode: serv.EppFailureMode,
 		TimeoutMs:   serv.EppTimeoutMs,
 		Plaintext:   serv.EppPlaintext,
 	}
+	eppRulesMu.Lock()
+	old, had := eppRules[uint32(ruleNum)]
+	eppRules[uint32(ruleNum)] = cfg
+	orphan := had && !epp.SameConn(old, cfg) && !eppConnInUseLocked(old)
+	eppRulesMu.Unlock()
+	if orphan {
+		eppClient.Forget(old) // the rule moved to another EPP; nobody names the old one
+	}
 }
 
 func eppRuleUnregister(ruleNum uint64) {
 	eppRulesMu.Lock()
+	old, had := eppRules[uint32(ruleNum)]
 	delete(eppRules, uint32(ruleNum))
+	orphan := had && !eppConnInUseLocked(old)
 	eppRulesMu.Unlock()
+	if orphan {
+		eppClient.Forget(old) // last rule on that EPP: stop probing it
+	}
+}
+
+// eppConnInUseLocked reports whether any registered rule still shares cfg's
+// pooled connection. Caller holds eppRulesMu.
+func eppConnInUseLocked(cfg epp.RuleCfg) bool {
+	for _, c := range eppRules {
+		if epp.SameConn(c, cfg) {
+			return true
+		}
+	}
+	return false
 }
 
 // eppHealthReport is the read-only EPP view a rule GET carries: connection

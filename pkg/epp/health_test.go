@@ -169,3 +169,29 @@ func TestClientHealthDetectsSilentPeer(t *testing.T) {
 		t.Fatalf("silent peer reported down without a reason: %+v", h)
 	}
 }
+
+// Forget closes the pooled connection so the probe loop stops visiting an
+// EPP no rule names; the next Health opens a fresh one.
+func TestClientForgetDropsThePooledConnection(t *testing.T) {
+	f := epptest.New("echo")
+	addr, stop := epptest.Start(t, f, false)
+	defer stop()
+	c := epp.NewClient()
+	defer c.Close()
+	cfg := epp.RuleCfg{Endpoint: addr, Plaintext: true}
+	c.Health(cfg)
+	if n := c.Pooled(); n != 1 {
+		t.Fatalf("pooled=%d after Health, want 1", n)
+	}
+	c.Forget(cfg)
+	if n := c.Pooled(); n != 0 {
+		t.Fatalf("pooled=%d after Forget, want 0", n)
+	}
+	c.Forget(cfg) // forgetting twice is harmless
+	if h := c.Health(cfg); h.State != epp.HealthConnecting && h.State != epp.HealthUp {
+		t.Fatalf("fresh connection after Forget: state=%q", h.State)
+	}
+	if n := c.Pooled(); n != 1 {
+		t.Fatalf("pooled=%d after re-Health, want 1", n)
+	}
+}
