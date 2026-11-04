@@ -41,9 +41,12 @@ import (
 // normalizes away (they are not desired state, so a round-trip makes no
 // promise about them).
 var lbFixtureSkipFields = map[string]bool{
-	"LbServiceArg.Oper":      true, // transient attach/detach opcode
-	"LbEndPointArg.State":    true, // runtime health
-	"LbEndPointArg.Counters": true, // runtime traffic counters
+	"LbServiceArg.Oper":          true, // transient attach/detach opcode
+	"LbServiceArg.EppState":      true, // runtime view of the EPP connection (GET only, ignored on create)
+	"LbServiceArg.EppStateSince": true, // when that view last changed (GET only)
+	"LbServiceArg.EppLastError":  true, // last EPP request error (GET only)
+	"LbEndPointArg.State":        true, // runtime health
+	"LbEndPointArg.Counters":     true, // runtime traffic counters
 }
 
 // fullFieldLbRule is the fixture: every persisted field non-zero.
