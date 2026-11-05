@@ -72,9 +72,14 @@
  *     (utils/chat_template_utils.py:481-495): json.dumps with
  *     ensure_ascii=False, sort_keys=False and the default ", " / ": "
  *     separators; numbers print with Python's repr (1.0, 1e-05, 1000000.0).
+ *   - chat_template_kwargs: accepted from a closed allowlist only
+ *     (kvChatToolsKwargsAllow, with the engine's merge order and the
+ *     template's reads documented there); anything else keeps the
+ *     template_kwargs refusal with a reason naming the key or the value.
  *   - /tokenize with messages+tools runs the same preprocess_chat
- *     (vllm/entrypoints/serve/tokenize/serving.py:70-92), which is why it is
- *     a valid oracle for the golden vectors.
+ *     (vllm/entrypoints/serve/tokenize/serving.py:70-92, chat_template_kwargs
+ *     included at :75), which is why it is a valid oracle for the golden
+ *     vectors.
  *
  * Where the engine coerces input the gateway cannot reproduce exactly
  * (malformed tool_call arguments, NaN/Infinity literals Python's json accepts,
@@ -278,23 +283,114 @@ var kvChatToolsModeledKeys = map[string]bool{
 // ---- request model ----
 
 // kvChatToolsRequest is the render context the engine builds for a
-// tools-carrying chat request: messages in ConversationMessage shape and the
-// model_dump'd tool list (nil when the request carries no tools).
+// tools-carrying chat request: messages in ConversationMessage shape, the
+// model_dump'd tool list (nil when the request carries no tools) and the
+// accepted chat_template_kwargs that reach the template (nil when none).
 type kvChatToolsRequest struct {
 	Messages []any
 	Tools    []any
+	Kwargs   map[string]any
 }
 
 // Refusal reasons (request class). Closed vocabulary.
 const (
-	kvToolsRefuseTools      = "tools"
-	kvToolsRefuseToolChoice = "tool_choice"
-	kvToolsRefuseToolCalls  = "tool_calls"
-	kvToolsRefuseReasoning  = "reasoning"
-	kvToolsRefuseToolCallID = "tool_call_id"
-	kvToolsRefuseNumber     = "number_range"
-	kvToolsRefuseUnparse    = "unparseable"
+	kvToolsRefuseTools       = "tools"
+	kvToolsRefuseToolChoice  = "tool_choice"
+	kvToolsRefuseToolCalls   = "tool_calls"
+	kvToolsRefuseReasoning   = "reasoning"
+	kvToolsRefuseToolCallID  = "tool_call_id"
+	kvToolsRefuseNumber      = "number_range"
+	kvToolsRefuseUnparse     = "unparseable"
+	kvToolsRefuseKwargs      = "template_kwargs"
+	kvToolsRefuseKwargsKey   = "template_kwargs_key"
+	kvToolsRefuseKwargsValue = "template_kwargs_value"
 )
+
+// kvToolsExactLifts reports an excluded-feature refusal the tools-aware path
+// re-examines for the attested target: "tools" (the render carries them) and
+// "template_kwargs" (kvChatToolsKwargs allowlists them). Every other refusal
+// stands whatever the flag says.
+func kvToolsExactLifts(feature string) bool {
+	return feature == "tools" || feature == "template_kwargs"
+}
+
+// ---- chat_template_kwargs allowlist ----
+
+// kvChatToolsKwargsAllow is the closed set of chat_template_kwargs keys the
+// attested target accepts, each with a JSON boolean value; the value says
+// whether the key reaches the render context. The engine's own handling
+// (vLLM v0.30.0):
+//
+//   - the request's kwargs override the server's --default-chat-template-kwargs
+//     and the renderer's own tools/tokenize entries (renderers/params.py:40-52
+//     merge_kwargs: defaults | overrides minus None/"auto" values;
+//     online_renderer.py:664-679 preprocess_chat merges the tool dicts into
+//     the defaults, then ChatParams.with_defaults(default_template_kwargs)
+//     lays the request kwargs over them, params.py:111-130), which is why a
+//     request kwarg named tools, add_generation_prompt, continue_final_message
+//     or documents could change the prompt and stays refused here;
+//   - the request-level fields add_generation_prompt, continue_final_message,
+//     documents and reasoning_effort override a same-named kwarg (chat
+//     completion protocol.py:585-606 build_chat_params: merge_kwargs(kwargs,
+//     extra_kwargs)), and reasoning_effort sets enable_thinking only when the
+//     request kwargs lack it (protocol.py:596-598). reasoning_effort is an
+//     excluded feature on strict rules, so the request kwarg is the only
+//     source of enable_thinking the gateway has to model;
+//   - before the render, renderers/hf.py:709-737 (resolve_chat_template_kwargs)
+//     keeps only the kwargs that are undeclared variables of the template
+//     (jinja2.meta.find_undeclared_variables) or named parameters of
+//     apply_chat_template; the rest never reach the Jinja context.
+//
+// enable_thinking is read by the pinned template once, inside the generation
+// prompt ({%- if enable_thinking is defined and enable_thinking is false %}
+// appends '<think>\n\n</think>\n\n' after '<|im_start|>assistant\n'), so it
+// is passed into the context with Jinja's identity semantics for `is false`
+// (a JSON boolean only; the engine accepts any type and a non-boolean false
+// silently renders as thinking on, which the gateway refuses instead).
+// preserve_thinking is accepted because the harness sends it, and dropped
+// because the pinned template never mentions it (pinned by test against the
+// template fixture), so resolve_chat_template_kwargs drops it engine-side too.
+// A different template is a different profile and never reaches this path.
+var kvChatToolsKwargsAllow = map[string]bool{
+	"enable_thinking":   true,
+	"preserve_thinking": false,
+}
+
+// kvChatToolsKwargs validates chat_template_kwargs against
+// kvChatToolsKwargsAllow and returns the entries that reach the render
+// context (nil when none). Absent or null is no kwargs (the engine's `or {}`);
+// a non-object is refused like the engine's 400 (dict[str, Any]); an
+// unknown key or a non-boolean value is refused with its own reason.
+func kvChatToolsKwargs(raw json.RawMessage) (map[string]any, string) {
+	if !kvJSONPresent(raw) {
+		return nil, ""
+	}
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil, kvToolsRefuseKwargs
+	}
+	var kw map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &kw); err != nil {
+		return nil, kvToolsRefuseKwargs
+	}
+	var out map[string]any
+	for k, v := range kw {
+		reaches, known := kvChatToolsKwargsAllow[k]
+		if !known {
+			return nil, kvToolsRefuseKwargsKey
+		}
+		var b bool
+		if len(v) == 0 || (v[0] != 't' && v[0] != 'f') || json.Unmarshal(v, &b) != nil {
+			return nil, kvToolsRefuseKwargsValue
+		}
+		if reaches {
+			if out == nil {
+				out = map[string]any{}
+			}
+			out[k] = b
+		}
+	}
+	return out, ""
+}
 
 // kvChatToolsParse builds the engine's render context from a chat body.
 // The second result is "" on success or the refusal reason.
@@ -310,6 +406,10 @@ func kvChatToolsParse(body string) (*kvChatToolsRequest, string) {
 	if reason := kvChatToolChoiceCheck(top["tool_choice"], tools != nil, names); reason != "" {
 		return nil, reason
 	}
+	kwargs, reason := kvChatToolsKwargs(top["chat_template_kwargs"])
+	if reason != "" {
+		return nil, reason
+	}
 	out := make([]any, 0, len(msgs))
 	for _, m := range msgs {
 		d, reason := kvChatToolsMessage(m)
@@ -318,7 +418,7 @@ func kvChatToolsParse(body string) (*kvChatToolsRequest, string) {
 		}
 		out = append(out, d)
 	}
-	return &kvChatToolsRequest{Messages: out, Tools: tools}, ""
+	return &kvChatToolsRequest{Messages: out, Tools: tools, Kwargs: kwargs}, ""
 }
 
 // kvChatToolsDicts is [tool.model_dump() for tool in request.tools] with the
@@ -606,6 +706,12 @@ func kvRenderChatToolsReq(e *kvProfileEntry, req *kvChatToolsRequest, clock func
 	}
 	if req.Tools != nil {
 		ctx["tools"] = req.Tools
+	}
+	// Accepted kwargs land in the context last, as the engine's resolved
+	// kwargs do (hf.py:819 → apply_chat_template(**resolved_kwargs)); the
+	// allowlist keeps them disjoint from the keys set above.
+	for k, v := range req.Kwargs {
+		ctx[k] = v
 	}
 	if pol.BosToken != "" {
 		ctx["bos_token"] = pol.BosToken

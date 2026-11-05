@@ -216,9 +216,10 @@ func TestKvToolsExactFlagDefaultOff(t *testing.T) {
 }
 
 // TestKvToolsExactOffIsByteIdentical: with the flag off, every tools-carrying
-// vector is refused as "tools" exactly as before, the plain render context
-// still carries tools=None, and the strict bridge never reaches the tools
-// path (the gate is false before any profile check).
+// vector is refused as "tools" and every kwargs-carrying one as
+// "template_kwargs" exactly as before, the plain render context still
+// carries tools=None, and the strict bridge never reaches the tools path
+// (the gate is false before any profile check).
 func TestKvToolsExactOffIsByteIdentical(t *testing.T) {
 	defer kvToolsExactSetForTest(false)()
 	f := loadKvToolsVectors(t)
@@ -228,13 +229,20 @@ func TestKvToolsExactOffIsByteIdentical(t *testing.T) {
 		body := string(c.Request)
 		var top map[string]json.RawMessage
 		_ = json.Unmarshal(c.Request, &top)
-		carries := kvJSONPresent(top["tools"]) || kvJSONPresent(top["tool_choice"])
-		got := kvChatExcludedFeature(body, true)
-		if carries && got != "tools" {
-			t.Fatalf("%s: flag off, excluded feature = %q, want \"tools\"", name, got)
+		want := ""
+		switch {
+		case kvJSONPresent(top["tools"]) || kvJSONPresent(top["tool_choice"]):
+			want = "tools"
+		case kvJSONPresent(top["chat_template_kwargs"]):
+			want = "template_kwargs"
 		}
-		if !carries && got != "" {
-			t.Fatalf("%s: flag off, excluded feature = %q for a body without tools", name, got)
+		if got := kvChatExcludedFeature(body, true); got != want {
+			t.Fatalf("%s: flag off, excluded feature = %q, want %q", name, got, want)
+		}
+		// The variant the bridge consults only behind the gate must agree
+		// when asked without the lift.
+		if got := kvChatExcludedFeatureOpts(body, true, false); got != want {
+			t.Fatalf("%s: flag off, excluded feature (opts) = %q, want %q", name, got, want)
 		}
 	}
 	// The plain context is untouched: tools and documents None.
@@ -531,6 +539,101 @@ func TestKvToolsVectors(t *testing.T) {
 			t.Fatalf("%s renders differently from v2", v)
 		}
 	}
+	// chat_template_kwargs: enable_thinking false appends the empty think
+	// block after the generation prompt, with and without tools; true,
+	// absent, {}, null and preserve_thinking alone render like the
+	// kwargs-less body.
+	const think = "<think>\n\n</think>\n\n"
+	v1, v2 := f.Cases["v1_no_tools"].Rendered, f.Cases["v2_tools_full"].Rendered
+	if got := f.Cases["k1_thinking_false_no_tools"].Rendered; got != v1+think {
+		t.Fatalf("k1 is not v1 + think block: %q", got)
+	}
+	if got := f.Cases["k3_thinking_false_tools"].Rendered; got != v2+think {
+		t.Fatalf("k3 is not v2 + think block: %q", got)
+	}
+	for _, k := range []string{"k2_thinking_true_no_tools", "k5_preserve_thinking_only", "k6_kwargs_empty_object", "k12_kwargs_null"} {
+		if f.Cases[k].Rendered != v1 {
+			t.Fatalf("%s renders differently from v1", k)
+		}
+	}
+	if f.Cases["k4_thinking_true_tools"].Rendered != v2 {
+		t.Fatal("k4 renders differently from v2")
+	}
+	if !strings.HasSuffix(f.Cases["k7_harness_shape"].Rendered, "<|im_start|>assistant\n"+think) {
+		t.Fatal("k7 (harness shape) does not end with the generation prompt and the think block")
+	}
+}
+
+// TestKvToolsKwargs: the allowlist itself. Absent and null are no kwargs,
+// each known key needs a JSON boolean, only enable_thinking reaches the
+// context, and anything else is refused with its own reason.
+func TestKvToolsKwargs(t *testing.T) {
+	cases := []struct {
+		name   string
+		raw    string
+		want   map[string]any
+		reason string
+	}{
+		{"absent", "", nil, ""},
+		{"null", "null", nil, ""},
+		{"empty", "{}", nil, ""},
+		{"thinking_false", `{"enable_thinking":false}`, map[string]any{"enable_thinking": false}, ""},
+		{"thinking_true", `{"enable_thinking":true}`, map[string]any{"enable_thinking": true}, ""},
+		{"preserve_only", `{"preserve_thinking":true}`, nil, ""},
+		{"harness", `{"enable_thinking": false, "preserve_thinking": true}`, map[string]any{"enable_thinking": false}, ""},
+		{"unknown_key", `{"enable_thinking":false,"verbosity":true}`, nil, kvToolsRefuseKwargsKey},
+		{"override_key", `{"add_generation_prompt":false}`, nil, kvToolsRefuseKwargsKey},
+		{"tools_key", `{"tools":null}`, nil, kvToolsRefuseKwargsKey},
+		{"string_value", `{"enable_thinking":"false"}`, nil, kvToolsRefuseKwargsValue},
+		{"number_value", `{"enable_thinking":0}`, nil, kvToolsRefuseKwargsValue},
+		{"null_value", `{"enable_thinking":null}`, nil, kvToolsRefuseKwargsValue},
+		{"preserve_string", `{"preserve_thinking":"yes"}`, nil, kvToolsRefuseKwargsValue},
+		{"string", `"enable_thinking=false"`, nil, kvToolsRefuseKwargs},
+		{"array", `[true]`, nil, kvToolsRefuseKwargs},
+		{"number", `1`, nil, kvToolsRefuseKwargs},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, reason := kvChatToolsKwargs(json.RawMessage(c.raw))
+			if reason != c.reason {
+				t.Fatalf("reason %q, want %q", reason, c.reason)
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("kwargs %#v, want %#v", got, c.want)
+			}
+		})
+	}
+	// Through the body parser: the kwargs ride on the request and the
+	// refusal reasons come out unchanged.
+	f := loadKvToolsVectors(t)
+	req, reason := kvChatToolsParse(string(f.Cases["k7_harness_shape"].Request))
+	if reason != "" || !reflect.DeepEqual(req.Kwargs, map[string]any{"enable_thinking": false}) {
+		t.Fatalf("harness body: reason %q kwargs %#v", reason, req.Kwargs)
+	}
+	req, reason = kvChatToolsParse(string(f.Cases["v2_tools_full"].Request))
+	if reason != "" || req.Kwargs != nil {
+		t.Fatalf("v2 body: reason %q kwargs %#v, want none", reason, req.Kwargs)
+	}
+}
+
+// TestKvToolsKwargsTemplateReads pins the proof behind the allowlist against
+// the banked template: a key that reaches the context is one the template
+// reads (as a whole word), and a key that is dropped is never mentioned, so
+// dropping it is what the engine's resolve_chat_template_kwargs does too.
+func TestKvToolsKwargsTemplateReads(t *testing.T) {
+	f := loadKvToolsVectors(t)
+	e := kvTestPublishToolsTarget(t, f)
+	src := string(e.TemplateBytes)
+	for k, reaches := range kvChatToolsKwargsAllow {
+		if got := kvTemplateMentions(src, k); got != reaches {
+			t.Fatalf("template mentions %q = %v, allowlist says reaches the context = %v", k, got, reaches)
+		}
+	}
+	// And the one read is read only at the generation prompt, as the
+	// vectors assume (k1 = v1 + think block).
+	if n := strings.Count(src, "enable_thinking"); n != 2 {
+		t.Fatalf("template mentions enable_thinking %d times, want 2 (one `is defined` and one `is false` test)", n)
+	}
 }
 
 // kvTestEntryLike is a fresh entry carrying e's profile (mutated) and
@@ -596,10 +699,17 @@ func TestKvToolsBridgeStrictPath(t *testing.T) {
 
 	tools := string(f.Cases["v2_tools_full"].Request)
 	plain := string(f.Cases["v1_no_tools"].Request)
+	kwargsOnly := string(f.Cases["k1_thinking_false_no_tools"].Request)
+	harness := string(f.Cases["k7_harness_shape"].Request)
 
 	restore := kvToolsExactSetForTest(false)
 	if _, rc := kvBridgeTokenizeChat(61, b.BindingGen, tools, f.BaseModel, 16); rc != KvTokErrUnsupported {
 		t.Fatalf("flag off, tools body: rc %d, want UNSUPPORTED %d", rc, KvTokErrUnsupported)
+	}
+	for _, body := range []string{kwargsOnly, harness} {
+		if _, rc := kvBridgeTokenizeChat(61, b.BindingGen, body, f.BaseModel, 16); rc != KvTokErrUnsupported {
+			t.Fatalf("flag off, kwargs body: rc %d, want UNSUPPORTED %d", rc, KvTokErrUnsupported)
+		}
 	}
 	if _, rc := kvBridgeTokenizeChat(61, b.BindingGen, plain, f.BaseModel, 16); !kvReachedTokenizer(rc) {
 		t.Fatalf("flag off, plain body: rc %d, want the render to reach the tokenizer", rc)
@@ -609,6 +719,11 @@ func TestKvToolsBridgeStrictPath(t *testing.T) {
 	defer kvToolsExactSetForTest(true)()
 	if _, rc := kvBridgeTokenizeChat(61, b.BindingGen, tools, f.BaseModel, 16); !kvReachedTokenizer(rc) {
 		t.Fatalf("flag on, tools body: rc %d, want the render to reach the tokenizer", rc)
+	}
+	for _, body := range []string{kwargsOnly, harness} {
+		if _, rc := kvBridgeTokenizeChat(61, b.BindingGen, body, f.BaseModel, 16); !kvReachedTokenizer(rc) {
+			t.Fatalf("flag on, kwargs body: rc %d, want the render to reach the tokenizer", rc)
+		}
 	}
 	if _, rc := kvBridgeTokenizeChat(61, b.BindingGen, plain, f.BaseModel, 16); !kvReachedTokenizer(rc) {
 		t.Fatalf("flag on, plain body: rc %d, want the render to reach the tokenizer", rc)
@@ -650,11 +765,13 @@ func TestKvToolsBridgeStrictPath(t *testing.T) {
 		t.Fatalf("allocate: %v", err)
 	}
 	kvSvcContractOutcome(62, false, "")
-	otherBody := kvTestBodyWith(t, f.Cases["v2_tools_full"].Request, func(top map[string]json.RawMessage) {
-		top["model"] = json.RawMessage(`"` + otherModel + `"`)
-	})
-	if _, rc := kvBridgeTokenizeChat(62, b2.BindingGen, otherBody, otherModel, 16); rc != KvTokErrUnsupported {
-		t.Fatalf("flag on, other profile: rc %d, want UNSUPPORTED %d", rc, KvTokErrUnsupported)
+	for _, name := range []string{"v2_tools_full", "k1_thinking_false_no_tools", "k7_harness_shape"} {
+		otherBody := kvTestBodyWith(t, f.Cases[name].Request, func(top map[string]json.RawMessage) {
+			top["model"] = json.RawMessage(`"` + otherModel + `"`)
+		})
+		if _, rc := kvBridgeTokenizeChat(62, b2.BindingGen, otherBody, otherModel, 16); rc != KvTokErrUnsupported {
+			t.Fatalf("flag on, other profile, %s: rc %d, want UNSUPPORTED %d", name, rc, KvTokErrUnsupported)
+		}
 	}
 }
 

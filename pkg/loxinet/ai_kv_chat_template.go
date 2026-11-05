@@ -507,9 +507,11 @@ func kvChatExcludedFeature(body string, addGenerationPrompt bool) string {
 }
 
 // kvChatExcludedFeatureOpts is kvChatExcludedFeature with the tools-aware
-// variant: toolsAware=true skips only the tools/tool_choice refusal, for the
-// attested target whose render carries them (ai_kv_chat_tools.go); every
-// other refusal is unchanged. toolsAware=false is today's behavior exactly.
+// variant: toolsAware=true skips only the tools/tool_choice refusal and the
+// chat_template_kwargs refusal, for the attested target whose render carries
+// them (ai_kv_chat_tools.go: the kwargs are then validated against a closed
+// allowlist by kvChatToolsParse, which refuses anything else); every other
+// refusal is unchanged. toolsAware=false is today's behavior exactly.
 func kvChatExcludedFeatureOpts(body string, addGenerationPrompt bool, toolsAware bool) string {
 	top, msgs, ok := kvChatDecodeExact(body)
 	if !ok {
@@ -536,7 +538,7 @@ func kvChatExcludedFeatureOpts(body string, addGenerationPrompt bool, toolsAware
 		return "cache_salt"
 	case kvJSONPresent(top["prompt_embeds"]):
 		return "prompt_embeds"
-	case kvJSONPresent(top["chat_template_kwargs"]):
+	case !toolsAware && kvJSONPresent(top["chat_template_kwargs"]):
 		return "template_kwargs"
 	case differs(top["add_generation_prompt"], addGenerationPrompt):
 		return "add_generation_prompt"

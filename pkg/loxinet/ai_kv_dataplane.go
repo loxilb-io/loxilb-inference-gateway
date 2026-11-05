@@ -544,8 +544,10 @@ func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int)
 			addGen = e.Profile.RenderPolicy.AddGenerationPrompt
 		}
 		feature := kvChatExcludedFeature(body, addGen)
-		if feature == "tools" && hasProfile && kvToolsExactEligible(binding, e) {
-			// The tools refusal is lifted; every other refusal still applies.
+		if kvToolsExactLifts(feature) && hasProfile && kvToolsExactEligible(binding, e) {
+			// The tools and chat_template_kwargs refusals are lifted (the
+			// kwargs are allowlisted by kvChatToolsParse below); every other
+			// refusal still applies.
 			feature = kvChatExcludedFeatureOpts(body, addGen, true)
 			if feature == "" {
 				if tf := kvChatTemplateFeatureOpts(body, string(e.TemplateBytes), kvChatToolsModeledKeys); tf != "" {
