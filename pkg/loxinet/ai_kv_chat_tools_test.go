@@ -35,8 +35,10 @@ import (
 )
 
 // Golden vectors for the tools-aware render: captured from vLLM 0.30.0's
-// /tokenize with messages+tools (see the fixture's _note). Synthetic tools
-// and prompts only.
+// /v1/chat/completions with return_token_ids (the prompt ids the engine
+// hashed); /tokenize is the secondary oracle and tokenize_token_ids records
+// where it differs (see the fixture's _note). Synthetic tools and prompts
+// only.
 type kvToolsVectorFixture struct {
 	ProfileID        string `json:"profile_id"`
 	BaseModel        string `json:"base_model"`
@@ -55,7 +57,15 @@ type kvToolsVectorFixture struct {
 		Reason   string          `json:"reason"`
 		Request  json.RawMessage `json:"request"`
 		Rendered string          `json:"rendered"`
-		TokenIDs []uint32        `json:"token_ids"`
+		TokenIDs []uint32        `json:"token_ids"` // chat-path prompt_token_ids
+		// TokenizeTokenIDs is set only where /tokenize answers differently
+		// from the chat path (TokenizeChatRequest lacks the chat model's
+		// before-validators); the secondary oracle must then match THESE.
+		TokenizeTokenIDs []uint32 `json:"tokenize_token_ids,omitempty"`
+		// EngineStatus is the chat path's HTTP status for a refuse case:
+		// 400 = the engine refuses too, 200 = the engine coerces and the
+		// gateway refuses what it cannot reproduce.
+		EngineStatus int `json:"engine_status,omitempty"`
 	} `json:"cases"`
 }
 
@@ -539,6 +549,31 @@ func TestKvToolsVectors(t *testing.T) {
 			t.Fatalf("%s renders differently from v2", v)
 		}
 	}
+	// reasoning_content parity with the chat path's _normalize_messages_before:
+	// reasoning_content alone renders as reasoning (v7b = v7a), reasoning wins
+	// when both are set (v7d = v7a), a null reasoning yields to
+	// reasoning_content (v7e = v7a). /tokenize, which never reads
+	// reasoning_content, differs on v7b and v7e (the fixture records its
+	// answer) and agrees on v7d, where `reasoning` carries the text anyway.
+	v7a := f.Cases["v7a_reasoning_field"]
+	for _, v := range []string{"v7b_reasoning_content_field", "v7d_reasoning_and_reasoning_content", "v7e_reasoning_null_reasoning_content"} {
+		c := f.Cases[v]
+		if c.Rendered != v7a.Rendered {
+			t.Fatalf("%s renders differently from v7a", v)
+		}
+		differs := len(c.TokenizeTokenIDs) > 0 && !reflect.DeepEqual(c.TokenizeTokenIDs, c.TokenIDs)
+		if want := v != "v7d_reasoning_and_reasoning_content"; differs != want {
+			t.Fatalf("%s: tokenize_token_ids recorded=%v, want %v", v, differs, want)
+		}
+	}
+	for name, c := range f.Cases {
+		if c.Expect == "refuse" && c.EngineStatus != 200 && c.EngineStatus != 400 {
+			t.Fatalf("%s: refuse case without the chat path's engine_status", name)
+		}
+		if c.Expect == "match" && c.EngineStatus != 0 {
+			t.Fatalf("%s: engine_status on a match case", name)
+		}
+	}
 	// chat_template_kwargs: enable_thinking false appends the empty think
 	// block after the generation prompt, with and without tools; true,
 	// absent, {}, null and preserve_thinking alone render like the
@@ -839,37 +874,87 @@ func TestKvToolsVectorsLiveOracle(t *testing.T) {
 	if tok == nil {
 		t.Skip("tokenizer backend unavailable")
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
-	for _, name := range kvToolsSortedCases(f) {
-		c := f.Cases[name]
-		if c.Expect != "match" {
-			continue
-		}
-		// Append the /tokenize knob by text: re-marshaling through a Go map
-		// would sort the keys and change what the engine renders.
-		raw := append([]byte(nil), bytes.TrimSpace(c.Request)...) // copy: never alias the fixture
-		raw = append(raw[:len(raw)-1], []byte(`,"add_generation_prompt":true}`)...)
-		resp, err := client.Post(url+"/tokenize", "application/json", bytes.NewReader(raw))
+	client := &http.Client{Timeout: 120 * time.Second}
+	// post appends the oracle knobs to the fixture body by text (last key
+	// wins in the engine's JSON parser): re-marshaling through a Go map would
+	// sort the keys and change what the engine renders.
+	post := func(path, body, knobs string) (int, []byte) {
+		raw := append([]byte(nil), bytes.TrimSpace([]byte(body))...) // copy: never alias the fixture
+		raw = append(raw[:len(raw)-1], []byte(knobs)...)
+		resp, err := client.Post(url+path, "application/json", bytes.NewReader(raw))
 		if err != nil {
-			t.Fatalf("%s: oracle: %v", name, err)
+			t.Fatalf("oracle %s: %v", path, err)
 		}
 		out, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		var o struct {
-			Tokens []uint32 `json:"tokens"`
+		return resp.StatusCode, out
+	}
+	for _, name := range kvToolsSortedCases(f) {
+		c := f.Cases[name]
+		// A streaming body (the harness shape, whose stream_options the
+		// engine only accepts with stream=true) is sent as it is; the first
+		// SSE chunk then carries prompt_token_ids (chat_completion/
+		// serving.py:549-560). Anything else is sent non-streaming.
+		var top map[string]json.RawMessage
+		_ = json.Unmarshal(c.Request, &top)
+		streaming := string(top["stream"]) == "true"
+		knobs := `,"max_tokens":1,"stream":false,"return_token_ids":true}`
+		if streaming {
+			knobs = `,"max_tokens":1,"return_token_ids":true}`
 		}
-		if err := json.Unmarshal(out, &o); err != nil || len(o.Tokens) == 0 {
-			t.Fatalf("%s: oracle answered %d: %.200s", name, resp.StatusCode, out)
+		status, out := post("/v1/chat/completions", string(c.Request), knobs)
+		if c.Expect == "refuse" {
+			// The chat path's verdict on a refused shape is pinned: 400 (the
+			// engine refuses too) or 200 (the engine coerces).
+			if status != c.EngineStatus {
+				t.Fatalf("%s: chat path answered %d, fixture says %d: %.200s", name, status, c.EngineStatus, out)
+			}
+			t.Logf("%s: chat path %d as pinned", name, status)
+			continue
+		}
+		if streaming {
+			first := []byte(nil)
+			for _, line := range bytes.Split(out, []byte("\n")) {
+				line = bytes.TrimSpace(line)
+				if bytes.HasPrefix(line, []byte("data:")) && !bytes.Contains(line, []byte("[DONE]")) {
+					first = bytes.TrimSpace(line[5:])
+					break
+				}
+			}
+			out = first
+		}
+		var chat struct {
+			PromptTokenIDs []uint32 `json:"prompt_token_ids"`
+		}
+		if err := json.Unmarshal(out, &chat); err != nil || len(chat.PromptTokenIDs) == 0 {
+			t.Fatalf("%s: chat path answered %d: %.200s", name, status, out)
 		}
 		got, reason := kvRenderToolsCase(t, e, string(c.Request))
 		if reason != "" {
 			t.Fatalf("%s: refused %q", name, reason)
 		}
 		enc := tok.Encode(got, false)
-		if !reflect.DeepEqual(enc, o.Tokens) {
-			t.Fatalf("%s: live oracle ids differ (%d vs %d), first diff %d", name, len(enc), len(o.Tokens), kvFirstDiff(enc, o.Tokens))
+		if !reflect.DeepEqual(enc, chat.PromptTokenIDs) {
+			t.Fatalf("%s: chat-path prompt ids differ (%d vs %d), first diff %d", name, len(enc), len(chat.PromptTokenIDs), kvFirstDiff(enc, chat.PromptTokenIDs))
 		}
-		t.Logf("%s: %d ids match the live oracle", name, len(enc))
+		// Secondary oracle: /tokenize must agree with the chat path except
+		// where the fixture records its divergence.
+		status, out = post("/tokenize", string(c.Request), `,"add_generation_prompt":true}`)
+		var tk struct {
+			Tokens []uint32 `json:"tokens"`
+		}
+		if err := json.Unmarshal(out, &tk); err != nil || len(tk.Tokens) == 0 {
+			t.Fatalf("%s: /tokenize answered %d: %.200s", name, status, out)
+		}
+		want := chat.PromptTokenIDs
+		if len(c.TokenizeTokenIDs) > 0 {
+			want = c.TokenizeTokenIDs
+		}
+		if !reflect.DeepEqual(tk.Tokens, want) {
+			t.Fatalf("%s: /tokenize ids differ from the pinned secondary answer (%d vs %d), first diff %d", name, len(tk.Tokens), len(want), kvFirstDiff(tk.Tokens, want))
+		}
+		t.Logf("%s: %d ids match the chat path (/tokenize %s)", name, len(enc),
+			map[bool]string{true: "differs as pinned", false: "agrees"}[len(c.TokenizeTokenIDs) > 0])
 	}
 }
 

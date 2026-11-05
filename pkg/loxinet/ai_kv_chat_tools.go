@@ -58,13 +58,19 @@
  *     shape the structured output. Verified live with return_token_ids on
  *     /v1/chat/completions: auto, none, named and required rendered the same
  *     prompt ids as /tokenize.
- *   - messages: vllm/entrypoints/chat_utils.py:2004-2080
- *     (_parse_chat_message_content) builds {role, content} with content ""
- *     for null, text parts joined by "\n" (chat_utils.py:1838-1848); an
+ *   - messages: before field validation, ChatCompletionRequest's
+ *     _normalize_messages_before (chat_completion/protocol.py:532-557) pops
+ *     `reasoning_content` from EVERY message and, when the message's
+ *     `reasoning` is absent or null, stores the popped value as `reasoning`.
+ *     TokenizeChatRequest (serve/tokenize/protocol.py) has no such
+ *     validator, which is why /tokenize is not the oracle for this key (it
+ *     renders reasoning_content as absent; the chat path renders it as
+ *     reasoning). vllm/entrypoints/chat_utils.py:2004-2080
+ *     (_parse_chat_message_content) then builds {role, content} with content
+ *     "" for null, text parts joined by "\n" (chat_utils.py:1838-1848); an
  *     assistant turn keeps tool_calls when present and not None, and copies
- *     a string `reasoning` to both reasoning and reasoning_content — the
- *     request's own `reasoning_content` key is NOT copied; a tool turn keeps
- *     tool_call_id. chat_utils.py:2081-2155 (_postprocess_messages) drops an
+ *     a string `reasoning` to both reasoning and reasoning_content; a tool
+ *     turn keeps tool_call_id. chat_utils.py:2081-2155 (_postprocess_messages) drops an
  *     empty tool_calls list and replaces each function.arguments string by
  *     json.loads of it: "" or None become {}, valid JSON that is not an
  *     object becomes {}, malformed JSON is coerced to {} with a warning.
@@ -76,10 +82,16 @@
  *     (kvChatToolsKwargsAllow, with the engine's merge order and the
  *     template's reads documented there); anything else keeps the
  *     template_kwargs refusal with a reason naming the key or the value.
- *   - /tokenize with messages+tools runs the same preprocess_chat
+ *   - Oracle: the golden vectors are captured from /v1/chat/completions with
+ *     return_token_ids (the prompt_token_ids the engine hashed), because
+ *     that is the request model the gateway sits in front of. /tokenize with
+ *     messages+tools runs the same preprocess_chat
  *     (vllm/entrypoints/serve/tokenize/serving.py:70-92, chat_template_kwargs
- *     included at :75), which is why it is a valid oracle for the golden
- *     vectors.
+ *     included at :75) but through TokenizeChatRequest, which lacks the chat
+ *     model's before-validators (reasoning_content, check_tool_usage) and
+ *     build_chat_params extras (documents, reasoning_effort, tool_choice);
+ *     it is kept as a secondary check and the fixture records where the two
+ *     differ.
  *
  * Where the engine coerces input the gateway cannot reproduce exactly
  * (malformed tool_call arguments, NaN/Infinity literals Python's json accepts,
@@ -581,21 +593,23 @@ func kvChatToolsMessage(m map[string]json.RawMessage) (*kvJjDict, string) {
 				d.set("tool_calls", calls)
 			}
 		}
-		// `reasoning` (str | None) is copied to reasoning and
-		// reasoning_content; the request's own reasoning_content is not read
-		// by the engine's message parser (chat_utils.py:2037-2042).
-		if raw := m["reasoning"]; kvJSONPresent(raw) {
+		// _normalize_messages_before (chat_completion/protocol.py:532-557):
+		// the request's reasoning_content is always popped, and becomes
+		// `reasoning` when `reasoning` is absent or null. `reasoning`
+		// (str | None) is then copied to reasoning and reasoning_content
+		// (chat_utils.py:2037-2042); a non-string value is what the
+		// message-type union silently drops, so the gateway refuses it.
+		raw := m["reasoning"]
+		if !kvJSONPresent(raw) {
+			raw = m["reasoning_content"]
+		}
+		if kvJSONPresent(raw) {
 			s, ok := kvJSONString(raw)
 			if !ok {
 				return nil, kvToolsRefuseReasoning
 			}
 			d.set("reasoning", s)
 			d.set("reasoning_content", s)
-		}
-		if raw := m["reasoning_content"]; kvJSONPresent(raw) {
-			if _, ok := kvJSONString(raw); !ok {
-				return nil, kvToolsRefuseReasoning
-			}
 		}
 	case "tool":
 		s, ok := kvJSONString(m["tool_call_id"])
