@@ -80,7 +80,9 @@ Agent-mode knobs:
                    looked up while the stream is open) or none. Default header.
   GW_API           gateway REST base for ENDPOINT_SOURCE=ct, e.g. http://host:11111
   RECORD_CSV       per-request record file (ts, rule, agent, conv, turn, status,
-                   ttft_s, total_s, endpoint, local_port, prompt/completion tokens)
+                   ttft_s, total_s, endpoint, local_port, prompt/completion tokens).
+                   RECORD_CSV.runinfo.json records the Python version, this file's
+                   sha256 and the knobs of the run (also printed as "run-info:").
   PACE_S / DURATION_S / PROMPT_SALT / METRICS_* as above.
 """
 import csv
@@ -131,6 +133,24 @@ THINKING = os.environ.get("THINKING", "kwargs").strip().lower()
 if THINKING not in ("kwargs", "prompt"):
     sys.exit("THINKING must be kwargs or prompt (got %r)" % THINKING)
 SEED = int(os.environ.get("SEED", "20261105"))
+
+
+def seed_int(*parts):
+    """Deterministic int seed from SEED and the parts. random.Random() seeded with a
+    tuple raised TypeError on Python >= 3.11 (only int/float/str/bytes/bytearray
+    are accepted), so the seed is the first 8 bytes of sha256(repr(...))."""
+    return int.from_bytes(hashlib.sha256(repr((SEED,) + parts).encode()).digest()[:8], "big")
+
+
+def run_info():
+    """What reproduces a run: interpreter, this file's digest and the knobs."""
+    with open(__file__, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    return {"python": sys.version.split()[0], "gen_traffic_sha256": sha, "mode": MODE, "preset": PRESET,
+            "seed": SEED, "system_prompt": SYSTEM_PROMPT, "agents": AGENTS, "agent_conc": AGENT_CONC,
+            "tools_per_agent": TOOLS_PER_AGENT, "turns": [TURNS_MIN, TURNS_MAX], "thinking": THINKING,
+            "pace_s": PACE_S, "duration_s": DURATION_S, "model": MODEL,
+            "targets": [t[0] for t in TARGETS], "started": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 AGENT_MAX_TOKENS = int(os.environ.get("AGENT_MAX_TOKENS", "160"))
 ENDPOINT_SOURCE = os.environ.get("ENDPOINT_SOURCE", "header").strip().lower()
 ENDPOINT_HEADER = os.environ.get("ENDPOINT_HEADER", "X-Engine-Id")
@@ -397,7 +417,7 @@ def agent_tools(agent_idx, n):
     """n synthetic tools for one agent. The same (SEED, n) gives every agent the
     same shapes; the per-agent name suffix makes each agent's set distinct, so
     their rendered prefixes (and KV hash chains) differ."""
-    rng = random.Random((SEED, "tools", n))
+    rng = random.Random(seed_int("tools", n))
     tools, used = [], set()
     while len(tools) < n:
         verb, noun, server = rng.choice(TOOL_VERBS), rng.choice(TOOL_NOUNS), rng.choice(TOOL_SERVERS)
@@ -670,12 +690,21 @@ def agent_conversation(rule, url, agent, conv, system, tools, rng):
 def agent_worker(rule, url, agent, slot, system, tools, stop_at):
     conv = 0
     while not stop_at or time.time() < stop_at:
-        rng = random.Random((SEED, rule, agent, slot, conv))
+        rng = random.Random(seed_int(rule, agent, slot, conv))
         agent_conversation(rule, url, agent, f"{slot}-{conv}", system, tools, rng)
         conv += 1
 
 
+def write_run_info():
+    info = run_info()
+    print("run-info: " + json.dumps(info, sort_keys=True), flush=True)
+    if RECORD_CSV:
+        with open(RECORD_CSV + ".runinfo.json", "w") as f:
+            json.dump(info, f, indent=1, sort_keys=True)
+
+
 def agent_main():
+    write_run_info()
     stop_at = time.time() + DURATION_S if DURATION_S > 0 else 0
     if METRICS_PORT:
         srv = http.server.ThreadingHTTPServer((METRICS_ADDR, METRICS_PORT), MetricsHandler)
@@ -707,6 +736,7 @@ def agent_main():
 
 
 def main():
+    write_run_info()
     stop_at = time.time() + DURATION_S if DURATION_S > 0 else 0
     if METRICS_PORT:
         srv = http.server.ThreadingHTTPServer((METRICS_ADDR, METRICS_PORT), MetricsHandler)
