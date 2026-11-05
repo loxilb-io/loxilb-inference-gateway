@@ -9,9 +9,10 @@ contract live-pinned against `b10524` on a 5-EP GPU fleet:
   opposite of TRT-LLM's `extra="forbid"`. A foreign dialect leaking in
   serves 200 here (and that quiet failure mode is exactly why the typed
   guards exist).
-- **Malformed JSON answers HTTP 500** (with the OAI error object), not 400
-  — the live-pinned taxonomy quirk; the relay must pass it through, not
-  reshape it.
+- **The engine directly answers malformed JSON with HTTP 500** and the OAI
+  error object, preserving the live-pinned engine quirk. Through the Gateway,
+  malformed JSON is refused first with HTTP 400 `invalid_json_body` and zero
+  backend receipts. The harness checks these two boundaries independently.
 - **`":"` SSE ping comments** whenever generation stalls past
   `--sse-ping-interval` — the mock scripts a mid-stream stall so the
   ping-through-VIP behavior gets pinned (the real fleet's prefill outruns
@@ -62,7 +63,7 @@ build, pin `LOXILB_DOCKER_IMAGE` to the locally-built image.
 | Leg | What it pins |
 |---|---|
 | A | typed rules accepted; every KV/P/D shape rejected for llamacpp (`kvExactMode`, `pd_disagg_mode`, non-default `kvZmqPort`/`kvDpRankCount`/`kvBlockSize`, any explicit `kvHashAlgo`), each scored by the refusal message of the check that owns it — the bodies are otherwise valid (`kvExactMode:3` with a model name; P/D with a prefill and a decode endpoint), so a generic shape check cannot answer for the llamacpp guard |
-| B | non-stream + stream happy path with receipts and `[DONE]`; unknown fields tolerated (200); malformed JSON relayed as the engine's **500** |
+| B | non-stream + stream happy path with receipts and `[DONE]`; unknown fields tolerated (200); direct malformed JSON returns engine **500**; Gateway refuses **400** before any backend receipt |
 | C | ping-through-VIP: `":"` comment frames relayed mid-stream during a scripted stall, stream completes |
 | D | **system-prompt keying, positive**: system-prompt families pin to one EP each, warm `cached_tokens` receipts, `[PREFIX_EXTRACTED]` in the dp log |
 | E | **system-prompt keying, negative**: user-only payloads → zero new extractions — the documented spray; production rail = carry a system prompt |

@@ -70,6 +70,7 @@ _fail_next = False
 _fail_count = 0
 _stall_secs = 0.0            # one-shot
 _served = 0
+_received = 0  # chat POST bodies received, including malformed JSON
 _prompt_tokens_total = 0     # excl. cached (engine counter semantics)
 _prompt_tokens_cached_total = 0
 _tokens_predicted_total = 0
@@ -190,9 +191,12 @@ class MockLlamacppHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         global _fail_next, _fail_count, _stall_secs
         global _served, _prompt_tokens_total, _prompt_tokens_cached_total
-        global _tokens_predicted_total
+        global _tokens_predicted_total, _received
         n = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(n).decode() if n > 0 else "{}"
+        if self.path in ("/v1/chat/completions", "/v1/completions", "/completion"):
+            with _lock:
+                _received += 1
 
         try:
             req = json.loads(raw)
@@ -396,7 +400,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         if self.path == "/admin/status":
             with _lock:
                 self._reply({
-                    "ep_idx": EP_IDX, "served": _served,
+                    "ep_idx": EP_IDX, "served": _served, "received": _received,
                     "loading": _loading, "sleeping": _sleeping,
                     "slots_full": _slots_full,
                     "fail_next": _fail_next, "fail_count": _fail_count,
