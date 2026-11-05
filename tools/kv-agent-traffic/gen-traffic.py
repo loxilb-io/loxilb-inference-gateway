@@ -88,6 +88,9 @@ Agent-mode knobs:
                    ttft_s, total_s, endpoint, local_port, prompt/completion tokens).
                    RECORD_CSV.runinfo.json records the Python version, this file's
                    sha256 and the knobs of the run (also printed as "run-info:").
+  Status values: an HTTP status, exc_<Exception>, or for a 200 whose SSE stream
+  carried a data: {"error": ...} chunk / ended without data: [DONE]:
+  sse_error / sse_truncated (never counted as a successful answer).
   PACE_S / DURATION_S / PROMPT_SALT / METRICS_* as above.
 """
 import csv
@@ -322,25 +325,36 @@ def one_request(rule, url, system, rng):
     METRICS.add_inflight(rule, 1)
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
+            status = r.status
             if stream:
+                done, sse_error = False, False
                 for line in r:  # drain SSE so the stream stays open while generating
                     line = line.strip()
                     if not line.startswith(b"data:"):
                         continue
                     payload = line[5:].strip()
                     if payload == b"[DONE]":
+                        done = True
                         continue
                     try:
                         j = json.loads(payload)
                     except ValueError:
                         continue
+                    if not isinstance(j, dict):
+                        continue
+                    if j.get("error"):
+                        sse_error = True
+                        break
                     if ttft is None and first_token_in(j):
                         ttft = time.time() - t0
                     if j.get("usage"):
                         usage = j["usage"]
+                if sse_error:
+                    status = "sse_error"
+                elif not done:
+                    status = "sse_truncated"
             else:
                 usage = json.load(r).get("usage")
-            status = r.status
     except urllib.error.HTTPError as e:
         status = e.code
     except Exception as e:  # network error, timeout
@@ -616,17 +630,26 @@ def agent_request(rule, url, body, agent, conv, turn):
         if status != 200:
             resp.read()
         else:
+            done, sse_error = False, None
             for raw in resp:
                 line = raw.strip()
                 if not line.startswith(b"data:"):
                     continue
                 payload = line[5:].strip()
                 if payload == b"[DONE]":
+                    done = True
                     continue
                 try:
                     j = json.loads(payload)
                 except ValueError:
                     continue
+                if not isinstance(j, dict):
+                    continue
+                if j.get("error"):
+                    # An error delivered inside a 200 stream (engine fault after
+                    # the headers went out) is not an answer.
+                    sse_error = j["error"]
+                    break
                 for c in j.get("choices") or []:
                     d = c.get("delta") or {}
                     if ttft is None and (d.get("content") or d.get("reasoning_content") or d.get("reasoning") or d.get("tool_calls")):
@@ -646,6 +669,13 @@ def agent_request(rule, url, body, agent, conv, turn):
                             slot["arguments"] += fn["arguments"]
                 if j.get("usage"):
                     usage = j["usage"]
+            if sse_error is not None:
+                status = "sse_error"
+                sse_detail = sse_error.get("message", sse_error) if isinstance(sse_error, dict) else sse_error
+                print(f"{time.strftime('%H:%M:%S')} {rule} agent={agent} conv={conv} turn={turn} stream error: {str(sse_detail)[:160]}", flush=True)
+            elif not done:
+                # The stream ended without data: [DONE]: a truncated answer.
+                status = "sse_truncated"
     except http.client.HTTPException as e:
         status = f"exc_{type(e).__name__}"
     except Exception as e:  # network error, timeout
