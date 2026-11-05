@@ -9,7 +9,7 @@ import sys
 from client import CASE_COUNT
 
 
-def evaluate(expected, events, receipts, required_count=CASE_COUNT):
+def evaluate(expected, events, receipts, required_count=CASE_COUNT, dataplane_log=None):
     errors = []
     rows = []
     grouped = defaultdict(list)
@@ -53,6 +53,17 @@ def evaluate(expected, events, receipts, required_count=CASE_COUNT):
         rows.append(row)
         if not passed:
             errors.append(f"{request_id}: response/receipt/audit mismatch")
+    pause = expected.get("boundary-stream-guard-pause")
+    if pause is not None:
+        probe = pause.get("pause_probe") or {}
+        if (probe.get("seconds", 0) < 1 or probe.get("heads") != 1
+                or probe.get("receipts") != 0 or pause.get("pause_after") != 13):
+            errors.append("stream guard pause did not preserve incomplete backend framing")
+        guard_line = "request_id=boundary-stream-guard-pause json_guard_streaming=1"
+        if dataplane_log is None or guard_line not in dataplane_log:
+            errors.append("stream guard engagement log missing for pause request")
+        if dataplane_log and "JSON_GUARD_SKIP" in dataplane_log:
+            errors.append("fail-open JSON_GUARD_SKIP log found")
     if receipts != successful:
         errors.append("backend receipt inventory differs from successful request IDs")
 
@@ -92,7 +103,8 @@ def main():
     expected = json.loads((evidence / "expected.json").read_text())
     receipts = json.loads((evidence / "receipts.json").read_text())
     events = read_audit(evidence)
-    rows, summary = evaluate(expected, events, receipts)
+    rows, summary = evaluate(expected, events, receipts,
+                             dataplane_log=(evidence / "dataplane.log").read_text())
     (evidence / "request-results.json").write_text(json.dumps(rows, indent=2) + "\n")
     (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     for row in rows:

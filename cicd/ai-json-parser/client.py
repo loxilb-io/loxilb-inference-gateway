@@ -16,7 +16,7 @@ import urllib.request
 
 MODEL = "Qwen/Qwen3-32B-FP8"
 BODY_BYTES = 106206
-CASE_COUNT = 131
+CASE_COUNT = 133
 RESULT_LOCK = threading.Lock()
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -86,11 +86,12 @@ def configure(gateway, backend, evidence):
 
     for port, protocol, auth in [(8081, "http1", "disabled"),
                                  (8082, "http1", "required"),
-                                 (8083, "http2", "disabled"), (8084, "http2", "required")]:
+                                 (8083, "http2", "disabled"), (8084, "http2", "required"),
+                                 (8085, "http1", "disabled")]:
         rule = {
             "serviceArguments": {
                 "externalIP": gateway, "port": port, "protocol": "tcp",
-                "mode": 4, "sel": 0, "host": gateway, "model_name": MODEL,
+                "mode": 4, "sel": 0, "host": gateway, "model_name": "m" if port == 8085 else MODEL,
                 "sse_mode": True, "inactiveTimeOut": 30,
                 "backend_protocol": protocol, "api_key_auth": auth,
             },
@@ -125,6 +126,7 @@ def configure(gateway, backend, evidence):
     for port in (8081, 8082, 8083, 8084):
         assert actual[port]["model_name"] == MODEL
     assert actual[8083]["backend_protocol"] == "http2"
+    assert actual[8085]["model_name"] == "m"
     keys = {}
     descriptions = {}
     for name, models in [("allowed", [MODEL]), ("denied", ["other-model"])]:
@@ -203,7 +205,7 @@ class Matrix:
     def query(self, raw, request_id, *, media="application/json", offset=None,
               pieces=None, connection=None, xmodel=False, extra="", early=None,
               port=8081, expected_status=200, expected_error=None, api_key=None,
-              chunked=False, headers_only=False, trailers=False):
+              chunked=False, headers_only=False, trailers=False, final_chunk_at=None, pause_after=None):
         before = self.receipts().get(request_id, 0)
         owned = connection is None
         if owned:
@@ -230,6 +232,7 @@ class Matrix:
         head += b"Connection: close\r\n\r\n" if owned else b"Connection: keep-alive\r\n\r\n"
         early_seen = None
         stream_probe = None
+        pause_probe = None
         started = time.perf_counter()
         try:
             start = 0
@@ -250,8 +253,20 @@ class Matrix:
                     time.sleep(0.025)
             if not headers_only:
                 stride = 16384 if chunked or len(raw) > 768 * 1024 else len(raw)
-                for offset_at in range(0, len(raw), stride):
-                    part = raw[offset_at:offset_at + stride]
+                body_start = 0
+                if pause_after is not None:
+                    assert not chunked and 0 < pause_after < len(raw)
+                    connection.sendall(raw[:pause_after])
+                    pause_started = time.monotonic()
+                    time.sleep(1)
+                    pause_probe = {"seconds": time.monotonic() - pause_started,
+                                   "heads": get_json(f"http://{self.backend}:8000/heads").get(request_id, 0),
+                                   "receipts": self.receipts().get(request_id, 0)}
+                    assert pause_probe["seconds"] >= 1 and pause_probe["heads"] == 1 and pause_probe["receipts"] == 0, pause_probe
+                    body_start = pause_after
+                tail_at = None if final_chunk_at is None else final_chunk_at - body_start
+                for offset_at, part in body_parts(raw[body_start:], stride, tail_at):
+                    offset_at += body_start
                     wire = (f"{len(part):x}\r\n".encode() + part + b"\r\n") if chunked else part
                     try:
                         connection.sendall(wire)
@@ -294,6 +309,7 @@ class Matrix:
             expected_status, expected_error, protocol="http1",
             content_type_offset=offset, early_backend_head=early_seen, early_expected=early,
             latency_ms=elapsed_ms, chunked=chunked, streaming_probe=stream_probe,
+            pause_after=pause_after, pause_probe=pause_probe,
         )
 
     def query_h2(self, raw, request_id, expected_status=200, expected_error=None,
@@ -404,6 +420,13 @@ class Matrix:
             self.query(duplicate_payload(location, escaped, byte_size),
                        f"boundary-chunked-duplicate-{location}-{escaped}", chunked=True,
                        expected_status=400, expected_error="duplicate_model_field")
+        pause_prefix = b'{"model":"m"}'
+        self.query(pause_prefix + b" " * (800 * 1024), "boundary-stream-guard-pause",
+                   port=8085, pause_after=len(pause_prefix))
+        user_duplicate, final_chunk_at = chunked_user_duplicate()
+        self.query(user_duplicate, "boundary-chunked-user-duplicate-tail", chunked=True,
+                   final_chunk_at=final_chunk_at, expected_status=400,
+                   expected_error="duplicate_user_field")
         deep = (b'{"model":"' + MODEL.encode() + b'","user":"deep-session","nested":'
                 + b"[" * 12000 + b"0" + b"]" * 12000 + b"}")
         self.query(deep, "boundary-deep-h1")
@@ -489,6 +512,28 @@ class Matrix:
             request_id: 1 for request_id, result in self.results.items() if result["status"] == 200
         }, "backend receipt inventory differs from successful requests"
         print("BOUNDARY_RUNTIME_PASS", flush=True)
+
+
+def body_parts(raw, stride, final_chunk_at=None):
+    """Keep a selected tail in its own final data chunk."""
+    end = len(raw) if final_chunk_at is None else final_chunk_at
+    if not 0 < end <= len(raw):
+        raise ValueError("final chunk boundary must be inside the body")
+    for offset in range(0, end, stride):
+        yield offset, raw[offset:min(offset + stride, end)]
+    if end < len(raw):
+        yield end, raw[end:]
+
+
+def chunked_user_duplicate():
+    first = b',"user":"first"'
+    tail = b',"user":"last"}'
+    # The final data chunk starts only after 800KiB of valid object prefix.
+    raw = payload(8193, body_bytes=800 * 1024 + 1 - len(first))
+    marker = b'"model":"' + MODEL.encode() + b'"'
+    prefix = raw.replace(marker, marker + first, 1)[:-1]
+    assert len(prefix) == 800 * 1024
+    return prefix + tail, len(prefix)
 
 
 def duplicate_payload(location, escaped, byte_size):

@@ -26,8 +26,13 @@ consume recursive stack frames. Buffered requests share the scanner result
 between admission, model routing and prefix extraction. Top-level primitives
 cannot swallow a quote, colon or container delimiter; `true`, `false` and `null`
 are exact, and a comma must be followed by another key. This bounded operand
-scanner does not implement the complete RFC 8259 number or nested-value grammar. Optional parsing of
-bodies over 64KiB counts tokens first, avoiding an initial failed 2,048-token pass.
+scanner does not implement the complete RFC 8259 number or nested-value grammar.
+For example, the scanner accepts `{"a":-}` and `{"a":1x2}`, which strict backend
+JSON parsers refuse. It refuses `{"a":tru}`, `{"a":truex}`, `{"model":"a",}`
+and `{"a":1"model":"b"}`. Number validation uses the bounded lexical class
+`[0-9A-Za-z.+-]` so quotes, colons and container syntax cannot be hidden inside
+a primitive; it is not a full RFC 8259 number grammar. Optional parsing of bodies
+over 64KiB counts tokens first, avoiding an initial failed 2,048-token pass.
 
 H1 Content-Length bodies above the existing 768KiB inspection cap and chunked
 JSON bodies keep streaming. HTTP/1.1 chunked JSON always uses this path and does
@@ -37,8 +42,16 @@ chunks, independent of the receive buffer, and the backend leg cannot enter
 sockmap relay while that guard is active. One trailing byte for Content-Length,
 or a five-byte suffix for chunked framing, is withheld until the JSON scan and
 HTTP framing complete. A runtime body-span check protects that suffix hold even
-in builds with assertions disabled; an insufficient span uses the prior relay
-path and writes a debug diagnostic. The zero-chunk callback validates JSON before any trailer
+in builds with assertions disabled; an insufficient span keeps the guard active,
+logs `JSON_GUARD_WAIT` and waits in the client read loop for more body bytes.
+The configured connection idle timeout still covers this wait (30 seconds in
+this harness); no separate timer is added.
+Normal dispatch waits for `model_ready`, so the held suffix already fits; the
+otherwise unreachable defensive WAIT branch is exercised by a unit read-loop
+fixture. The runtime pause regression sends headers plus `{"model":"m"}`, waits
+one second, then sends the remaining JSON whitespace. Its oracle requires the
+`json_guard_streaming=1` engagement log, zero receipts during the pause and one
+complete backend receipt after completion; it does not require a WAIT log. The zero-chunk callback validates JSON before any trailer
 can complete the backend request. A late duplicate resets/closes the backend
 leg without reuse, cancels any unused token reservation without a settlement,
 answers 400 and records exactly one sec.ai.deny. The terminal refusal remains
@@ -105,6 +118,8 @@ mock image, including after failures. A supplied mock image is retained.
 | Duplicate model at front, 800KiB tail and escaped tail, H1 and H2 | 6 | 400, zero complete receipts |
 | Chunked normal 2MiB and 800KiB with trailers | 2 | 200 |
 | Chunked duplicate front/tail/escaped tail | 3 | 400, zero complete receipts |
+| H1 Content-Length, complete model object then 1s pause before remaining whitespace | 1 | 200, guard engaged, one complete receipt |
+| Chunked duplicate user in final data chunk after 800KiB | 1 | 400 duplicate_user_field, zero complete receipts |
 | Depth 12,000, H1 and H2 | 2 | 200 |
 | Equal/conflicting duplicate Content-Type, H1 and H2 | 4 | 400, zero complete receipts |
 | Real allowed/denied API keys at 106,206 bytes and 800KiB, H1 and H2 | 8 | 200 / 403 model_not_allowed |
@@ -117,7 +132,7 @@ mock image, including after failures. A supplied mock image is retained.
 | H2 text/plain and media suffix relay; mixed-case JSON with parameters | 3 | 200 / 400 invalid_model_field |
 | Normal true/false/null/exponent-number fields, H1/H2 | 2 | 200 |
 | H2 non-JSON authenticated relay and forbidden body model with an allowed header hint | 2 | 200 / 403 model_not_allowed |
-| **Total** | **131** | **86 successes, 36 metadata refusals, 9 policy refusals** |
+| **Total** | **133** | **87 successes, 37 metadata refusals, 9 policy refusals** |
 
 The original 106,206-byte, 3,586-item fixture hashes are pinned by test_oracle.py.
 Structural items mean JSMN tokens, including object keys and containers, rather

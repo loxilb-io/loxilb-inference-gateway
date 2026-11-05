@@ -9,10 +9,43 @@ import json
 import unittest
 
 from check_results import evaluate, read_audit
-from client import MODEL, duplicate_payload, payload, token_count
+from client import CASE_COUNT, MODEL, body_parts, chunked_user_duplicate, duplicate_payload, payload, token_count
 
 
 class OracleTests(unittest.TestCase):
+    def test_chunked_user_duplicate_is_in_final_chunk(self):
+        raw, boundary = chunked_user_duplicate()
+        parts = list(body_parts(raw, 16384, boundary))
+        self.assertEqual(boundary, 800 * 1024)
+        self.assertEqual(b"".join(part for _, part in parts), raw)
+        self.assertEqual(parts[-1], (boundary, b',"user":"last"}'))
+        pairs = json.loads(raw, object_pairs_hook=list)
+        self.assertEqual([value for key, value in pairs if key == "user"], ["first", "last"])
+
+    def test_declared_matrix_count_is_enforced(self):
+        _, summary = evaluate({}, [], {})
+        self.assertEqual(summary["declared"], CASE_COUNT)
+        self.assertFalse(summary["passed"])
+        self.assertIn(f"executed 0 cases, expected {CASE_COUNT}", summary["errors"])
+
+    def test_pause_requires_guard_log_and_incomplete_receipt(self):
+        request_id = "boundary-stream-guard-pause"
+        expected = {request_id: {"status": 200, "error": None, "done": True,
+                                "backend_receipts": 1, "expected": True,
+                                "pause_after": 13,
+                                "pause_probe": {"seconds": 1.01, "heads": 1, "receipts": 0}}}
+        events = [{"request_id": request_id, "event_type": "data.ai.complete",
+                   "outcome": {"status": 200}}]
+        def check(log):
+            return evaluate(expected, events, {request_id: 1}, required_count=1,
+                            dataplane_log=log)[1]["passed"]
+        engaged = "[JSON_GUARD_STREAM] fd=1 request_id=" + request_id + " json_guard_streaming=1 hold=1"
+        self.assertTrue(check(engaged))
+        self.assertFalse(check(""))
+        self.assertFalse(check(engaged + "\n[JSON_GUARD_SKIP]"))
+        expected[request_id]["pause_probe"]["receipts"] = 1
+        self.assertFalse(check(engaged))
+
     def setUp(self):
         self.request_id = "boundary-test"
         self.expected = {
