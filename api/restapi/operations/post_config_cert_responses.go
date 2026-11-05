@@ -193,6 +193,51 @@ func (o *PostConfigCertForbidden) WriteResponse(rw http.ResponseWriter, producer
 	}
 }
 
+// PostConfigCertConflictCode is the HTTP code returned for type PostConfigCertConflict
+const PostConfigCertConflictCode int = 409
+
+/*
+PostConfigCertConflict Certificate ID already in use
+
+swagger:response postConfigCertConflict
+*/
+type PostConfigCertConflict struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigCertConflict creates PostConfigCertConflict with default headers values
+func NewPostConfigCertConflict() *PostConfigCertConflict {
+
+	return &PostConfigCertConflict{}
+}
+
+// WithPayload adds the payload to the post config cert conflict response
+func (o *PostConfigCertConflict) WithPayload(payload *models.Error) *PostConfigCertConflict {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config cert conflict response
+func (o *PostConfigCertConflict) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigCertConflict) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(409)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigCertInternalServerErrorCode is the HTTP code returned for type PostConfigCertInternalServerError
 const PostConfigCertInternalServerErrorCode int = 500
 

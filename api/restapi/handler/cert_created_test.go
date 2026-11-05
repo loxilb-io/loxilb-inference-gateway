@@ -26,6 +26,9 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,5 +111,80 @@ func TestCertCreateAnswersWithTheCertID(t *testing.T) {
 	certStoreMu.Unlock()
 	if !stored {
 		t.Errorf("the answered certId %q is not in the registry", minted)
+	}
+}
+
+func TestCertCreateProtectsExistingAndConcurrentEntries(t *testing.T) {
+	dir := t.TempDir()
+	prevCmn, prevHandler := cmn.CertManagedDir, certManagedDir
+	cmn.CertManagedDir, certManagedDir = dir, dir
+	t.Cleanup(func() {
+		cmn.CertManagedDir, certManagedDir = prevCmn, prevHandler
+		certStoreMu.Lock()
+		delete(certStore, "duplicate-race")
+		certStoreMu.Unlock()
+	})
+
+	bundle := testCABundlePEM(t)
+	post := func(id, usage string, keyPEM *string) int {
+		res := ConfigPostCert(operations.PostConfigCertParams{
+			HTTPRequest: httptest.NewRequest(http.MethodPost, "/netlox/v1/config/cert", nil),
+			Attr:        &models.Cert{CertID: &id, Usage: &usage, CertPem: &bundle, KeyPem: keyPEM},
+		}, nil)
+		switch r := res.(type) {
+		case *operations.PostConfigCertCreated:
+			return http.StatusCreated
+		case *operations.PostConfigCertConflict:
+			return int(r.Payload.Code)
+		default:
+			return 0
+		}
+	}
+
+	// An incomplete directory may still hold pre-existing private material.
+	partial := filepath.Join(dir, "duplicate-partial")
+	if err := os.Mkdir(partial, 0700); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(partial, "server.key")
+	if err := os.WriteFile(key, []byte("existing key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	attemptedKey := "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n"
+	if code := post("duplicate-partial", cmn.CertUsageServer, &attemptedKey); code != http.StatusConflict {
+		t.Fatalf("existing partial directory returned %d, want 409", code)
+	}
+	if got, err := os.ReadFile(key); err != nil || string(got) != "existing key" {
+		t.Fatalf("existing key changed: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan int, 8)
+	start := make(chan struct{})
+	for range cap(results) {
+		wg.Go(func() {
+			<-start
+			results <- post("duplicate-race", cmn.CertUsageCA, nil)
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	created := 0
+	for code := range results {
+		switch code {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+		default:
+			t.Fatalf("unexpected POST result %d", code)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d times, want 1", created)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "duplicate-race", "ca.crt"))
+	if err != nil || string(got) != bundle {
+		t.Fatalf("winning certificate changed: %v", err)
 	}
 }
