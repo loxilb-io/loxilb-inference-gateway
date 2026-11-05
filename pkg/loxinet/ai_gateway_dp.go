@@ -1166,6 +1166,29 @@ func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, s
 	return out
 }
 
+func tokenQuotaReleaseInternal(store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, reservedAmt int, resEpoch int64) {
+	if reservedAmt <= 0 {
+		return
+	}
+	for _, k := range quotaReleaseKeysFor(tenantID, modelName, userID, keyID, svcIdent) {
+		store.ReleaseReservation(k, reservedAmt, resEpoch)
+	}
+}
+
+// A late framing denial cancels a claim; it has no response usage to settle.
+// The C caller clears the amount/epoch and records the refusal itself.
+//
+//export llb_ai_token_quota_release
+func llb_ai_token_quota_release(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, reservedToks C.int, resEpoch C.longlong) {
+	defer func() {
+		if r := recover(); r != nil {
+			tk.LogIt(tk.LogCritical, "[AIGateway] reservation cancellation panic: %v\n", r)
+		}
+	}()
+	tokenQuotaReleaseInternal(getGlobalRL(), C.GoString(tenantID), C.GoString(modelName),
+		C.GoString(userID), C.GoString(keyID), C.GoString(svcIdent), int(reservedToks), int64(resEpoch))
+}
+
 // tokenQuotaConsumeInternal is the pure-Go token accounting logic, separated
 // from the CGO export so that unit tests can exercise it without C types.
 // It settles the request's admission-time reservation (reservedAmt tagged
@@ -1209,9 +1232,7 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	// Charging below therefore passes no reservation: the claim is already
 	// back, and letting SettleTokens release it a second time would subtract
 	// it twice from any bucket present in both sets.
-	for _, k := range quotaReleaseKeysFor(tenantID, modelName, userID, keyID, svcIdent) {
-		store.ReleaseReservation(k, reservedAmt, resEpoch)
-	}
+	tokenQuotaReleaseInternal(store, tenantID, modelName, userID, keyID, svcIdent, reservedAmt, resEpoch)
 	// The request's PRIMARY bucket is charged even when its own limit
 	// resolved to zero: the tenant aggregate for attributed traffic, and the
 	// per-VIP shared bucket for keyless traffic. It used to carry the

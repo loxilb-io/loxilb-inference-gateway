@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-04T23:59:58+00:00",
-  "source_revision": "8c7e03e26bb049073e5d67984c942b63c2c3846b"
+  "generated_at": "2026-11-05T11:27:12+00:00",
+  "source_revision": "1213bc6a037e26f291d4f768f247d20392bafe8a"
  },
  "contract": {
   "total": 354,
@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1537,
-     "call_line": 1545,
+     "def_line": 1558,
+     "call_line": 1566,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -3265,8 +3265,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1644,
-     "call_line": 1653,
+     "def_line": 1665,
+     "call_line": 1674,
      "calls": "RecordNetIDRequest",
      "entry_point": "cgo-export",
      "note": "TWO ENTRY POINTS. This one writes admitted and matched: once per completed response, only when the data plane names a binding. The other is the cgo export llb_ai_record_deny in the same file (def :1724, call :1730), which writes denied: once per refusal, from the gate's verdict frame and from the capacity gate's, only when the refused request's source matched a binding"
@@ -3367,8 +3367,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1888,
-     "call_line": 1891,
+     "def_line": 1909,
+     "call_line": 1912,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -3409,8 +3409,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1815,
-     "call_line": 1818,
+     "def_line": 1836,
+     "call_line": 1839,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -3451,8 +3451,8 @@
      "symbol": "llb_ai_pd_decode_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1876,
-     "call_line": 1879,
+     "def_line": 1897,
+     "call_line": 1900,
      "calls": "RecordPDDecodeSelected",
      "entry_point": "cgo-export"
     }
@@ -3493,8 +3493,8 @@
      "symbol": "llb_ai_pd_decode_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1876,
-     "call_line": 1879,
+     "def_line": 1897,
+     "call_line": 1900,
      "calls": "RecordPDDecodeSelected",
      "entry_point": "cgo-export"
     }
@@ -3535,8 +3535,8 @@
      "symbol": "llb_ai_pd_record_extra",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1837,
-     "call_line": 1839,
+     "def_line": 1858,
+     "call_line": 1860,
      "calls": "RecordPDRecordExtra",
      "entry_point": "cgo-export",
      "note": "the record's second half: the C helper sp_pd_record calls it right after llb_ai_pd_record, for the same request, every time"
@@ -3578,8 +3578,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1815,
-     "call_line": 1818,
+     "def_line": 1836,
+     "call_line": 1839,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -3621,8 +3621,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1815,
-     "call_line": 1818,
+     "def_line": 1836,
+     "call_line": 1839,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -3664,8 +3664,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1815,
-     "call_line": 1818,
+     "def_line": 1836,
+     "call_line": 1839,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -3709,8 +3709,8 @@
      "symbol": "llb_ai_pd_record_extra",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1837,
-     "call_line": 1839,
+     "def_line": 1858,
+     "call_line": 1860,
      "calls": "RecordPDRecordExtra",
      "entry_point": "cgo-export",
      "note": "the record's second half: the C helper sp_pd_record calls it right after llb_ai_pd_record, for the same request, every time"
@@ -3755,8 +3755,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1815,
-     "call_line": 1818,
+     "def_line": 1836,
+     "call_line": 1839,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -3798,8 +3798,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1848,
-     "call_line": 1851,
+     "def_line": 1869,
+     "call_line": 1872,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -3906,8 +3906,8 @@
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1861,
-     "call_line": 1864,
+     "def_line": 1882,
+     "call_line": 1885,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -4101,8 +4101,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1644,
-     "call_line": 1651,
+     "def_line": 1665,
+     "call_line": 1672,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -4150,8 +4150,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1644,
-     "call_line": 1651,
+     "def_line": 1665,
+     "call_line": 1672,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -4200,8 +4200,8 @@
      "symbol": "llb_ai_token_quota_reserve",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1278,
-     "call_line": 1340,
+     "def_line": 1299,
+     "call_line": 1361,
      "calls": "noteReservationClamped",
      "entry_point": "cgo-export",
      "note": "the one call site: after an admission whose granted default is smaller than the default asked, never on a refusal; the reason comes from tokenQuotaReserveElasticReason"
@@ -4731,8 +4731,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1390,
-     "call_line": 1416,
+     "def_line": 1411,
+     "call_line": 1437,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -4774,8 +4774,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1390,
-     "call_line": 1416,
+     "def_line": 1411,
+     "call_line": 1437,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -4819,8 +4819,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1390,
-     "call_line": 1416,
+     "def_line": 1411,
+     "call_line": 1437,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -4863,8 +4863,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1905,
-     "call_line": 1907,
+     "def_line": 1926,
+     "call_line": 1928,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }

@@ -94,9 +94,11 @@ The pinned contract: chunked requests are admitted and their credential is
 consumed and stripped exactly like Content-Length traffic, but
 `forward_identity` does **not** inject `X-Auth-*` into a chunked request —
 the header splice needs body headroom, and a deterministic skip beats a
-load-dependent one. That skip must not depend on header casing (K3), and a
-request carrying both Content-Length and Transfer-Encoding — the classic
-smuggling ambiguity — must never reach a backend (K4).
+load-dependent one. The parsed llhttp framing state controls this skip, so
+header casing (K3), header position and decoy text cannot change it. K1-K3
+require a 200 from the correct pool, one backend receipt, stripped credentials
+and no injected identity. Content-Length plus Transfer-Encoding remains refused
+(K4/K5), as do a missing JWT (K6) and a forbidden model (K7), with zero receipts.
 
 **X** pins repeated-Authorization semantics: the LAST value decides,
 exactly one credential is evaluated, and every instance is stripped

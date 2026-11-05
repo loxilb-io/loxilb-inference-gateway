@@ -6,8 +6,8 @@
 #      kvZmqPort / kvDpRankCount / kvBlockSize, any explicit kvHashAlgo)
 #   B  contract pins via the VIP: non-stream + stream happy path with
 #      cached_tokens receipts and [DONE]; unknown request fields SILENTLY
-#      tolerated (200 — the anti-TRT posture); malformed JSON relayed as the
-#      engine's 500 (the live-pinned taxonomy quirk, not masked)
+#      tolerated (200 — the anti-TRT posture); malformed JSON gives the
+#      engine's live-pinned 500 directly, but Gateway framing refuses 400
 #   C  ping-through-VIP: a scripted mid-stream stall longer than the mock's
 #      --sse-ping-interval must deliver bare ":" comment frames to the
 #      client THROUGH the relay, then finish the stream + [DONE] (pins the
@@ -205,12 +205,22 @@ B_OUT=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
 [ "$(status_of "$B_OUT")" = "200" ]
 check "B4: unknown/foreign-dialect fields SILENTLY tolerated (200 — the vLLM posture, opposite of TRT's forbid)" $?
 
+# Keep the direct engine taxonomy pin independent of Gateway framing.
+B_DIRECT=$($dexec l3ep1 curl -s -m 30 \
+  "http://127.0.0.1:8085/v1/chat/completions" -H "Content-Type: application/json" \
+  -d '{not json' -w "\nHTTPSTATUS:%{http_code}" 2>&1)
+[ "$(status_of "$B_DIRECT")" = "500" ] && echo "$B_DIRECT" | grep -q '"error"'
+check "B5a: direct engine keeps its malformed-JSON 500 + error object" $?
+B_RECEIVED_BEFORE="$(lstatus l3ep1 received) $(lstatus l3ep2 received) $(lstatus l3ep3 received)"
 B_OUT=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
   "https://$VIP:2044/v1/chat/completions" -H "Content-Type: application/json" \
   -d '{not json' -w "\nHTTPSTATUS:%{http_code}" 2>&1)
 B_STATUS=$(status_of "$B_OUT")
-[ "$B_STATUS" = "500" ] && echo "$B_OUT" | grep -q '"error"'
-check "B5: malformed JSON relayed as the engine's 500 + error obj (got $B_STATUS — the live-pinned quirk; a 400 means something reshaped the taxonomy)" $?
+[ "$B_STATUS" = "400" ] && echo "$B_OUT" | grep -q '"invalid_json_body"'
+check "B5b: Gateway refuses malformed JSON before relay (HTTP $B_STATUS)" $?
+B_RECEIVED_AFTER="$(lstatus l3ep1 received) $(lstatus l3ep2 received) $(lstatus l3ep3 received)"
+[ "$B_RECEIVED_BEFORE" = "$B_RECEIVED_AFTER" ]
+check "B5c: malformed VIP request reached no backend" $?
 
 ############################################################################
 echo "Leg C: ping-through-VIP (scripted stall > sse-ping-interval)"

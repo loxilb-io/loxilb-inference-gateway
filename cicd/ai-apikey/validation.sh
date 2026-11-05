@@ -1686,13 +1686,10 @@ else
 
 # Request bodies. Sizes: 900 KiB JSON sits above the 768 KiB inspect cap
 # (streamed with a bounded routing prefix); 1 MiB binary is above the 64 KiB
-# streaming threshold; 2 MiB chunked JSON cannot fit the 1 MiB receive buffer.
-# A chunked body has no Content-Length, so it is never streamed; one that
-# still fits the buffer completes and is gated like any buffered request,
-# and one in the last 5 % of the buffer is timing-dependent (the guard fires
-# only when a read ends there with the message still open) — so this arm
-# sits well above the buffer, where the verdict is deterministic.
-# puts it after 900 KiB of content.
+# streaming threshold; 2 MiB chunked JSON exceeds the 1 MiB receive buffer
+# and must stay on the incremental JSON guard path. Its model appears first
+# so admission can finish before the remaining body streams. Model-last
+# fixtures put the model after 900 KiB and exercise the routing-prefix limit.
 N1=$(fc_nonce);  N2=$(fc_nonce);  N3=$(fc_nonce);  N4=$(fc_nonce);  N5=$(fc_nonce)
 N6=$(fc_nonce);  N7=$(fc_nonce);  N8=$(fc_nonce);  N9=$(fc_nonce);  N10=$(fc_nonce)
 N11=$(fc_nonce); N12=$(fc_nonce); N13=$(fc_nonce); N14=$(fc_nonce); N15=$(fc_nonce)
@@ -1869,15 +1866,16 @@ fccheck    "FC-T11 final status after 100 Continue → 401" "401" "$rc"
 fccheck_eq "FC-T11 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
 fccheck_eq "FC-T11 backend never saw the nonce" "0" "$(fc_nonce_hits "$N13")"
 
-# ── FC-T12: chunked body that outgrows the buffer → deterministic 413
+# ── FC-T12: a model-first chunked body streams beyond the receive buffer.
+# The JSON guard withholds completion framing while admission stays enforced.
 echo ""
-echo "FC-T12: chunked 2 MiB JSON on the enforcing service → 413, not a reset"
+echo "FC-T12: chunked 2 MiB JSON with a valid key streams to the backend whole"
 a0=$(fc_accepts)
 rc=$(fc_post "$FC_DIR/chunk.json" application/json -H "X-Api-Key: $FC_OPEN_KEY" -H 'Transfer-Encoding: chunked'); fc_settle
-fccheck    "FC-T12 buffer overflow answered 413" "413" "$rc"
-fccheck    "FC-T12 error code" "request_body_too_large" "$(cat "$FC_DIR/resp")"
-fccheck_eq "FC-T12 backend accepted no connection" "0" "$(( $(fc_accepts) - a0 ))"
-fccheck_eq "FC-T12 backend never saw the nonce" "0" "$(fc_nonce_hits "$N14")"
+fccheck    "FC-T12 valid key → 200" "200" "$rc"
+fccheck_eq "FC-T12 backend accepted exactly one connection" "1" "$(( $(fc_accepts) - a0 ))"
+fccheck_eq "FC-T12 backend saw the nonce exactly once" "1" "$(fc_nonce_hits "$N14")"
+fccheck_eq "FC-T12 body arrived whole" "2097152" "$(fc_req_field "$N14" body_bytes)"
 
 # ── FC-T13: positive twin for the non-JSON shape — admitted, forwarded whole
 echo ""

@@ -519,6 +519,28 @@ func TestTokenQuotaReserveInternalSkips(t *testing.T) {
 // a request that reserved at admission but produced no countable tokens
 // (aborted stream, non-JSON error response) must still release its claim at
 // settlement, or the tenant's admissions stay blocked until window rollover.
+func TestTokenQuotaCancelDeniedRequestPreservesOtherClaims(t *testing.T) {
+	store := rl.New()
+	svc := &mockRateLimitService{tenantTPM: 1000, modelTPM: map[string]int{"m": 1000}}
+	for _, amount := range []int{500, 400} {
+		ok, _, epoch := tokenQuotaReserveInternal(svc, store, "cancel-tenant", "m", "", "", "", amount)
+		if !ok {
+			t.Fatalf("reserve %d: refused", amount)
+		}
+		if amount == 400 {
+			tokenQuotaReleaseInternal(store, "cancel-tenant", "m", "", "", "", amount, epoch)
+		}
+	}
+	// Returning one refused claim must preserve the other request's 500.
+	if ok, _, _ := tokenQuotaReserveInternal(svc, store, "cancel-tenant", "m", "", "", "", 600); ok {
+		t.Fatal("cancellation erased another request's reservation")
+	}
+	// No usage is charged for the refused request, on either scoped bucket.
+	if ok, _, _ := tokenQuotaReserveInternal(svc, store, "cancel-tenant", "m", "", "", "", 500); !ok {
+		t.Fatal("cancelled claim still consumes tenant/model headroom")
+	}
+}
+
 func TestTokenQuotaConsumeReleasesOnZeroCount(t *testing.T) {
 	store := rl.New()
 	svc := &mockRateLimitService{tenantTPM: 1000}

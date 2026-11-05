@@ -72,6 +72,22 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_log
 
+      - name: "test_usage (incremental metadata, optional prefix budget and allocation failure)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_usage test_stream
+
+      - name: "test_admit (HTTP refusal framing and every header media split)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_admit
+
+      - name: "test_backend_failure_audit (one refusal, no completion mixture)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_backend_failure_audit
+
+      - name: "OpenAI JSON regression oracle and fixture identities"
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s cicd/ai-json-parser -p 'test_*.py'
+
       - name: "check_notify_arm (notify_add_ent is called from exactly one helper)"
         if: ${{ !cancelled() }}
         run: sh loxilb-ebpf/common/check_notify_arm.sh

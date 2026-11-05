@@ -1,0 +1,10 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY cicd/common/reflect-echo/go.mod cicd/common/reflect-echo/go.sum ./
+COPY cicd/common/reflect-echo/vendor/ ./vendor/
+COPY cicd/ai-json-parser/mock.go ./server.go
+RUN CGO_ENABLED=0 GOPROXY=off GOSUMDB=off GOFLAGS=-mod=vendor go build -o /json-parser-mock .
+
+FROM alpine:3.20
+COPY --from=build /json-parser-mock /json-parser-mock
+ENTRYPOINT ["/json-parser-mock"]
