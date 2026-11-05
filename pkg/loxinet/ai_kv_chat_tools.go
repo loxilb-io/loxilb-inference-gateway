@@ -186,32 +186,62 @@ const (
 // kvToolsExactManifestLoad is the manifest reader (a seam for tests).
 var kvToolsExactManifestLoad = kvAttestManifestLoad
 
-// kvToolsExactVerdicts caches the manifest verdict per published profile
-// generation (key "manifest\x00<profile>\x00<gen>") and the one-time log
-// marker per (profile generation, engine contract) (key
-// "contract\x00<profile>\x00<gen>\x00<contract>"): the manifest is a disk read
-// and neither verdict can change without a registry reload, which mints a
-// new generation.
+// kvToolsExactVerdicts caches the manifest verdict per (profile generation,
+// template digest, manifest digest) (key
+// "manifest\x00<profile>\x00<gen>\x00<template sha>\x00<manifest digest>"),
+// the last such key seen per profile generation (key
+// "manifest-last\x00<profile>\x00<gen>", so a manifest edit is logged once),
+// and the one-time log marker per (profile generation, engine contract)
+// (key "contract\x00<profile>\x00<gen>\x00<contract>"). The manifest is
+// re-read on every verdict: the attestor re-attests a READY rule when the
+// manifest digest changes without a registry reload
+// (ai_kv_attest.go, manifest_changed), so the gate cannot pin its answer to
+// the generation alone.
 var kvToolsExactVerdicts sync.Map
+
+// kvToolsExactManifestKey is the manifest digest as it appears in the cache
+// key: the loaded digest, or "absent" when no manifest is loadable.
+const kvToolsExactManifestAbsent = "absent"
 
 // kvToolsExactManifestVerdict is the manifest leg of the gate: the profile's
 // deployment manifest must exist and declare the attested engine version.
-// Cached per profile generation. The reason is "" when it passes.
+// The manifest is loaded on every call (the same trusted read the attestor
+// does per sweep) and the verdict is cached by its digest, so an edited
+// manifest re-evaluates the gate while an unchanged one costs one read. The
+// reason is "" when it passes.
 func kvToolsExactManifestVerdict(e *kvProfileEntry) (bool, string) {
-	key := "manifest\x00" + e.Profile.ProfileID + "\x00" + strconv.FormatUint(e.Gen, 10)
-	if v, ok := kvToolsExactVerdicts.Load(key); ok {
-		r := v.(string)
-		return r == "", r
-	}
 	m, ok := kvToolsExactManifestLoad(e.Profile.ProfileID)
-	reason := ""
-	switch {
-	case !ok || m == nil:
-		reason = "no deployment manifest (manifests/" + e.Profile.ProfileID + ".yaml) beneath the profile root"
-	case m.EngineVersion != kvToolsExactEngineVersion:
-		reason = fmt.Sprintf("manifest engineVersion %q != attested %q", m.EngineVersion, kvToolsExactEngineVersion)
+	digest := kvToolsExactManifestAbsent
+	if ok && m != nil && m.Digest != "" {
+		digest = m.Digest
 	}
-	kvToolsExactVerdicts.Store(key, reason)
+	genKey := e.Profile.ProfileID + "\x00" + strconv.FormatUint(e.Gen, 10)
+	key := "manifest\x00" + genKey + "\x00" + e.Profile.TemplateSha256 + "\x00" + digest
+	var reason string
+	if v, cached := kvToolsExactVerdicts.Load(key); cached {
+		reason = v.(string)
+	} else {
+		switch {
+		case !ok || m == nil:
+			reason = "no deployment manifest (manifests/" + e.Profile.ProfileID + ".yaml) beneath the profile root"
+		case m.EngineVersion != kvToolsExactEngineVersion:
+			reason = fmt.Sprintf("manifest engineVersion %q != attested %q", m.EngineVersion, kvToolsExactEngineVersion)
+		}
+		kvToolsExactVerdicts.Store(key, reason)
+	}
+	// Log every manifest change under a live generation once, including a
+	// return to a digest seen before (its verdict is cached, the change is
+	// still news): the publish-time verdict covered the first digest.
+	lastKey := "manifest-last\x00" + genKey
+	if prev, seen := kvToolsExactVerdicts.Swap(lastKey, digest); seen && prev.(string) != digest {
+		if reason == "" {
+			log.Infof("kv-chat: tools-exact gate OPEN for profile %s gen %d after a manifest change (digest %.12s → %.12s, engineVersion %s)",
+				e.Profile.ProfileID, e.Gen, prev.(string), digest, kvToolsExactEngineVersion)
+		} else {
+			log.Warnf("kv-chat: tools-exact gate CLOSED for profile %s gen %d after a manifest change (digest %.12s → %.12s): %s; tools/tool_choice stay UNSUPPORTED",
+				e.Profile.ProfileID, e.Gen, prev.(string), digest, reason)
+		}
+	}
 	return reason == "", reason
 }
 

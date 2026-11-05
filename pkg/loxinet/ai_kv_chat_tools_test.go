@@ -26,6 +26,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -168,21 +169,35 @@ func kvTestToolsTokenizer(t *testing.T, f *kvToolsVectorFixture) KvTokenizer {
 	return tok
 }
 
-// kvTestManifestVersion stubs the manifest read for the gate.
-func kvTestManifestVersion(t *testing.T, version string) {
+// kvTestManifestVersion stubs the manifest read for the gate and returns a
+// setter that changes the stubbed manifest in place (a new digest, the same
+// profile generation), the way an operator edit on disk reaches the gate.
+// "" is no manifest.
+func kvTestManifestVersion(t *testing.T, version string) func(string) {
 	t.Helper()
 	prev := kvToolsExactManifestLoad
+	var mu sync.Mutex
+	cur := version
 	kvToolsExactManifestLoad = func(profileID string) (*KvAttestManifest, bool) {
-		if version == "" {
+		mu.Lock()
+		v := cur
+		mu.Unlock()
+		if v == "" {
 			return nil, false
 		}
-		return &KvAttestManifest{ProfileID: profileID, ImageDigest: "sha256:test", EngineVersion: version}, true
+		raw := []byte("profileId: " + profileID + "\nimageDigest: sha256:test\nengineVersion: " + v + "\n")
+		return &KvAttestManifest{ProfileID: profileID, ImageDigest: "sha256:test", EngineVersion: v, Digest: kvSha256Hex(raw)}, true
 	}
 	kvToolsExactVerdicts.Clear()
 	t.Cleanup(func() {
 		kvToolsExactManifestLoad = prev
 		kvToolsExactVerdicts.Clear()
 	})
+	return func(v string) {
+		mu.Lock()
+		cur = v
+		mu.Unlock()
+	}
 }
 
 // kvRenderToolsCase renders a fixture body the way the strict bridge does on
@@ -318,6 +333,54 @@ func TestKvToolsExactGate(t *testing.T) {
 	e3 := kvTestPublishToolsTarget(t, f)
 	if kvToolsExactEligible(vllm, e3) {
 		t.Fatal("missing manifest accepted")
+	}
+}
+
+// TestKvToolsExactGateFollowsManifest: the attestor re-attests a READY rule
+// when the manifest digest changes without a registry reload, so the gate
+// must re-evaluate an edited manifest under the SAME profile generation:
+// 0.30.0 → 0.31.0 flips OPEN → CLOSED, back to 0.30.0 re-opens, a removed
+// manifest closes; each change is logged once and an unchanged manifest is
+// served from the cache without a log line.
+func TestKvToolsExactGateFollowsManifest(t *testing.T) {
+	defer kvToolsExactSetForTest(true)()
+	f := loadKvToolsVectors(t)
+	e := kvTestPublishToolsTarget(t, f)
+	vllm := &KvExactBinding{Components: KvExactBindingComponents{
+		Profile: KvModelProfileRef{ID: f.ProfileID}, Contract: KvEngineContractRef{ID: "vllm-kv-map-v2"}}}
+	set := kvTestManifestVersion(t, kvToolsExactEngineVersion)
+	h := kvTestCaptureLog(t)
+
+	if !kvToolsExactEligible(vllm, e) {
+		t.Fatal("attested target refused")
+	}
+	gen := e.Gen
+	set("0.31.0")
+	if kvToolsExactEligible(vllm, e) {
+		t.Fatalf("manifest edited to engineVersion 0.31.0 under gen %d still OPEN", gen)
+	}
+	if n := len(h.matching("after a manifest change")); n != 1 {
+		t.Fatalf("manifest change logged %d times, want 1: %q", n, h.matching("after a manifest change"))
+	}
+	if kvToolsExactEligible(vllm, e) {
+		t.Fatal("second evaluation of the edited manifest OPEN")
+	}
+	if n := len(h.matching("after a manifest change")); n != 1 {
+		t.Fatalf("unchanged manifest re-logged (%d lines)", n)
+	}
+	set(kvToolsExactEngineVersion)
+	if !kvToolsExactEligible(vllm, e) {
+		t.Fatal("manifest restored to the attested version stays CLOSED")
+	}
+	if n := len(h.matching("gate OPEN for profile " + f.ProfileID + " gen " + strconv.FormatUint(gen, 10) + " after a manifest change")); n != 1 {
+		t.Fatalf("re-open logged %d times, want 1", n)
+	}
+	set("")
+	if kvToolsExactEligible(vllm, e) {
+		t.Fatal("removed manifest stays OPEN")
+	}
+	if e.Gen != gen {
+		t.Fatalf("test moved the generation (%d → %d); the point is the SAME generation", gen, e.Gen)
 	}
 }
 
