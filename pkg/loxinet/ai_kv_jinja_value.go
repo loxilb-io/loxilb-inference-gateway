@@ -33,6 +33,7 @@ package loxinet
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -137,6 +138,8 @@ func kvJjTypeName(v any) string {
 		return "bool"
 	case int:
 		return "int"
+	case float64:
+		return "float"
 	case string, kvJjMarkup:
 		return "str"
 	case []any:
@@ -165,6 +168,8 @@ func kvJjTruthy(v any) bool {
 		return x
 	case int:
 		return x != 0
+	case float64:
+		return x != 0
 	case string:
 		return x != ""
 	case kvJjMarkup:
@@ -189,7 +194,7 @@ func kvJjToStr(v any) (string, error) {
 		return string(x), nil
 	case kvJjUndef:
 		return "", nil
-	case nil, bool, int, []any, kvJjTuple, *kvJjDict:
+	case nil, bool, int, float64, []any, kvJjTuple, *kvJjDict:
 		return kvJjRepr(v)
 	}
 	return "", fmt.Errorf("cannot render value of type %s", kvJjTypeName(v))
@@ -207,6 +212,8 @@ func kvJjRepr(v any) (string, error) {
 		return "False", nil
 	case int:
 		return strconv.Itoa(x), nil
+	case float64:
+		return kvJjPyFloatRepr(x), nil
 	case string:
 		return kvJjPyStrRepr(x), nil
 	case kvJjMarkup:
@@ -416,6 +423,9 @@ func (j *kvJjPyJSON) write(b *strings.Builder, v any, depth int) error {
 		}
 	case int:
 		b.WriteString(strconv.Itoa(x))
+	case float64:
+		// json.dumps prints a float with float.__repr__.
+		b.WriteString(kvJjPyFloatRepr(x))
 	case string:
 		j.writeStr(b, x)
 	case kvJjMarkup:
@@ -504,4 +514,50 @@ func (j *kvJjPyJSON) writeStr(b *strings.Builder, s string) {
 		}
 	}
 	b.WriteByte('"')
+}
+
+// kvJjPyFloatRepr is Python's float.__repr__ (float_repr_style "short"):
+// the shortest digit string that round-trips, printed in positional
+// notation when the decimal exponent is in [-4, 16) and otherwise in
+// scientific notation with a signed, at least two-digit exponent — so 1.0,
+// 100000.0, 0.0001, 1e-05, 1e+16, 1.5e+20. Floats only reach the value model
+// through JSON numbers carrying a fraction or exponent (Python's json.loads
+// makes those floats), so inf and nan are unreachable; they print as Python
+// does for completeness.
+func kvJjPyFloatRepr(f float64) string {
+	switch {
+	case math.IsNaN(f):
+		return "nan"
+	case math.IsInf(f, 1):
+		return "inf"
+	case math.IsInf(f, -1):
+		return "-inf"
+	case f == 0:
+		if math.Signbit(f) {
+			return "-0.0"
+		}
+		return "0.0"
+	}
+	sign := ""
+	if f < 0 {
+		sign, f = "-", -f
+	}
+	e := strconv.FormatFloat(f, 'e', -1, 64) // d.ddddde±xx, shortest digits
+	mant, expStr, _ := strings.Cut(e, "e")
+	exp, _ := strconv.Atoi(expStr)
+	digits := strings.Replace(mant, ".", "", 1)
+	if exp < -4 || exp >= 16 {
+		m := digits[:1]
+		if len(digits) > 1 {
+			m += "." + digits[1:]
+		}
+		return fmt.Sprintf("%s%se%+03d", sign, m, exp)
+	}
+	if exp >= 0 {
+		if len(digits) <= exp+1 {
+			return sign + digits + strings.Repeat("0", exp+1-len(digits)) + ".0"
+		}
+		return sign + digits[:exp+1] + "." + digits[exp+1:]
+	}
+	return sign + "0." + strings.Repeat("0", -exp-1) + digits
 }

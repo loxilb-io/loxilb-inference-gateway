@@ -518,7 +518,8 @@ func kvBridgeRuntimeFault(svcID uint32, code int) int {
 // UNSUPPORTED (never readiness-affecting), a failed validated renderer is a
 // runtime fault, and a missing tokenizer is a runtime fault.
 func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int) ([]uint32, int) {
-	if rc := kvBridgeGate(svcID, bindingGen); rc != 0 {
+	binding, rc := kvBridgeBinding(svcID, bindingGen)
+	if rc != 0 {
 		return nil, rc
 	}
 	if body == "" || model == "" || max <= 0 {
@@ -529,6 +530,11 @@ func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int)
 	if !ok || len(msgs) == 0 {
 		return nil, KvTokErrRequest
 	}
+	// toolsReq is set only on the tools-aware path: LOXILB_KV_TOOLS_EXACT on
+	// AND the binding is the attested target (kvToolsExactEligible). Off, or
+	// for any other profile, the flow below is the previous release's.
+	var toolsReq *kvChatToolsRequest
+	var toolsEntry *kvProfileEntry
 	if strict {
 		// No profile leaves the engine default (true) to compare against;
 		// the render below then faults on the missing renderer anyway.
@@ -537,10 +543,27 @@ func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int)
 		if hasProfile {
 			addGen = e.Profile.RenderPolicy.AddGenerationPrompt
 		}
-		if feature := kvChatExcludedFeature(body, addGen); feature != "" {
+		feature := kvChatExcludedFeature(body, addGen)
+		if feature == "tools" && hasProfile && kvToolsExactEligible(binding, e) {
+			// The tools refusal is lifted; every other refusal still applies.
+			feature = kvChatExcludedFeatureOpts(body, addGen, true)
+			if feature == "" {
+				if tf := kvChatTemplateFeatureOpts(body, string(e.TemplateBytes), kvChatToolsModeledKeys); tf != "" {
+					return nil, KvTokErrUnsupported
+				}
+				req, reason := kvChatToolsParse(body)
+				if reason != "" {
+					// Request class: a shape the engine refuses with 400 or
+					// coerces in a way the gateway does not reproduce.
+					return nil, KvTokErrUnsupported
+				}
+				toolsReq, toolsEntry = req, e
+			}
+		}
+		if feature != "" {
 			return nil, KvTokErrUnsupported
 		}
-		if hasProfile {
+		if toolsReq == nil && hasProfile {
 			if feature := kvChatTemplateFeature(body, string(e.TemplateBytes)); feature != "" {
 				return nil, KvTokErrUnsupported
 			}
@@ -550,7 +573,13 @@ func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int)
 	// rendered twice across midnight must not look shape-dependent.
 	now := kvChatClock()
 	clock := func() time.Time { return now }
-	rendered, err := kvRenderChatTemplateReq(model, msgs, clock)
+	var rendered string
+	var err error
+	if toolsReq != nil {
+		rendered, err = kvRenderChatToolsReq(toolsEntry, toolsReq, clock)
+	} else {
+		rendered, err = kvRenderChatTemplateReq(model, msgs, clock)
+	}
 	if err != nil {
 		if !strict {
 			return nil, KvTokErrRequest
