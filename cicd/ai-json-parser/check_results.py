@@ -47,7 +47,7 @@ def evaluate(expected, events, receipts, required_count=CASE_COUNT):
             if terminal:
                 detail = terminal[0].get("detail", {})
                 passed &= detail.get("decision") == result["error"]
-                if result["status"] == 413:
+                if result["status"] == 413 or result["error"] in ("duplicate_model_field", "duplicate_content_type"):
                     passed &= detail.get("stage") == "framing"
         row = {"id": request_id, **result, "events": dict(counts), "passed": bool(passed)}
         rows.append(row)
@@ -59,8 +59,8 @@ def evaluate(expected, events, receipts, required_count=CASE_COUNT):
     summary = {
         "declared": required_count, "executed": len(expected),
         "success": sum(result["status"] == 200 for result in expected.values()),
-        "structure_denied": sum(result["status"] == 413 for result in expected.values()),
-        "policy_denied": sum(result["status"] == 503 for result in expected.values()),
+        "metadata_denied": sum(result["status"] == 400 for result in expected.values()),
+        "policy_denied": sum(result["status"] in (401, 403, 429, 503) for result in expected.values()),
         "backend_receipts": sum(receipts.values()),
         "passed": not errors, "errors": errors,
     }

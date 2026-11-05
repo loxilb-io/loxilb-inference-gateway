@@ -72,9 +72,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_log
 
-      - name: "test_usage (bounded OpenAI JSON extraction and token budgets)"
+      - name: "test_usage (incremental metadata, optional prefix budget and allocation failure)"
         if: ${{ !cancelled() }}
-        run: make -C loxilb-ebpf/common test_usage
+        run: make -C loxilb-ebpf/common test_usage test_stream
 
       - name: "test_admit (HTTP refusal framing and every header media split)"
         if: ${{ !cancelled() }}

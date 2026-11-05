@@ -24,6 +24,8 @@ owned=()
 network=''
 gateway=''
 backend=''
+database=''
+password_file=''
 built_mock=''
 cleanup() {
   local status=$?
@@ -46,7 +48,10 @@ cleanup() {
     status=1
   fi
   if ((${#owned[@]})); then
-    docker rm -f "${owned[@]}" >/dev/null || status=1
+    docker rm -f -v "${owned[@]}" >/dev/null || status=1
+  fi
+  if [[ -n "$password_file" ]]; then
+    rm -f "$password_file"
   fi
   if [[ -n "$network" ]]; then
     docker network rm "$network" >/dev/null || status=1
@@ -123,12 +128,36 @@ backend=$(docker create --network "$network" --label "io.loxilb.cicd.run=$run" \
   --name "$run-backend" "$mock_id")
 owned+=("$backend")
 docker start "$backend" >/dev/null
+database=$(docker create --network "$network" --label "io.loxilb.cicd.run=$run" \
+  --name "$run-database" --tmpfs /var/lib/postgresql \
+  -e POSTGRES_USER=parserowner -e POSTGRES_DB=parser \
+  -e POSTGRES_PASSWORD=parser-owner-test-only postgres:18.6)
+owned+=("$database")
+docker start "$database" >/dev/null
+ready=0
+for ((attempt=0; attempt<40; attempt++)); do
+  if docker exec "$database" pg_isready -h 127.0.0.1 -U parserowner -d parser >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+((ready)) || { echo "test policy database did not become ready" >&2; exit 1; }
+docker exec -i -e AIGW_DB_PASSWORD=parser-test-only \
+  -e AIGW_MGMT_DB_PASSWORD=parser-mgmt-test-only "$database" \
+  psql -q -U parserowner -d parser < "$repo/scripts/aigw-db-bootstrap.sql"
+database_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$database")
+password_file=$(mktemp)
+printf '%s' parser-test-only > "$password_file"
 gateway=$(docker create --network "$network" --cap-add NET_ADMIN \
   --label "io.loxilb.cicd.run=$run" --name "$run-gateway" \
   --entrypoint /root/loxilb-io/loxilb/loxilb "$image_id" \
   --proxyonlymode --loglevel debug --config-auto-persist off \
+  --aikey-db-host "$database_ip" --aikey-db-user aigwuser --aikey-db-name parser \
+  --aikey-db-password-file /tmp/json-parser-keydb-password \
   --audit-dir /tmp/ai-json-audit --audit-required)
 owned+=("$gateway")
+docker cp "$password_file" "$gateway:/tmp/json-parser-keydb-password"
 docker start "$gateway" >/dev/null
 docker exec "$gateway" sha256sum /root/loxilb-io/loxilb/loxilb \
   > "$evidence/runtime-binary-sha256.txt"

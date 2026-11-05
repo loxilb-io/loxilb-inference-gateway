@@ -9,7 +9,7 @@ import json
 import unittest
 
 from check_results import evaluate, read_audit
-from client import payload, token_count
+from client import MODEL, duplicate_payload, payload, token_count
 
 
 class OracleTests(unittest.TestCase):
@@ -30,19 +30,19 @@ class OracleTests(unittest.TestCase):
 
     def denial(self):
         self.expected[self.request_id].update(
-            status=413, error="json_structure_limit_exceeded", done=False, backend_receipts=0
+            status=400, error="duplicate_model_field", done=False, backend_receipts=0
         )
         self.events = [{
             "request_id": self.request_id, "event_type": "sec.ai.deny",
-            "outcome": {"status": 413},
-            "detail": {"stage": "framing", "decision": "json_structure_limit_exceeded"},
+            "outcome": {"status": 400},
+            "detail": {"stage": "framing", "decision": "duplicate_model_field"},
         }]
         self.receipts = {}
 
     def test_success(self):
         self.assertTrue(self.passed())
 
-    def test_structure_denial(self):
+    def test_duplicate_model_denial(self):
         self.denial()
         self.assertTrue(self.passed())
 
@@ -69,7 +69,7 @@ class OracleTests(unittest.TestCase):
         self.denial()
         self.events[0]["outcome"]["status"] = 503
         self.assertFalse(self.passed())
-        self.events[0]["outcome"]["status"] = 413
+        self.events[0]["outcome"]["status"] = 400
         self.events[0]["detail"]["decision"] = "no_route"
         self.assertFalse(self.passed())
 
@@ -80,6 +80,27 @@ class OracleTests(unittest.TestCase):
     def test_missing_matrix_case_fails(self):
         summary = evaluate(self.expected, self.events, self.receipts)[1]
         self.assertFalse(summary["passed"])
+
+    def test_denied_request_reaching_backend_fails(self):
+        self.denial()
+        self.receipts[self.request_id] = 1
+        self.assertFalse(self.passed())
+
+    def test_wrong_metadata_stage_fails(self):
+        self.denial()
+        self.events[0]["detail"]["stage"] = "auth"
+        self.assertFalse(self.passed())
+
+    def test_duplicate_fixtures_decode_to_two_top_level_models(self):
+        for location, escaped, size in [("front", False, 106206),
+                                         ("tail", False, 800 * 1024),
+                                         ("tail", True, 800 * 1024)]:
+            raw = duplicate_payload(location, escaped, size)
+            self.assertEqual(len(raw), size)
+            pairs = json.loads(raw, object_pairs_hook=lambda value: value)
+            self.assertEqual([v for k, v in pairs if k == "model"], [MODEL, "other-model"])
+            if escaped:
+                self.assertIn(b'mod\\u0065l', raw)
 
     def test_rotated_and_compressed_audit_segments(self):
         with tempfile.TemporaryDirectory() as folder:

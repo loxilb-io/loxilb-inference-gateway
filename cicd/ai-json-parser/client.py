@@ -7,6 +7,7 @@ import http.client
 import json
 from pathlib import Path
 import socket
+import select
 import subprocess
 import threading
 import time
@@ -15,7 +16,7 @@ import urllib.request
 
 MODEL = "Qwen/Qwen3-32B-FP8"
 BODY_BYTES = 106206
-CASE_COUNT = 70
+CASE_COUNT = 102
 RESULT_LOCK = threading.Lock()
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -32,7 +33,7 @@ def token_count(value):
     return 1
 
 
-def payload(size, model_last=False):
+def payload(size, model_last=False, body_bytes=BODY_BYTES):
     messages = [
         {"role": "user" if index % 2 == 0 else "assistant",
          "content": "Synthetic compaction message."}
@@ -56,12 +57,12 @@ def payload(size, model_last=False):
         tools[index % len(tools)]["function"]["parameters"]["properties"]["value"]["enum"].append(
             f"v{index}"
         )
-    padding = BODY_BYTES - len(encode(value))
+    padding = body_bytes - len(encode(value))
     if padding < 0:
         raise ValueError("fixture exceeds its fixed byte budget")
     messages[0]["content"] += "x" * padding
     raw = encode(value)
-    assert token_count(value) == size and len(raw) == BODY_BYTES
+    assert token_count(value) == size and len(raw) == body_bytes
     return raw
 
 
@@ -85,7 +86,7 @@ def configure(gateway, backend, evidence):
 
     for port, protocol, auth in [(8081, "http1", "disabled"),
                                  (8082, "http1", "required"),
-                                 (8083, "http2", "disabled")]:
+                                 (8083, "http2", "disabled"), (8084, "http2", "required")]:
         rule = {
             "serviceArguments": {
                 "externalIP": gateway, "port": port, "protocol": "tcp",
@@ -121,17 +122,44 @@ def configure(gateway, backend, evidence):
         item["serviceArguments"]["port"]: item["serviceArguments"]
         for item in rules["lbAttr"]
     }
-    for port in (8081, 8082, 8083):
+    for port in (8081, 8082, 8083, 8084):
         assert actual[port]["model_name"] == MODEL
     assert actual[8083]["backend_protocol"] == "http2"
+    keys = {}
+    descriptions = {}
+    for name, models in [("allowed", [MODEL]), ("denied", ["other-model"])]:
+        request = urllib.request.Request(
+            f"http://{gateway}:11111/netlox/v1/config/ai/apikey",
+            data=encode({"tenant_id": "json-parser-fixture", "name": name,
+                         "allowed_models": models, "rate_limit_rps": 10000,
+                         "burst_size": 10000, "tokens_per_min": 1000000000}),
+            headers={"Content-Type": "application/json"},
+        )
+        for attempt in range(40):
+            try:
+                with HTTP.open(request, timeout=10) as response:
+                    created = json.load(response)
+                break
+            except urllib.error.HTTPError as error:
+                if error.code != 503:
+                    raise
+                time.sleep(1)
+        else:
+            raise RuntimeError("isolated key store never became ready")
+        keys[name] = created["raw_key"]
+        descriptions[name] = {"key_id": created.get("key_id"), "allowed_models": models}
+    (evidence / "auth-fixtures.json").write_text(json.dumps(descriptions, indent=2) + "\n")
+    return keys
+
 
 
 class Matrix:
-    def __init__(self, gateway, backend, evidence):
+    def __init__(self, gateway, backend, evidence, keys=None):
         self.gateway = gateway
         self.backend = backend
         self.evidence = evidence
         self.results = {}
+        self.keys = keys or {}
 
     def receipts(self):
         return get_json(f"http://{self.backend}:8000/receipts")
@@ -169,7 +197,8 @@ class Matrix:
 
     def query(self, raw, request_id, *, media="application/json", offset=None,
               pieces=None, connection=None, xmodel=False, extra="", early=None,
-              port=8081, expected_status=200, expected_error=None):
+              port=8081, expected_status=200, expected_error=None, api_key=None,
+              chunked=False, headers_only=False, trailers=False):
         before = self.receipts().get(request_id, 0)
         owned = connection is None
         if owned:
@@ -186,9 +215,17 @@ class Matrix:
         if xmodel:
             head += f"X-Model: {MODEL}\r\n".encode()
         head += extra.encode()
-        head += f"Content-Length: {len(raw)}\r\nX-Request-Id: {request_id}\r\n".encode()
+        if api_key:
+            head += f"X-Api-Key: {api_key}\r\n".encode()
+        if chunked:
+            head += b"Transfer-Encoding: chunked\r\n"
+        else:
+            head += f"Content-Length: {len(raw)}\r\n".encode()
+        head += f"X-Request-Id: {request_id}\r\n".encode()
         head += b"Connection: close\r\n\r\n" if owned else b"Connection: keep-alive\r\n\r\n"
         early_seen = None
+        stream_probe = None
+        started = time.perf_counter()
         try:
             start = 0
             for end in sorted(pieces(head) if pieces else []):
@@ -206,10 +243,42 @@ class Matrix:
                     if early_seen:
                         break
                     time.sleep(0.025)
-            connection.sendall(raw)
+            if not headers_only:
+                stride = 16384 if chunked or len(raw) > 768 * 1024 else len(raw)
+                for offset_at in range(0, len(raw), stride):
+                    part = raw[offset_at:offset_at + stride]
+                    wire = (f"{len(part):x}\r\n".encode() + part + b"\r\n") if chunked else part
+                    try:
+                        connection.sendall(wire)
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+                    if select.select([connection], [], [], 0)[0]:
+                        break
+                    if (stream_probe is None and len(raw) > 768 * 1024
+                            and offset_at + len(part) >= 64 * 1024
+                            and expected_status in (200, 400)):
+                        deadline = time.monotonic() + 2
+                        while time.monotonic() < deadline:
+                            heads = get_json(f"http://{self.backend}:8000/heads").get(request_id, 0)
+                            if heads:
+                                break
+                            time.sleep(0.01)
+                        stream_probe = {"heads": heads, "receipts": self.receipts().get(request_id, 0)}
+                        assert stream_probe == {"heads": 1, "receipts": 0}, stream_probe
+                    if stride < len(raw):
+                        time.sleep(0.001)
+                if chunked and not select.select([connection], [], [], 0)[0]:
+                    ending = b"0\r\nContent-Type: text/plain\r\n\r\n" if trailers else b"0\r\n\r\n"
+                    try:
+                        connection.sendall(ending[:2])
+                        time.sleep(0.02)
+                        connection.sendall(ending[2:])
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
             response = http.client.HTTPResponse(connection)
             response.begin()
             status, reply = response.status, response.read()
+            elapsed_ms = (time.perf_counter() - started) * 1000
             response.close()
         finally:
             if owned:
@@ -219,9 +288,11 @@ class Matrix:
             self.receipts().get(request_id, 0) - before,
             expected_status, expected_error, protocol="http1",
             content_type_offset=offset, early_backend_head=early_seen, early_expected=early,
+            latency_ms=elapsed_ms, chunked=chunked, streaming_probe=stream_probe,
         )
 
-    def query_h2(self, raw, request_id, expected_status):
+    def query_h2(self, raw, request_id, expected_status=200, expected_error=None,
+                 api_key=None, extra_type=None):
         body_path = self.evidence / "h2-request.json"
         body_path.write_bytes(raw)
         command = [
@@ -229,14 +300,19 @@ class Matrix:
             "--http2-prior-knowledge", "--max-time", "15",
             "-H", "Content-Type: application/json", "-H", f"X-Request-Id: {request_id}",
             "--data-binary", f"@{body_path}", "-w", "\n%{http_code}",
-            f"http://{self.gateway}:8083/v1/chat/completions",
+            f"http://{self.gateway}:{8084 if api_key else 8083}/v1/chat/completions",
         ]
+        if api_key:
+            command.extend(["-H", f"X-Api-Key: {api_key}"])
+        if extra_type:
+            command.extend(["-H", f"Content-Type: {extra_type}"])
+        started = time.perf_counter()
         response = subprocess.run(command, capture_output=True, check=True, timeout=20)
         reply, status = response.stdout.rsplit(b"\n", 1)
-        error = "json_structure_limit_exceeded" if expected_status == 413 else None
+        error = expected_error
         self.record(request_id, raw, int(status), reply,
                     self.receipts().get(request_id, 0), expected_status,
-                    error, protocol="h2")
+                    error, protocol="h2", latency_ms=(time.perf_counter() - started) * 1000)
 
     def run(self):
         assert self.receipts() == {}
@@ -250,10 +326,10 @@ class Matrix:
                 position = "last" if last else "first"
                 self.query(
                     payload(size, last), f"boundary-tree-{size}-{position}-{trial}",
-                    expected_status=200 if size <= 8192 else 413,
-                    expected_error="json_structure_limit_exceeded" if size > 8192 else None,
+                    expected_status=200,
                 )
 
+        self.query(b'["generic",{"model":"nested"}]', "boundary-json-array", xmodel=True)
         raw = payload(2048)
         for offset in (2032, 2033):
             for trial in range(1, 4):
@@ -280,11 +356,11 @@ class Matrix:
                        media="application/x-www-form-urlencoded", xmodel=True, early=False)
             self.query(raw, "boundary-keepalive-json-2", connection=connection, pieces=split_media)
             self.query(payload(8193), "boundary-keepalive-limit", connection=connection,
-                       expected_status=413, expected_error="json_structure_limit_exceeded")
+                       expected_status=200)
 
         for size in (3586, 8193):
-            self.query(payload(size), f"boundary-auth-store-unavailable-{size}", port=8082,
-                       expected_status=503, expected_error="policy_store_unavailable")
+            self.query(payload(size), f"boundary-auth-missing-{size}", port=8082,
+                       expected_status=401, expected_error="invalid_api_key")
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(
                 lambda index: self.query(payload(3586), f"boundary-parallel-{index}"),
@@ -294,7 +370,60 @@ class Matrix:
             for last in (False, True):
                 position = "last" if last else "first"
                 self.query_h2(payload(size, last), f"boundary-h2-{size}-{position}",
-                              200 if size <= 8192 else 413)
+                              200)
+
+        for byte_size in (800 * 1024, 2 * 1024 * 1024):
+            large = payload(8193, body_bytes=byte_size)
+            self.query(large, f"boundary-large-h1-{byte_size}")
+            self.query_h2(large, f"boundary-large-h2-{byte_size}")
+        for location, escaped, byte_size in [
+            ("front", False, BODY_BYTES), ("tail", False, 800 * 1024),
+            ("tail", True, 800 * 1024),
+        ]:
+            duplicate = duplicate_payload(location, escaped, byte_size)
+            suffix = f"{location}-{escaped}"
+            self.query(duplicate, f"boundary-duplicate-h1-{suffix}",
+                       expected_status=400, expected_error="duplicate_model_field")
+            self.query_h2(duplicate, f"boundary-duplicate-h2-{suffix}", 400,
+                          "duplicate_model_field")
+        self.query(payload(8193, body_bytes=2 * 1024 * 1024), "boundary-chunked-normal",
+                   chunked=True)
+        self.query(payload(8193, body_bytes=800 * 1024), "boundary-chunked-trailers",
+                   chunked=True, trailers=True)
+        for location, escaped, byte_size in [
+            ("front", False, BODY_BYTES), ("tail", False, 800 * 1024),
+            ("tail", True, 800 * 1024),
+        ]:
+            self.query(duplicate_payload(location, escaped, byte_size),
+                       f"boundary-chunked-duplicate-{location}-{escaped}", chunked=True,
+                       expected_status=400, expected_error="duplicate_model_field")
+        deep = (b'{"model":"' + MODEL.encode() + b'","user":"deep-session","nested":'
+                + b"[" * 12000 + b"0" + b"]" * 12000 + b"}")
+        self.query(deep, "boundary-deep-h1")
+        self.query_h2(deep, "boundary-deep-h2")
+        for media in ("application/json", "text/plain"):
+            suffix = media.split("/")[-1]
+            self.query(raw, f"boundary-duplicate-type-h1-{suffix}",
+                       extra=f"Content-Type: {media}\r\n", headers_only=True,
+                       expected_status=400, expected_error="duplicate_content_type")
+            self.query_h2(raw, f"boundary-duplicate-type-h2-{suffix}", 400,
+                          "duplicate_content_type", extra_type=media)
+        for byte_size in (BODY_BYTES, 800 * 1024):
+            authenticated = payload(8193, body_bytes=byte_size)
+            for name in ("allowed", "denied"):
+                status = 200 if name == "allowed" else 403
+                error = None if name == "allowed" else "model_not_allowed"
+                self.query(authenticated, f"boundary-auth-h1-{name}-{byte_size}",
+                           port=8082, api_key=self.keys[name],
+                           expected_status=status, expected_error=error)
+                self.query_h2(authenticated, f"boundary-auth-h2-{name}-{byte_size}",
+                              status, error, api_key=self.keys[name])
+        duplicate = duplicate_payload("tail", True, 800 * 1024)
+        self.query(duplicate, "boundary-auth-duplicate-h1", port=8082,
+                   api_key=self.keys["allowed"], expected_status=400,
+                   expected_error="duplicate_model_field")
+        self.query_h2(duplicate, "boundary-auth-duplicate-h2", 400,
+                      "duplicate_model_field", api_key=self.keys["allowed"])
 
         receipts = self.receipts()
         (self.evidence / "receipts.json").write_text(json.dumps(receipts, indent=2) + "\n")
@@ -304,6 +433,16 @@ class Matrix:
             request_id: 1 for request_id, result in self.results.items() if result["status"] == 200
         }, "backend receipt inventory differs from successful requests"
         print("BOUNDARY_RUNTIME_PASS", flush=True)
+
+
+def duplicate_payload(location, escaped, byte_size):
+    key = b"mod\\u0065l" if escaped else b"model"
+    duplicate = b',"' + key + b'":"other-model"'
+    raw = payload(8193, body_bytes=byte_size - len(duplicate))
+    if location == "tail":
+        return raw[:-1] + duplicate + b"}"
+    marker = b'"model":"' + MODEL.encode() + b'"'
+    return raw.replace(marker, marker + duplicate, 1)
 
 
 def split_media(head):
@@ -322,8 +461,12 @@ def main():
     version = subprocess.run(["curl", "--version"], capture_output=True, text=True, check=True)
     if "HTTP2" not in version.stdout:
         raise RuntimeError("curl must support HTTP/2")
-    configure(args.gateway, args.backend, args.evidence)
-    Matrix(args.gateway, args.backend, args.evidence).run()
+    keys = configure(args.gateway, args.backend, args.evidence)
+    matrix = Matrix(args.gateway, args.backend, args.evidence, keys)
+    try:
+        matrix.run()
+    finally:
+        (args.evidence / "receipts.json").write_text(json.dumps(matrix.receipts(), indent=2) + "\n")
 
 
 if __name__ == "__main__":
