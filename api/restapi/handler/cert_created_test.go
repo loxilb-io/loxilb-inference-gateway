@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -126,18 +127,18 @@ func TestCertCreateProtectsExistingAndConcurrentEntries(t *testing.T) {
 	})
 
 	bundle := testCABundlePEM(t)
-	post := func(id, usage string, keyPEM *string) int {
+	post := func(id, usage string, keyPEM *string) (int, string) {
 		res := ConfigPostCert(operations.PostConfigCertParams{
 			HTTPRequest: httptest.NewRequest(http.MethodPost, "/netlox/v1/config/cert", nil),
 			Attr:        &models.Cert{CertID: &id, Usage: &usage, CertPem: &bundle, KeyPem: keyPEM},
 		}, nil)
 		switch r := res.(type) {
 		case *operations.PostConfigCertCreated:
-			return http.StatusCreated
+			return http.StatusCreated, ""
 		case *operations.PostConfigCertConflict:
-			return int(r.Payload.Code)
+			return int(r.Payload.Code), r.Payload.Message
 		default:
-			return 0
+			return 0, ""
 		}
 	}
 
@@ -151,8 +152,9 @@ func TestCertCreateProtectsExistingAndConcurrentEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	attemptedKey := "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n"
-	if code := post("duplicate-partial", cmn.CertUsageServer, &attemptedKey); code != http.StatusConflict {
-		t.Fatalf("existing partial directory returned %d, want 409", code)
+	code, message := post("duplicate-partial", cmn.CertUsageServer, &attemptedKey)
+	if code != http.StatusConflict || !strings.Contains(message, "DELETE") || strings.Contains(message, "PUT") {
+		t.Fatalf("disk-only POST returned %d %q, want 409 with DELETE guidance", code, message)
 	}
 	if got, err := os.ReadFile(key); err != nil || string(got) != "existing key" {
 		t.Fatalf("existing key changed: %v", err)
@@ -164,7 +166,8 @@ func TestCertCreateProtectsExistingAndConcurrentEntries(t *testing.T) {
 	for range cap(results) {
 		wg.Go(func() {
 			<-start
-			results <- post("duplicate-race", cmn.CertUsageCA, nil)
+			code, _ := post("duplicate-race", cmn.CertUsageCA, nil)
+			results <- code
 		})
 	}
 	close(start)

@@ -61,6 +61,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"github.com/go-openapi/runtime/middleware"
@@ -278,7 +279,7 @@ func certRegister(certId string) (int, error) {
 	defer C.free(unsafe.Pointer(cID))
 	ret := int(C.proxy_register_cert(cID))
 	if ret < 0 {
-		return 0, fmt.Errorf("cert: proxy_register_cert(%s) failed: %d", certId, ret)
+		return 0, fmt.Errorf("cert: proxy_register_cert(%s) failed: %w", certId, syscall.Errno(-ret))
 	}
 	return ret, nil
 }
@@ -442,7 +443,7 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	_, known := certStore[cert.CertId]
 	certStoreMu.RUnlock()
 	if known {
-		return certCreateConflict(cert.CertId)
+		return certCreateConflict(cert.CertId, "is registered; use PUT to rotate it")
 	}
 
 	dir := filepath.Join(certManagedDir, cert.CertId)
@@ -454,7 +455,7 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	// to its existing owner and must survive a duplicate create.
 	if err := os.Mkdir(dir, certDirPerm); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return certCreateConflict(cert.CertId)
+			return certCreateConflict(cert.CertId, "has unregistered material on disk; restore a matching snapshot to re-register it, or DELETE the ID before uploading again")
 		}
 		tk.LogIt(tk.LogError, "api: cert directory: %v\n", err)
 		return operations.NewPostConfigCertInternalServerError().WithPayload(ResultErrorResponseError(err))
@@ -477,8 +478,8 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	if err != nil {
 		tk.LogIt(tk.LogError, "api: cert register failed: %v\n", err)
 		certManagedDirRemove(cert.CertId)
-		if certErrIsExists(err) {
-			return certCreateConflict(cert.CertId)
+		if errors.Is(err, syscall.EEXIST) {
+			return certCreateConflict(cert.CertId, "exists in the datapath registry without management metadata; restart the gateway to clear the stale registration before retrying")
 		}
 		return operations.NewPostConfigCertBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
 	}
@@ -492,11 +493,12 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	return operations.NewPostConfigCertCreated().WithPayload(&models.CertCreated{CertID: &cert.CertId})
 }
 
-func certCreateConflict(id string) middleware.Responder {
+func certCreateConflict(id, reason string) middleware.Responder {
+	message := fmt.Sprintf("certId %q %s", id, reason)
 	return operations.NewPostConfigCertConflict().WithPayload(&models.Error{
 		Code:    http.StatusConflict,
-		Message: "Certificate ID already exists",
-		Result:  fmt.Sprintf("cert: certId %q already exists; use PUT to rotate a registered certificate", id),
+		Message: message,
+		Result:  message,
 	})
 }
 
@@ -700,13 +702,6 @@ func certErrIsNotFound(err error) bool {
 	return err != nil && strings.HasSuffix(err.Error(), ": -2")
 }
 
-// certErrIsExists reports whether a C-registry error is the "already
-// registered" errno (-EEXIST = -17) -- the state the re-register paths
-// tolerate.
-func certErrIsExists(err error) bool {
-	return err != nil && strings.HasSuffix(err.Error(), ": -17")
-}
-
 // certDiskDigest hashes the managed material exactly as persisted:
 // sha256 over server.crt bytes followed by server.key bytes.
 func certDiskDigest(certId string) (string, error) {
@@ -789,7 +784,7 @@ func CertApplyMeta(meta *cmn.CertMeta) error {
 	}
 
 	if cmn.CertDiskUsage(meta.CertId) == cmn.CertUsageServer {
-		if _, err := certRegister(meta.CertId); err != nil && !certErrIsExists(err) {
+		if _, err := certRegister(meta.CertId); err != nil && !errors.Is(err, syscall.EEXIST) {
 			return fmt.Errorf("cert %s: register: %w", meta.CertId, err)
 		}
 	}
@@ -873,7 +868,7 @@ func CertBootReconcile() int {
 			continue
 		}
 		if usage == cmn.CertUsageServer {
-			if _, err := certRegister(id); err != nil && !certErrIsExists(err) {
+			if _, err := certRegister(id); err != nil && !errors.Is(err, syscall.EEXIST) {
 				tk.LogIt(tk.LogError, "api: cert boot reconcile: register %s failed: %v\n", id, err)
 				continue
 			}
