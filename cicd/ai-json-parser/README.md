@@ -11,23 +11,34 @@ Routing, model authorization and user/session extraction use a fixed-storage,
 allocation-free top-level scanner. JSON escapes are decoded when comparing keys
 and model values. More than one decoded top-level `model` key is rejected with
 HTTP 400 `duplicate_model_field`, including `mod\u0065l`. Nested `model` keys
-are not routing operands. Duplicate Content-Type headers are rejected with
+are not routing operands. Duplicate decoded top-level `user` keys are also
+refused with HTTP 400 `duplicate_user_field`, rather than allowing gateway and
+engine session identities to disagree. Duplicate Content-Type headers are rejected with
 HTTP 400 `duplicate_content_type`, even when their values agree.
 
-The 8,192 JSMN-token budget applies only to optional prefix/KV hashing. Exceeding
+The 8,192 JSMN-token budget applies only to optional structured prefix extraction. Exceeding
 it, or failing the expanded token allocation, skips that hash and preserves the
 routing model. It does not introduce a structural 413 or bypass allowed_models.
+Buffered H1 Chat KV-exact can still use the raw body independently of this
+optional prefix result, subject to its model/engine contract and feature limits.
 The scanner also replaces the old 64-token user extractor. Deep nesting does not
 consume recursive stack frames. Buffered requests share the scanner result
-between admission, model routing and prefix extraction. Optional parsing of
+between admission, model routing and prefix extraction. Top-level primitives
+cannot swallow a quote, colon or container delimiter; `true`, `false` and `null`
+are exact, and a comma must be followed by another key. This bounded operand
+scanner does not implement the complete RFC 8259 number or nested-value grammar. Optional parsing of
 bodies over 64KiB counts tokens first, avoiding an initial failed 2,048-token pass.
 
 H1 Content-Length bodies above the existing 768KiB inspection cap and chunked
-JSON bodies keep streaming. One incremental scanner state follows decoded body
+JSON bodies keep streaming. HTTP/1.1 chunked JSON always uses this path and does
+not receive prefix/KV-cache-aware routing. It also lacked prefix extraction
+before this change because it has no Content-Length. One incremental scanner state follows decoded body
 chunks, independent of the receive buffer, and the backend leg cannot enter
 sockmap relay while that guard is active. One trailing byte for Content-Length,
 or a five-byte suffix for chunked framing, is withheld until the JSON scan and
-HTTP framing complete. The zero-chunk callback validates JSON before any trailer
+HTTP framing complete. A runtime body-span check protects that suffix hold even
+in builds with assertions disabled; an insufficient span uses the prior relay
+path and writes a debug diagnostic. The zero-chunk callback validates JSON before any trailer
 can complete the backend request. A late duplicate resets/closes the backend
 leg without reuse, cancels any unused token reservation without a settlement,
 answers 400 and records exactly one sec.ai.deny. The terminal refusal remains
@@ -37,10 +48,23 @@ A streamed refusal can therefore expose headers and a **partial** body to the
 backend. Its complete-body receipt must remain zero. The mock waits for complete
 framing before acknowledging receipt, matching the backend contract assumed by
 this guard. H2 retains its existing bounded body buffering and uses the same
-metadata scanner. No additional 16MiB H1 collection buffer is allocated.
+metadata scanner only for exact, case-insensitive application/json media types
+before parameters, matching H1. Other H2 media types retain their relay path and the shared admission gate
+retains its existing body-model authorization probe.
+No additional 16MiB H1 collection buffer is allocated. `sp_json_scan_t` adds
+about 1.1KiB of fixed storage to every `proxy_fd_ent`.
 Oversized H1 routing still requires the first model to be discovered within the
 existing 64KiB routing window; this change extends duplicate detection through
 the end of that streamed body, rather than extending the routing window.
+
+## Compatibility note
+
+Every JSON request, including keyless requests, now refuses a top-level `model`
+that is not a string or whose decoded name is 128 bytes or longer with HTTP 400
+`invalid_model_field`. The message names `model` and its 127-byte limit. Earlier
+paths could truncate the name or fall through to routing failure. A later
+duplicate model still gets the duplicate verdict when the complete scanner sees
+both keys. Duplicate `user` declarations are now a framing refusal as well.
 
 ## Run
 
@@ -86,7 +110,14 @@ mock image, including after failures. A supplied mock image is retained.
 | Real allowed/denied API keys at 106,206 bytes and 800KiB, H1 and H2 | 8 | 200 / 403 model_not_allowed |
 | Allowed key with escaped duplicate model at 800KiB tail, H1 and H2 | 2 | 400, zero complete receipts |
 | Non-string model and duplicate after a non-string first value, authenticated H1/H2 | 4 | 400, zero complete receipts |
-| **Total** | **106** | **81 successes, 19 metadata refusals, 6 policy refusals** |
+| Malformed top-level primitive/key boundaries, H1/H2 | 6 | 400 invalid_json_body |
+| Literal/escaped duplicate user keys, H1/H2 | 4 | 400 duplicate_user_field |
+| Model lengths 127 and 128, authenticated/keyless H1/H2 | 6 | 403 model_not_allowed / 400 invalid_model_field |
+| Keyless non-string model, H1/H2 | 2 | 400 invalid_model_field |
+| H2 text/plain and media suffix relay; mixed-case JSON with parameters | 3 | 200 / 400 invalid_model_field |
+| Normal true/false/null/exponent-number fields, H1/H2 | 2 | 200 |
+| H2 non-JSON authenticated relay and forbidden body model with an allowed header hint | 2 | 200 / 403 model_not_allowed |
+| **Total** | **131** | **86 successes, 36 metadata refusals, 9 policy refusals** |
 
 The original 106,206-byte, 3,586-item fixture hashes are pinned by test_oracle.py.
 Structural items mean JSMN tokens, including object keys and containers, rather
@@ -112,7 +143,7 @@ artifacts/ (Git-ignored) so it is accessible from this workspace.
 AI-Gateway-Sanity-CI runs the complete scenario in ai-admission against the image
 built by ai-sanity-setup and uploads evidence on every run for 14 days.
 DP-Unit-Gate-CI runs extraction/allocator-failure units, production header split
-callbacks, refusal audit units and all 15 oracle/fixture tests. The full scenario
+callbacks, refusal audit units and all 16 oracle/fixture tests. The full scenario
 also exercises actual callback registration and dispatch, which the isolated
 header-callback compilation alone cannot cover. The eBPF C-Unit-Gates workflow
 runs its own scanner/extraction and refusal targets before the Gateway pin moves.

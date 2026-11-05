@@ -16,7 +16,7 @@ import urllib.request
 
 MODEL = "Qwen/Qwen3-32B-FP8"
 BODY_BYTES = 106206
-CASE_COUNT = 106
+CASE_COUNT = 131
 RESULT_LOCK = threading.Lock()
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -168,9 +168,12 @@ class Matrix:
                expected_status, expected_error=None, **detail):
         done = b"[DONE]" in reply and b"mock-backend-receipt" in reply
         error = None
+        error_message = None
         if status != 200:
             try:
-                error = json.loads(reply).get("error")
+                parsed_error = json.loads(reply)
+                error = parsed_error.get("error")
+                error_message = parsed_error.get("message")
             except (ValueError, AttributeError):
                 error = "invalid_error_body"
         passed = status == expected_status
@@ -178,10 +181,12 @@ class Matrix:
             passed &= receipt_count == 1 and done
         else:
             passed &= receipt_count == 0 and not done and error == expected_error
+        if expected_error == "invalid_model_field":
+            passed &= isinstance(error_message, str) and "model" in error_message and "127" in error_message
         if detail.get("early_expected") is not None:
             passed &= detail["early_backend_head"] == int(detail["early_expected"])
         result = {
-            "status": status, "error": error, "done": done,
+            "status": status, "error": error, "message": error_message, "done": done,
             "backend_receipts": receipt_count, "expected": bool(passed),
             "body_bytes": len(raw), "body_sha256": hashlib.sha256(raw).hexdigest(),
             **detail,
@@ -292,18 +297,20 @@ class Matrix:
         )
 
     def query_h2(self, raw, request_id, expected_status=200, expected_error=None,
-                 api_key=None, extra_type=None):
+                 api_key=None, extra_type=None, media="application/json", xmodel=False):
         body_path = self.evidence / "h2-request.json"
         body_path.write_bytes(raw)
         command = [
             "curl", "--silent", "--show-error", "--noproxy", "*",
             "--http2-prior-knowledge", "--max-time", "15",
-            "-H", "Content-Type: application/json", "-H", f"X-Request-Id: {request_id}",
+            "-H", f"Content-Type: {media}", "-H", f"X-Request-Id: {request_id}",
             "--data-binary", f"@{body_path}", "-w", "\n%{http_code}",
             f"http://{self.gateway}:{8084 if api_key else 8083}/v1/chat/completions",
         ]
         if api_key:
             command.extend(["-H", f"X-Api-Key: {api_key}"])
+        if xmodel:
+            command.extend(["-H", f"X-Model: {MODEL}"])
         if extra_type:
             command.extend(["-H", f"Content-Type: {extra_type}"])
         started = time.perf_counter()
@@ -423,11 +430,50 @@ class Matrix:
             if duplicate_first:
                 raw_model += b',"model":"other-model"'
             raw_model += b'}'
-            code = "duplicate_model_field" if duplicate_first else "invalid_json_body"
+            code = "duplicate_model_field" if duplicate_first else "invalid_model_field"
             self.query(raw_model, f"boundary-invalid-model-h1-{duplicate_first}", port=8082,
                        api_key=self.keys["allowed"], expected_status=400, expected_error=code)
             self.query_h2(raw_model, f"boundary-invalid-model-h2-{duplicate_first}", 400,
                           code, api_key=self.keys["allowed"])
+        for kind, malformed in [
+            ("hidden-model", b'{"model":"ok","a":1"model":"evil"}'),
+            ("trailing-comma", b'{"model":"a",}'),
+            ("literal", b'{"a":tru,"model":"a"}'),
+        ]:
+            self.query(malformed, f"boundary-malformed-h1-{kind}",
+                       expected_status=400, expected_error="invalid_json_body")
+            self.query_h2(malformed, f"boundary-malformed-h2-{kind}", 400, "invalid_json_body")
+        for escaped in (False, True):
+            user_key = b'us\\u0065r' if escaped else b'user'
+            user_dup = b'{"model":"' + MODEL.encode() + b'","user":"first","' + user_key + b'":"last"}'
+            self.query(user_dup, f"boundary-user-duplicate-h1-{escaped}",
+                       expected_status=400, expected_error="duplicate_user_field")
+            self.query_h2(user_dup, f"boundary-user-duplicate-h2-{escaped}", 400, "duplicate_user_field")
+        for size in (127, 128):
+            long_model = b'{"model":"' + b'm' * size + b'"}'
+            status = 400 if size == 128 else 403
+            error = "invalid_model_field" if size == 128 else "model_not_allowed"
+            for authenticated in (False, True) if size == 128 else (True,):
+                key = self.keys["allowed"] if authenticated else None
+                self.query(long_model, f"boundary-model-length-h1-{size}-{authenticated}",
+                           port=8082 if authenticated else 8081, api_key=key,
+                           expected_status=status, expected_error=error)
+                self.query_h2(long_model, f"boundary-model-length-h2-{size}-{authenticated}",
+                              status, error, api_key=key)
+        self.query(b'{"model":null}', "boundary-model-null-keyless-h1",
+                   expected_status=400, expected_error="invalid_model_field")
+        self.query_h2(b'{"model":null}', "boundary-model-null-keyless-h2", 400, "invalid_model_field")
+        self.query_h2(b'{not JSON', "boundary-h2-text-plain-object-prefix", media="text/plain", xmodel=True)
+        self.query_h2(b'{not JSON', "boundary-h2-json-suffix", media="application/json-extra", xmodel=True)
+        self.query_h2(b'{"model":null}', "boundary-h2-json-parameters", 400, "invalid_model_field",
+                      media="ApPlIcAtIoN/JsOn \t; charset=utf-8")
+        self.query_h2(b'{not JSON', "boundary-h2-text-plain-authenticated", media="text/plain",
+                      xmodel=True, api_key=self.keys["allowed"])
+        self.query_h2(b'{"model":"other-model"}', "boundary-h2-text-plain-model-policy", 403,
+                      "model_not_allowed", media="text/plain", xmodel=True, api_key=self.keys["allowed"])
+        normal_primitives = b'{"model":"' + MODEL.encode() + b'","a":true,"b":false,"c":null,"d":-1.5e3}'
+        self.query(normal_primitives, "boundary-primitives-h1")
+        self.query_h2(normal_primitives, "boundary-primitives-h2")
         duplicate = duplicate_payload("tail", True, 800 * 1024)
         self.query(duplicate, "boundary-auth-duplicate-h1", port=8082,
                    api_key=self.keys["allowed"], expected_status=400,

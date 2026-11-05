@@ -46,6 +46,15 @@ class OracleTests(unittest.TestCase):
         self.denial()
         self.assertTrue(self.passed())
 
+    def test_new_metadata_codes_require_framing(self):
+        for code in ("duplicate_user_field", "invalid_model_field"):
+            self.denial()
+            self.expected[self.request_id]["error"] = code
+            self.events[0]["detail"]["decision"] = code
+            self.assertTrue(self.passed())
+            self.events[0]["detail"]["stage"] = "auth"
+            self.assertFalse(self.passed())
+
     def test_duplicate_denial_fails(self):
         self.denial()
         self.events.append(copy.deepcopy(self.events[0]))
