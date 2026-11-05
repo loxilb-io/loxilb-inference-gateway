@@ -851,7 +851,9 @@ func kvJjJSONFromToken(dec *json.Decoder, tok json.Token) (any, error) {
 			}
 			return f, nil
 		}
-		i, err := strconv.ParseInt(lit, 10, 64)
+		// Bound to the platform int: the value model carries integers as
+		// int, and a literal past it is outside the reproducible range.
+		i, err := strconv.ParseInt(lit, 10, strconv.IntSize)
 		if err != nil {
 			return nil, errKvJSONNumberRange
 		}
