@@ -43,6 +43,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if opts.Opts.DetachDatapath != "" {
+		if err := ln.RecoverDatapath(opts.Opts.DetachDatapath); err != nil {
+			fmt.Fprintln(os.Stderr, "datapath recovery:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Validate options
 	if err := opts.ValidateOpts(); err != nil {
 		fmt.Println(err)
@@ -63,6 +71,11 @@ func main() {
 
 	if opts.Opts.AuditProducerBench > 0 {
 		os.Exit(runAuditProducerBench(opts.Opts.AuditProducerBench))
+	}
+
+	if err := ln.PrepareDatapathRecovery(opts.Opts.DatapathState); err != nil {
+		fmt.Fprintln(os.Stderr, "datapath state:", err)
+		os.Exit(1)
 	}
 
 	// Register built-in parsers (: Plugin Architecture)

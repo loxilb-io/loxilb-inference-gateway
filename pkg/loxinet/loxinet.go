@@ -227,12 +227,12 @@ func loxiNetTicker(bgpPeerMode bool) {
 	defer func() {
 		if e := recover(); e != nil {
 			tk.LogIt(tk.LogCritical, "%s: %s", e, debug.Stack())
+			if mh.dp != nil {
+				mh.dp.DpHooks.DpEbpfUnInit()
+			}
+			opLogStop()
+			os.Exit(1)
 		}
-		if mh.dp != nil {
-			mh.dp.DpHooks.DpEbpfUnInit()
-		}
-		opLogStop()
-		os.Exit(1)
 	}()
 
 	for {
@@ -297,10 +297,9 @@ func loxiNetTicker(bgpPeerMode bool) {
 					mh.shutdownCancel()
 				}
 
-				runShutdownStage("rest", 1*time.Second, shutdownRESTFn)
 				runShutdownStage("workers", 1*time.Second, shutdownWorkersFn)
 				runShutdownStage("doca", 2*time.Second, shutdownDocaFn)
-				runShutdownStage("ebpf", 1*time.Second, shutdownEbpfFn)
+				runShutdownStage("ebpf", 3*time.Second, shutdownEbpfFn)
 
 				// Existing post-stage cleanup that is NOT in any stage
 				// (preserved verbatim from the pre- handler).
@@ -331,6 +330,10 @@ func loxiNetTicker(bgpPeerMode bool) {
 				opLogStop()
 				// Flush and close structured logger last (captures shutdown log messages from other subsystems)
 				loxilog.Close()
+				if opts.Opts.NoAPI {
+					os.Exit(0)
+				}
+				// The REST shutdown callback calls os.Exit after this notification.
 				apiserver.ApiServerShutOk()
 				return
 			}

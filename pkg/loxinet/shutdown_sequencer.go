@@ -28,7 +28,6 @@ import (
 	"context"
 	"time"
 
-	apiserver "github.com/loxilb-io/loxilb/api"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -71,28 +70,16 @@ func runShutdownStage(name string, deadline time.Duration, fn func(context.Conte
 	}
 }
 
-// shutdownRESTFn / shutdownWorkersFn / shutdownDocaFn / shutdownEbpfFn are
+// shutdownWorkersFn / shutdownDocaFn / shutdownEbpfFn are
 // indirection points so unit tests (TestShutdownStagesOrdering) can swap in
 // recording stubs without driving the real subsystems. The signal-handler
 // in loxinet.go MUST call through these vars (not the underlying functions
 // directly) so the test substitution actually takes effect.
 var (
-	shutdownRESTFn    = shutdownREST
 	shutdownWorkersFn = shutdownWorkers
 	shutdownDocaFn    = shutdownDoca
 	shutdownEbpfFn    = shutdownEbpf
 )
-
-// shutdownREST stops the swagger HTTP server. The apiserver receives the
-// SIGINT directly via Go's signal broadcast (see loxinet.go bootstrap and
-// the OPEN QUESTION resolution at the top of this file), so this stage is
-// effectively the ack/wait point — `apiserver.ApiServerShutOk` is the
-// existing exit-ack the apiserver waits on before returning from
-// RunAPIServer.
-func shutdownREST(ctx context.Context) error {
-	apiserver.ApiServerShutOk()
-	return nil
-}
 
 // shutdownWorkers cancels the long-lived workers-stage goroutines (KV
 // subscriber, vllm scraper, DOCA heartbeat, etc.) that have been threaded
@@ -139,14 +126,7 @@ func shutdownDoca(ctx context.Context) error {
 	return mh.dpuMgr.Shutdown(ctx)
 }
 
-// shutdownEbpf detaches eBPF programs and unmaps `/sys/fs/bpf` entries.
-// 02 invariant: this MUST run on every shutdown path including
-// the second-SIGINT hard-exit, otherwise stale TC progs / pinned maps
-// corrupt the next loxilb start.
-//
-// The bounded send on `e.tDone` and `e.ToFinCh[i]` is in
-// `pkg/loxinet/dpebpf_linux.go` so this stage cannot wedge the
-// signal-handler goroutine indefinitely.
+// shutdownEbpf detaches the datapath before the REST callback can exit.
 func shutdownEbpf(ctx context.Context) error {
 	if mh.dpEbpf == nil {
 		return nil

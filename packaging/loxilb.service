@@ -9,7 +9,9 @@ StartLimitIntervalSec=0
 Type=simple
 User=root
 ExecStartPre=/usr/sbin/mkllb-bpffs
+Environment=LOXILB_DATAPATH_STATE=/run/loxilb-datapath.json
 ExecStart=/usr/sbin/loxilb
+ExecStopPost=/usr/sbin/loxilb --detach-datapath=/run/loxilb-datapath.json
 Restart=always
 RestartSec=1
 LimitMEMLOCK=infinity

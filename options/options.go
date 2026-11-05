@@ -8,6 +8,8 @@ import (
 )
 
 var Opts struct {
+	DatapathState     string         `long:"datapath-state" env:"LOXILB_DATAPATH_STATE" description:"Absolute path in a trusted directory for the offline datapath cleanup record"`
+	DetachDatapath    string         `long:"detach-datapath" description:"Detach recorded programs in the current network namespace and exit"`
 	Bgp               bool           `short:"b" long:"bgp" description:"Connect and Sync with GoBGP server"`
 	Ka                string         `short:"k" long:"ka" description:"KeepAlive/BFD RemoteIP:SourceIP:Interval" default:"none"`
 	Version           bool           `short:"v" long:"version" description:"Show loxilb version"`
