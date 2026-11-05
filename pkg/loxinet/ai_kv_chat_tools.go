@@ -52,12 +52,14 @@
  *     chat_completion/protocol.py:912-979, check_tool_usage) refuses an
  *     empty tools array, a tool_choice other than "none" without tools, a
  *     string other than auto/none/required, and a named choice that is not
- *     one of the tools. The render is independent of tool_choice: the
- *     engine runs without --exclude-tools-when-tool-choice-none, so "none"
- *     keeps the tools (online_renderer.py:228-231), and named/required only
- *     shape the structured output. Verified live with return_token_ids on
- *     /v1/chat/completions: auto, none, named and required rendered the same
- *     prompt ids as /tokenize.
+ *     one of the tools. auto, named and required do not change the render
+ *     (they shape the structured output; the HF renderer never reads
+ *     ChatParams.tool_choice), verified live with return_token_ids on
+ *     /v1/chat/completions. "none" is different: with
+ *     --exclude-tools-when-tool-choice-none the engine renders WITHOUT the
+ *     tools (online_renderer.py:228-233), and that server option is not
+ *     part of the deployment manifest the gate attests, so "none" is refused
+ *     (tool_choice_none) until the manifest carries the serve options.
  *   - messages: before field validation, ChatCompletionRequest's
  *     _normalize_messages_before (chat_completion/protocol.py:532-557) pops
  *     `reasoning_content` from EVERY message and, when the message's
@@ -338,6 +340,7 @@ type kvChatToolsRequest struct {
 const (
 	kvToolsRefuseTools       = "tools"
 	kvToolsRefuseToolChoice  = "tool_choice"
+	kvToolsRefuseToolNone    = "tool_choice_none"
 	kvToolsRefuseToolCalls   = "tool_calls"
 	kvToolsRefuseReasoning   = "reasoning"
 	kvToolsRefuseToolCallID  = "tool_call_id"
@@ -560,7 +563,12 @@ func kvChatToolsDicts(raw json.RawMessage) ([]any, map[string]bool, string) {
 }
 
 // kvChatToolChoiceCheck is check_tool_usage (protocol.py:912-979) for the
-// fields that decide acceptance; nothing here changes the render.
+// fields that decide acceptance. Absent, auto, required and a named tool do
+// not change the render. "none" is refused with its own reason: whether the
+// engine renders the tools for it depends on the serve option
+// --exclude-tools-when-tool-choice-none (online_renderer.py:228-233), which
+// the attested manifest does not carry, so the gateway cannot know which
+// prompt the engine hashed.
 func kvChatToolChoiceCheck(raw json.RawMessage, haveTools bool, names map[string]bool) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		// Absent defaults to "auto" with tools; null skips validation.
@@ -568,7 +576,7 @@ func kvChatToolChoiceCheck(raw json.RawMessage, haveTools bool, names map[string
 	}
 	if s, ok := kvJSONString(raw); ok {
 		if s == "none" {
-			return ""
+			return kvToolsRefuseToolNone
 		}
 		if !haveTools {
 			return kvToolsRefuseToolChoice

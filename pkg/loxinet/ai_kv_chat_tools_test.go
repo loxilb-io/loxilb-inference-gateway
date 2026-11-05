@@ -607,9 +607,17 @@ func TestKvToolsVectors(t *testing.T) {
 	if tok != nil && reflect.DeepEqual(ids["v2_tools_full"], ids["v4_tools_reordered"]) {
 		t.Fatal("v2 and v4 token ids identical")
 	}
-	for _, v := range []string{"v6a_tool_choice_none", "v6b_tool_choice_named", "v6c_tool_choice_required"} {
+	for _, v := range []string{"v6b_tool_choice_named", "v6c_tool_choice_required"} {
 		if f.Cases[v].Rendered != f.Cases["v2_tools_full"].Rendered {
 			t.Fatalf("%s renders differently from v2", v)
+		}
+	}
+	// tool_choice "none" is a request-class refusal with its own reason, with
+	// and without tools (the serve option that decides its render is not
+	// attested).
+	for _, v := range []string{"v6a_tool_choice_none", "n7_tool_choice_none_no_tools"} {
+		if c := f.Cases[v]; c.Expect != "refuse" || c.Reason != kvToolsRefuseToolNone {
+			t.Fatalf("%s: expect=%q reason=%q, want refuse/%s", v, c.Expect, c.Reason, kvToolsRefuseToolNone)
 		}
 	}
 	// reasoning_content parity with the chat path's _normalize_messages_before:
