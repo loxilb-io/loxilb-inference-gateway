@@ -36,6 +36,27 @@ loxilb-inference-gateway. `release.yml` runs this on every release tag;
   compatibility guarantee: the host kernel must still meet the eBPF baseline
   documented in the README.
 
+## Recovering datapath attachments after an abrupt stop
+
+The packaged systemd unit records its XDP and tc program IDs in
+`/run/loxilb-datapath.json`. After the Gateway process exits, systemd runs the
+offline detacher. Package removal retries any remaining record before deleting
+the binary. To retry manually after stopping the service, run
+`sudo loxilb --detach-datapath=/run/loxilb-datapath.json`.
+
+For a host-network container, mount a dedicated, root-owned host directory
+(mode `0700`) at `/var/lib/loxilb-recovery` and pass
+`--datapath-state=/var/lib/loxilb-recovery/datapath.json` when starting the
+Gateway. After an abrupt stop, run the same Gateway image with `--network host`,
+`--privileged`, the same bind mount, and
+`--detach-datapath=/var/lib/loxilb-recovery/datapath.json`. The command works
+without the original container and checks the boot, network namespace, and
+program IDs before detaching. Use a separate state directory per instance.
+
+The record covers attachments that the running Gateway has recorded. A crash
+between attachment and record creation can leave an unrecorded hook. Check
+`bpftool net show` and `tc filter show dev <interface> ingress` after recovery.
+
 ## Local build
 
 ```sh

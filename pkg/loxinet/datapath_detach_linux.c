@@ -15,15 +15,25 @@ xdp_id(int ifindex, int mode)
     return bpf_xdp_query_id(ifindex, mode, &id) ? 0 : id;
 }
 
-static __u32
-tc_id(const struct bpf_tc_hook *hook)
+static int
+query_tc_id(const struct bpf_tc_hook *hook, __u32 *id)
 {
     struct bpf_tc_opts opts = {
         .sz = sizeof(opts),
         .handle = 1,
         .priority = 1,
     };
-    return bpf_tc_query(hook, &opts) ? 0 : opts.prog_id;
+    int rc = bpf_tc_query(hook, &opts);
+    *id = rc ? 0 : opts.prog_id;
+    return rc;
+}
+
+static __u32
+tc_id(const struct bpf_tc_hook *hook)
+{
+    __u32 id;
+    query_tc_id(hook, &id);
+    return id;
 }
 
 static __u32
@@ -64,7 +74,13 @@ llb_link_programs(int ifindex, int egress)
 static int
 detach_xdp(int ifindex, int mode, __u32 expected, int *detached)
 {
-    if (!expected || xdp_id(ifindex, mode) != expected)
+    if (!expected)
+        return 0;
+    __u32 id = 0;
+    int rc = bpf_xdp_query_id(ifindex, mode, &id);
+    if (rc)
+        return rc == -ENODEV ? 0 : rc;
+    if (id != expected)
         return 0;
     int fd = bpf_prog_get_fd_by_id(expected);
     if (fd < 0)
@@ -74,7 +90,7 @@ detach_xdp(int ifindex, int mode, __u32 expected, int *detached)
         .sz = sizeof(opts),
         .old_prog_fd = fd,
     };
-    int rc = bpf_xdp_detach(ifindex, mode, &opts);
+    rc = bpf_xdp_detach(ifindex, mode, &opts);
     close(fd);
     if (!rc)
         ++*detached;
@@ -90,7 +106,14 @@ detach_tc(int ifindex, enum bpf_tc_attach_point point, __u32 expected,
         .ifindex = ifindex,
         .attach_point = point,
     };
-    if (!expected || tc_id(&hook) != expected)
+    if (!expected)
+        return 0;
+    __u32 id;
+    int rc = query_tc_id(&hook, &id);
+    /* RTM_GETTFILTER can return EINVAL when the clsact qdisc is absent. */
+    if (rc)
+        return rc == -ENODEV || rc == -ENOENT || rc == -EINVAL ? 0 : rc;
+    if (id != expected)
         return 0;
 
     /* Leave the clsact hook and every other filter in place. */
@@ -99,7 +122,7 @@ detach_tc(int ifindex, enum bpf_tc_attach_point point, __u32 expected,
         .handle = 1,
         .priority = 1,
     };
-    int rc = bpf_tc_detach(&hook, &opts);
+    rc = bpf_tc_detach(&hook, &opts);
     if (!rc)
         ++*detached;
     return rc;

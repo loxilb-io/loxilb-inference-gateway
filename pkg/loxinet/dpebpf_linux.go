@@ -829,6 +829,7 @@ func (e *DpEbpfH) DpEbpfUnInit() {
 		e.linkMu.Lock()
 		defer e.linkMu.Unlock()
 
+		detachFailed := false
 		for name, link := range e.linkPrograms {
 			var detached C.int
 			ret := C.llb_shutdown_detach(C.int(link.index), link.ids, &detached)
@@ -836,7 +837,13 @@ func (e *DpEbpfH) DpEbpfUnInit() {
 				tk.LogIt(tk.LogInfo, "[shutdown] detached %d datapath programs on %s\n", int(detached), name)
 			}
 			if ret < 0 {
+				detachFailed = true
 				tk.LogIt(tk.LogWarning, "[shutdown] detach datapath on %s: %v\n", name, syscall.Errno(-ret))
+			}
+		}
+		if !detachFailed && activeDatapathJournal != nil {
+			if err := activeDatapathJournal.clear(); err != nil {
+				tk.LogIt(tk.LogWarning, "[shutdown] clear datapath state: %v\n", err)
 			}
 		}
 		C.llb_unload_kern_all()
@@ -883,6 +890,16 @@ func (e *DpEbpfH) recordDatapathAttach(name string, index int, before C.struct_l
 		ingress: owned(previous.ids.ingress, before.ingress, after.ingress),
 		egress:  owned(previous.ids.egress, before.egress, after.egress),
 	}}
+	e.saveDatapathState()
+}
+
+// Call under linkMu, or during datapath initialization before workers start.
+func (e *DpEbpfH) saveDatapathState() {
+	if activeDatapathJournal != nil {
+		if err := activeDatapathJournal.save(e.linkPrograms); err != nil {
+			tk.LogIt(tk.LogError, "[DP] offline cleanup record could not be updated: %v\n", err)
+		}
+	}
 }
 
 // loadEbpfPgm - load loxilb eBPF program to an interface
@@ -973,6 +990,7 @@ func (e *DpEbpfH) unLoadEbpfPgm(name string) int {
 			(previous.ids.ingress == 0 || current.ingress != previous.ids.ingress) &&
 			(previous.ids.egress == 0 || current.egress != previous.ids.egress) {
 			delete(e.linkPrograms, name)
+			e.saveDatapathState()
 		}
 	}
 	return int(ret)

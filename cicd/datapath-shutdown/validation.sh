@@ -66,3 +66,44 @@ if [ "$exit_code" != 0 ] ||
 fi
 grep -E '\[shutdown\].*(detached|stage=ebpf)' "$tmp/gateway.log"
 echo 'PASS: Gateway XDP and tc ingress/egress detached, unrelated tc filter preserved'
+
+# The state directory outlives the removed gateway container. A second
+# container in the anchor namespace runs only the offline recovery command.
+mkdir "$tmp/state"
+state_args=(-v "$tmp/state:/state")
+docker run -d --name "$gateway" --privileged --network "container:$anchor" \
+    "${run_options[@]}" "${state_args[@]}" "$image" --egr-hooks --datapath-state=/state/datapath.json >/dev/null
+wait_ready
+grep -Eq 'llb0.*clsact/egress.*tc_packet_func' "$tmp/hooks"
+ns tc filter add dev llb0 ingress protocol all pref 50 matchall action pass
+
+offline() {
+    local network=$1
+    docker run --rm --privileged --network "$network" \
+        "${run_options[@]}" "${state_args[@]}" "$image" --detach-datapath=/state/datapath.json
+}
+if offline "container:$anchor" >"$tmp/recover.log" 2>&1 || ! grep -q 'is locked' "$tmp/recover.log"; then
+    cat "$tmp/recover.log" >&2
+    exit 1
+fi
+
+docker kill "$gateway" >/dev/null
+test "$(docker inspect -f '{{.State.ExitCode}}' "$gateway")" = 137
+docker rm "$gateway" >/dev/null
+ns bpftool net show >"$tmp/after-kill"
+diff -u "$tmp/hooks" "$tmp/after-kill"
+if offline none >"$tmp/recover.log" 2>&1 || ! grep -q 'another network namespace' "$tmp/recover.log"; then
+    cat "$tmp/recover.log" >&2
+    exit 1
+fi
+
+offline "container:$anchor"
+offline "container:$anchor"
+ns bpftool net show >"$tmp/after-recover"
+if grep -Eq 'llb0.*(generic|driver).* id |llb0.*clsact.*tc_packet_func' "$tmp/after-recover" ||
+    ! ns tc filter show dev llb0 ingress | grep -q 'pref 50 matchall'; then
+    cat "$tmp/after-recover" >&2
+    exit 1
+fi
+test ! -e "$tmp/state/datapath.json"
+echo 'PASS: offline recovery after SIGKILL, live lock and namespace guard, unrelated tc filter preserved'

@@ -7,8 +7,13 @@
 case "$1" in
     remove|0)
         if [ -d /run/systemd/system ]; then
-            systemctl stop loxilb.service >/dev/null 2>&1 || true
+            systemctl stop loxilb.service || exit 1
             systemctl disable loxilb.service >/dev/null 2>&1 || true
+        fi
+        # The helper and its shared libraries still exist during preremove.
+        # Retry cleanup if a previous stop left an offline ownership record.
+        if [ -e /run/loxilb-datapath.json ]; then
+            /usr/sbin/loxilb --detach-datapath=/run/loxilb-datapath.json || exit 1
         fi
         ;;
 esac
