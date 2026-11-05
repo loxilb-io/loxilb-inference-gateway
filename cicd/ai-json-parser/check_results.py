@@ -47,7 +47,7 @@ def evaluate(expected, events, receipts, required_count=CASE_COUNT):
             if terminal:
                 detail = terminal[0].get("detail", {})
                 passed &= detail.get("decision") == result["error"]
-                if result["status"] == 413 or result["error"] in ("duplicate_model_field", "duplicate_content_type"):
+                if result["status"] == 413 or result["error"] in ("duplicate_model_field", "duplicate_content_type", "invalid_json_body"):
                     passed &= detail.get("stage") == "framing"
         row = {"id": request_id, **result, "events": dict(counts), "passed": bool(passed)}
         rows.append(row)

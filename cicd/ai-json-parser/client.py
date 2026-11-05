@@ -16,7 +16,7 @@ import urllib.request
 
 MODEL = "Qwen/Qwen3-32B-FP8"
 BODY_BYTES = 106206
-CASE_COUNT = 102
+CASE_COUNT = 106
 RESULT_LOCK = threading.Lock()
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -418,6 +418,16 @@ class Matrix:
                            expected_status=status, expected_error=error)
                 self.query_h2(authenticated, f"boundary-auth-h2-{name}-{byte_size}",
                               status, error, api_key=self.keys[name])
+        for duplicate_first in (False, True):
+            raw_model = b'{"model":null'
+            if duplicate_first:
+                raw_model += b',"model":"other-model"'
+            raw_model += b'}'
+            code = "duplicate_model_field" if duplicate_first else "invalid_json_body"
+            self.query(raw_model, f"boundary-invalid-model-h1-{duplicate_first}", port=8082,
+                       api_key=self.keys["allowed"], expected_status=400, expected_error=code)
+            self.query_h2(raw_model, f"boundary-invalid-model-h2-{duplicate_first}", 400,
+                          code, api_key=self.keys["allowed"])
         duplicate = duplicate_payload("tail", True, 800 * 1024)
         self.query(duplicate, "boundary-auth-duplicate-h1", port=8082,
                    api_key=self.keys["allowed"], expected_status=400,

@@ -85,7 +85,8 @@ mock image, including after failures. A supplied mock image is retained.
 | Equal/conflicting duplicate Content-Type, H1 and H2 | 4 | 400, zero complete receipts |
 | Real allowed/denied API keys at 106,206 bytes and 800KiB, H1 and H2 | 8 | 200 / 403 model_not_allowed |
 | Allowed key with escaped duplicate model at 800KiB tail, H1 and H2 | 2 | 400, zero complete receipts |
-| **Total** | **102** | **81 successes, 15 metadata refusals, 6 policy refusals** |
+| Non-string model and duplicate after a non-string first value, authenticated H1/H2 | 4 | 400, zero complete receipts |
+| **Total** | **106** | **81 successes, 19 metadata refusals, 6 policy refusals** |
 
 The original 106,206-byte, 3,586-item fixture hashes are pinned by test_oracle.py.
 Structural items mean JSMN tokens, including object keys and containers, rather
