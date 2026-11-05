@@ -158,7 +158,7 @@ artifacts/ (Git-ignored) so it is accessible from this workspace.
 AI-Gateway-Sanity-CI runs the complete scenario in ai-admission against the image
 built by ai-sanity-setup and uploads evidence on every run for 14 days.
 DP-Unit-Gate-CI runs extraction/allocator-failure units, production header split
-callbacks, refusal audit units and all 16 oracle/fixture tests. The full scenario
+callbacks, refusal audit units and all 19 oracle/fixture tests. The full scenario
 also exercises actual callback registration and dispatch, which the isolated
 header-callback compilation alone cannot cover. The eBPF C-Unit-Gates workflow
 runs its own scanner/extraction and refusal targets before the Gateway pin moves.
@@ -171,9 +171,10 @@ go test -count=1 -run TestTokenQuota ./pkg/loxinet
 
 ## Publication order
 
-The earlier local eBPF commit c5e75a29 and its predecessors were not advertised
-by the eBPF remote refs during review. Local validation can use Git bundles;
-GitHub submodule checkout requires a remotely reachable revision. Publish and
-review the eBPF branch first, merge it, then update the Gateway gitlink to that
-reachable merged revision before publishing/merging the Gateway PR. A local
-candidate gitlink is not proof that hosted CI can check it out.
+The eBPF changes were merged in [eBPF PR #143](https://github.com/loxilb-io/loxilb-ebpf-inference-gateway/pull/143).
+The Gateway pins the remotely reachable merged revision
+`aed8f313f137c997824e23fd6798f47681fbee58`.
+For future updates, merge the eBPF PR first, then update the Gateway gitlink to
+its actual merged revision before publishing the Gateway PR. Local validation
+can use Git bundles; hosted CI must be able to check out the pinned revision
+from the eBPF remote.
