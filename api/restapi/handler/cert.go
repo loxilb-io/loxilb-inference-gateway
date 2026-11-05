@@ -55,11 +55,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"github.com/go-openapi/runtime/middleware"
@@ -91,6 +93,8 @@ const certIDMax = cmn.CertIDMax
 var (
 	certStore   = map[string]*cmn.CertArg{}
 	certStoreMu sync.RWMutex
+	// Serialize certificate writers across the filesystem, C registry and metadata.
+	certMutationMu sync.Mutex
 )
 
 // validateCert enforces upload contract (PURE — no disk, no CGO):
@@ -217,33 +221,34 @@ func pemHasArmor(s, kind string) bool {
 		strings.Contains(s, "-----END "+kind+"-----")
 }
 
-// certPersist writes the inline PEM to PROXY_SSL_CERTID_DIR/<certId>/ with restrictive
-// permissions. Layout matches what the 77-02 C loader reads: server.crt +
-// server.key (the chain, if present, is appended to server.crt so the existing path loader
-// picks up the full chain). Returns the managed dir on success.
-func certPersist(c *cmn.CertArg) (string, error) {
-	usage, err := certUsageOf(c)
-	if err != nil {
-		return "", err
-	}
-	crtName, keyName := cmn.CertUsageFiles(usage)
+// certPersist prepares the managed directory for rotation and replaces its material.
+func certPersist(c *cmn.CertArg) error {
 	dir := filepath.Join(certManagedDir, c.CertId)
 	if err := os.MkdirAll(dir, certDirPerm); err != nil {
-		return "", fmt.Errorf("cert: failed to create managed dir %s: %v", dir, err)
+		return fmt.Errorf("cert: failed to create managed dir %s: %w", dir, err)
 	}
-	// Enforce 0700 even if MkdirAll honored a laxer umask.
 	if err := os.Chmod(dir, certDirPerm); err != nil {
-		return "", fmt.Errorf("cert: failed to chmod managed dir %s: %v", dir, err)
+		return fmt.Errorf("cert: failed to chmod managed dir %s: %w", dir, err)
 	}
+	return certWriteMaterial(c, dir)
+}
+
+// certWriteMaterial writes the leaf and optional chain in the C loader's layout.
+func certWriteMaterial(c *cmn.CertArg, dir string) error {
+	usage, err := certUsageOf(c)
+	if err != nil {
+		return err
+	}
+	crtName, keyName := cmn.CertUsageFiles(usage)
 	if err := certWriteFile(filepath.Join(dir, crtName), []byte(certWithChain(c)), certFilePerm); err != nil {
-		return "", fmt.Errorf("cert: failed to write %s: %v", crtName, err)
+		return fmt.Errorf("cert: failed to write %s: %w", crtName, err)
 	}
 	if keyName != "" {
 		if err := certWriteFile(filepath.Join(dir, keyName), []byte(c.KeyPEM), certKeyPerm); err != nil {
-			return "", fmt.Errorf("cert: failed to write %s: %v", keyName, err)
+			return fmt.Errorf("cert: failed to write %s: %w", keyName, err)
 		}
 	}
-	return dir, nil
+	return nil
 }
 
 // certWriteFile replaces a file by writing a new one beside it and renaming
@@ -274,7 +279,7 @@ func certRegister(certId string) (int, error) {
 	defer C.free(unsafe.Pointer(cID))
 	ret := int(C.proxy_register_cert(cID))
 	if ret < 0 {
-		return 0, fmt.Errorf("cert: proxy_register_cert(%s) failed: %d", certId, ret)
+		return 0, fmt.Errorf("cert: proxy_register_cert(%s) failed: %w", certId, syscall.Errno(-ret))
 	}
 	return ret, nil
 }
@@ -431,23 +436,34 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	}
 
 	cert.Usage, _ = certUsageOf(cert)
-	// An ID is one entry; writing a second kind of material under it would
-	// make it ambiguous which one a rule means.
-	if have := cmn.CertDiskUsage(cert.CertId); have != "" && have != cert.Usage {
-		return operations.NewPostConfigCertBadRequest().WithPayload(certRefusal(
-			fmt.Errorf("cert: certId %q already holds a certificate with usage %q", cert.CertId, have)))
-	}
-	if cert.Usage != cmn.CertUsageServer && cmn.CertDiskUsage(cert.CertId) != "" {
-		return operations.NewPostConfigCertBadRequest().WithPayload(certRefusal(
-			fmt.Errorf("cert: certId %q already exists; rotate it with PUT", cert.CertId)))
+	certMutationMu.Lock()
+	defer certMutationMu.Unlock()
+
+	certStoreMu.RLock()
+	_, known := certStore[cert.CertId]
+	certStoreMu.RUnlock()
+	if known {
+		return certCreateConflict(cert.CertId, "is registered; use PUT to rotate it")
 	}
 
-	if _, err := certPersist(cert); err != nil {
-		tk.LogIt(tk.LogError, "api: cert persist failed: %v\n", err)
-		if cert.Usage != cmn.CertUsageServer {
-			certManagedDirRemove(cert.CertId)
+	dir := filepath.Join(certManagedDir, cert.CertId)
+	if err := os.MkdirAll(certManagedDir, certDirPerm); err != nil {
+		tk.LogIt(tk.LogError, "api: cert parent directory: %v\n", err)
+		return operations.NewPostConfigCertInternalServerError().WithPayload(ResultErrorResponseError(err))
+	}
+	// Claim a fresh directory. Even a partial or unregistered entry belongs
+	// to its existing owner and must survive a duplicate create.
+	if err := os.Mkdir(dir, certDirPerm); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return certCreateConflict(cert.CertId, "has unregistered material on disk; restore a matching snapshot to re-register it, or DELETE the ID before uploading again")
 		}
-		return operations.NewPostConfigCertBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
+		tk.LogIt(tk.LogError, "api: cert directory: %v\n", err)
+		return operations.NewPostConfigCertInternalServerError().WithPayload(ResultErrorResponseError(err))
+	}
+	if err := certWriteMaterial(cert, dir); err != nil {
+		tk.LogIt(tk.LogError, "api: cert persist failed: %v\n", err)
+		certManagedDirRemove(cert.CertId)
+		return operations.NewPostConfigCertInternalServerError().WithPayload(ResultErrorResponseError(err))
 	}
 
 	if cert.Usage != cmn.CertUsageServer {
@@ -462,6 +478,9 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	if err != nil {
 		tk.LogIt(tk.LogError, "api: cert register failed: %v\n", err)
 		certManagedDirRemove(cert.CertId)
+		if errors.Is(err, syscall.EEXIST) {
+			return certCreateConflict(cert.CertId, "exists in the datapath registry without management metadata; restart the gateway to clear the stale registration before retrying")
+		}
 		return operations.NewPostConfigCertBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
 	}
 
@@ -474,10 +493,22 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	return operations.NewPostConfigCertCreated().WithPayload(&models.CertCreated{CertID: &cert.CertId})
 }
 
+func certCreateConflict(id, reason string) middleware.Responder {
+	message := fmt.Sprintf("certId %q %s", id, reason)
+	return operations.NewPostConfigCertConflict().WithPayload(&models.Error{
+		Code:    http.StatusConflict,
+		Message: message,
+		Result:  message,
+	})
+}
+
 // ConfigPutCert rotates the material under a STABLE certId (atomic swap). Unknown
 // certId ⇒ 404; malformed material ⇒ 400.
 func ConfigPutCert(params operations.PutConfigCertCertIDParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: Cert %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
+
+	certMutationMu.Lock()
+	defer certMutationMu.Unlock()
 
 	certStoreMu.RLock()
 	prev, known := certStore[params.CertID]
@@ -502,7 +533,7 @@ func ConfigPutCert(params operations.PutConfigCertCertIDParams, principal interf
 	if err := validateCert(cert); err != nil {
 		return operations.NewPutConfigCertCertIDBadRequest().WithPayload(certRefusal(err))
 	}
-	if _, err := certPersist(cert); err != nil {
+	if err := certPersist(cert); err != nil {
 		return operations.NewPutConfigCertCertIDBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
 	}
 	if cert.Usage != cmn.CertUsageServer {
@@ -558,6 +589,9 @@ func ConfigDeleteCert(params operations.DeleteConfigCertCertIDParams, principal 
 	if err := validateCertID(params.CertID); err != nil {
 		return operations.NewDeleteConfigCertCertIDBadRequest().WithPayload(certRefusal(err))
 	}
+
+	certMutationMu.Lock()
+	defer certMutationMu.Unlock()
 
 	certStoreMu.RLock()
 	_, known := certStore[params.CertID]
@@ -668,13 +702,6 @@ func certErrIsNotFound(err error) bool {
 	return err != nil && strings.HasSuffix(err.Error(), ": -2")
 }
 
-// certErrIsExists reports whether a C-registry error is the "already
-// registered" errno (-EEXIST = -17) -- the state the re-register paths
-// tolerate.
-func certErrIsExists(err error) bool {
-	return err != nil && strings.HasSuffix(err.Error(), ": -17")
-}
-
 // certDiskDigest hashes the managed material exactly as persisted:
 // sha256 over server.crt bytes followed by server.key bytes.
 func certDiskDigest(certId string) (string, error) {
@@ -737,6 +764,9 @@ func CertApplyMeta(meta *cmn.CertMeta) error {
 		return err
 	}
 
+	certMutationMu.Lock()
+	defer certMutationMu.Unlock()
+
 	digest, err := certDiskDigest(meta.CertId)
 	if err != nil {
 		return fmt.Errorf("cert %s: managed material missing on this node (re-provision it, key material never rides the snapshot): %w", meta.CertId, err)
@@ -754,7 +784,7 @@ func CertApplyMeta(meta *cmn.CertMeta) error {
 	}
 
 	if cmn.CertDiskUsage(meta.CertId) == cmn.CertUsageServer {
-		if _, err := certRegister(meta.CertId); err != nil && !certErrIsExists(err) {
+		if _, err := certRegister(meta.CertId); err != nil && !errors.Is(err, syscall.EEXIST) {
 			return fmt.Errorf("cert %s: register: %w", meta.CertId, err)
 		}
 	}
@@ -772,6 +802,9 @@ func CertWipeRegistration(id string) error {
 	if err := validateCertID(id); err != nil {
 		return err
 	}
+	certMutationMu.Lock()
+	defer certMutationMu.Unlock()
+
 	if err := certDelete(id); err != nil && !certErrIsNotFound(err) {
 		return err
 	}
@@ -810,6 +843,9 @@ func certAdoptFromDisk(certId string) {
 // idempotent. Per-entry failures are logged and skipped -- one corrupt
 // directory must not keep every other certificate down.
 func CertBootReconcile() int {
+	certMutationMu.Lock()
+	defer certMutationMu.Unlock()
+
 	entries, err := os.ReadDir(certManagedDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -832,7 +868,7 @@ func CertBootReconcile() int {
 			continue
 		}
 		if usage == cmn.CertUsageServer {
-			if _, err := certRegister(id); err != nil && !certErrIsExists(err) {
+			if _, err := certRegister(id); err != nil && !errors.Is(err, syscall.EEXIST) {
 				tk.LogIt(tk.LogError, "api: cert boot reconcile: register %s failed: %v\n", id, err)
 				continue
 			}

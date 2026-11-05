@@ -12465,7 +12465,7 @@ func init() {
     },
     "/config/cert": {
       "post": {
-        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. Malformed PEM / missing key is rejected with 400 (never a panic).",
+        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.",
         "operationId": "postConfigCert",
         "parameters": [
           {
@@ -12499,6 +12499,12 @@ func init() {
           },
           "403": {
             "$ref": "#/responses/ManagementForbidden"
+          },
+          "409": {
+            "description": "Certificate ID already in use",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           },
           "500": {
             "description": "Internal service error",
@@ -26007,7 +26013,7 @@ func init() {
     },
     "/config/cert": {
       "post": {
-        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. Malformed PEM / missing key is rejected with 400 (never a panic).",
+        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.",
         "summary": "Upload a TLS certificate under an opaque certId",
         "operationId": "postConfigCert",
         "parameters": [
@@ -26042,6 +26048,12 @@ func init() {
           },
           "403": {
             "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Certificate ID already in use",
             "schema": {
               "$ref": "#/definitions/Error"
             }
