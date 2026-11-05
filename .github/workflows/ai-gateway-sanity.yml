@@ -314,6 +314,20 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      - name: OpenAI JSON parser boundaries (HTTP/1.1, h2c, receipts and audit)
+        if: ${{ !cancelled() }}
+        run: |
+          bash cicd/ai-json-parser/validation.sh \
+            ghcr.io/loxilb-io/loxilb-inference-gateway:latest \
+            "$GITHUB_WORKSPACE/cicd/ai-json-parser/artifacts/run"
+      - name: Keep JSON parser boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-json-parser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cicd/ai-json-parser/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
       # The other half of the model contract: one body-first resolution shared
       # by authorization and routing, and a hard 400 when the body and the
       # X-Model header disagree. It ran only in the local runner, so a change
