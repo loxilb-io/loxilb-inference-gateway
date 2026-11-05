@@ -56,6 +56,9 @@ program IDs before detaching. Use a separate state directory per instance.
 The record covers attachments that the running Gateway has recorded. A crash
 between attachment and record creation can leave an unrecorded hook. Check
 `bpftool net show` and `tc filter show dev <interface> ingress` after recovery.
+Shutdown and offline recovery leave the shared `clsact` qdisc in place,
+including when it is empty. Runtime port removal uses the existing port
+cleanup path.
 
 ## Local build
 

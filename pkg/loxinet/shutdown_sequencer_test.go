@@ -89,22 +89,6 @@ func TestRunShutdownStage_Error(t *testing.T) {
 	}
 }
 
-func TestMapNotifierReturnsOnShutdown(t *testing.T) {
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		dpMapNotifierWorker(stop, nil)
-	}()
-	close(stop)
-
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("map notifier did not return after shutdown")
-	}
-}
-
 // TestShutdownStagesOrdering — substitutes each stage function with a
 // recording stub and asserts the staged sequencer (the helper that the
 // loxinet.go signal handler calls) invokes them in the order

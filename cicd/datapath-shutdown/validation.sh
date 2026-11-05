@@ -17,7 +17,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker run -d --name "$anchor" --network none "${DP_TEST_ANCHOR_IMAGE:-alpine:3}" sleep 600 >/dev/null
+docker run -d --name "$anchor" --network none --entrypoint sleep "${DP_TEST_ANCHOR_IMAGE:-alpine:3}" 600 >/dev/null
 pid=$(docker inspect -f '{{.State.Pid}}' "$anchor")
 ns() { sudo -n nsenter -t "$pid" -n -- "$@"; }
 
@@ -42,7 +42,7 @@ docker run -d --name "$gateway" --privileged --network "container:$anchor" \
 wait_ready
 
 # Restart uses the same container and namespace, including its persistent hooks.
-docker restart --time 15 "$gateway" >/dev/null
+docker restart "$gateway" >/dev/null
 wait_ready
 grep -Eq 'llb0.*clsact/egress.*tc_packet_func' "$tmp/hooks"
 
@@ -51,7 +51,7 @@ ns tc filter add dev llb0 ingress protocol all pref 50 matchall action pass
 ns tc filter show dev llb0 ingress | grep -q 'pref 50 matchall'
 cat "$tmp/hooks"
 
-docker stop --time 15 "$gateway" >/dev/null
+docker stop "$gateway" >/dev/null
 exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$gateway")
 docker logs "$gateway" >"$tmp/gateway.log" 2>&1
 docker rm "$gateway" >/dev/null
