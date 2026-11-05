@@ -171,9 +171,10 @@ go test -count=1 -run TestTokenQuota ./pkg/loxinet
 
 ## Publication order
 
-The eBPF changes were merged in [eBPF PR #143](https://github.com/loxilb-io/loxilb-ebpf-inference-gateway/pull/143).
+The parser changes were merged in [eBPF PR #143](https://github.com/loxilb-io/loxilb-ebpf-inference-gateway/pull/143),
+with parsed-framing identity hygiene completed in [eBPF PR #144](https://github.com/loxilb-io/loxilb-ebpf-inference-gateway/pull/144).
 The Gateway pins the remotely reachable merged revision
-`aed8f313f137c997824e23fd6798f47681fbee58`.
+`201ee03d36b354a20f47603c0f9fb4a9b9f14be3`.
 For future updates, merge the eBPF PR first, then update the Gateway gitlink to
 its actual merged revision before publishing the Gateway PR. Local validation
 can use Git bundles; hosted CI must be able to check out the pinned revision
