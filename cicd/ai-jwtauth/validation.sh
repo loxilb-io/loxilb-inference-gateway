@@ -693,59 +693,56 @@ echo ""
 echo "== K: actual Transfer-Encoding: chunked requests (E2 was only TCP =="
 echo "   fragmentation of a Content-Length request — a different layer)."
 echo ""
-echo "   Pinned contract on a model-routed AI service: the effective model"
-echo "   is resolved from the request BODY, and the body locator reads the"
-echo "   Content-Length-delimited body. A chunked request carries no"
-echo "   Content-Length, so its model cannot be resolved and the request"
-echo "   is refused FAIL-CLOSED before any backend — never silently served"
-echo "   against the wrong model, and never forwarded past the gate. That"
-echo "   is the security property these legs pin: whatever the status, the"
-echo "   backend receipt is ZERO. (Chunked chat-completions is not a"
-echo "   supported client shape; OpenAI-compatible clients send"
-echo "   Content-Length. This is documented, not incidental.)"
+echo "   The incremental scanner resolves the model in decoded chunked JSON."
+echo "   Valid JWTs are admitted and consumed credentials are stripped."
+echo "   Existing upstream policy still omits X-Auth-* insertion for chunked"
+echo "   framing, including forward_identity services, independent of casing."
+echo "   Malformed framing, absent credentials and forbidden models stay denied."
 
 k_req() { # k_req <port> <mode> <token>
   local port=$1 mode=$2 tok=$3
   new_nonce
   $hexec l3h1 python3 ./raw_http.py "$VIP" "$port" "$mode" "$tok" "$LAST_NONCE" 2>/dev/null
 }
-# k_not_served <name> <response>: the deny half of the chunked contract.
-# The status may be 503 (model unresolved) or 400 (framing refused) — both
-# are fail-closed. What must NEVER appear is a backend answer, so the
-# marker to forbid is the pool label; the receipt assertion carries the
-# rest of the claim.
+# A refusal needs an independent zero-receipt assertion as well as no pool label.
 k_not_served() {
   note_case "$1"
   if [[ "$2" == *"server-llama"* ]] || [[ "$2" == *"server-mistral"* ]]; then
-    echo "  [FAIL] $1 — a chunked request reached a backend pool"; FAIL=$((FAIL + 1))
+    echo "  [FAIL] $1 — a refused request reached a backend pool"; FAIL=$((FAIL + 1))
   else
     echo "  [PASS] $1 (no backend pool answered)"; PASS=$((PASS + 1))
   fi
 }
 
+k_http_code() {
+  local line
+  line=$(status_of "$1")
+  line=${line#* }
+  echo "${line%% *}"
+}
+k_admitted() { # <case-id> <raw-response>
+  chk_code "$1 200 status" 200 "http_code=$(k_http_code "$2")"
+  chk_has "$1 correct llama pool" "server-llama" "$2"
+  chk_has "$1 consumed Authorization stripped" "authz=no" "$2"
+  chk_has "$1 chunked tenant insertion omitted" "xauth_tenant=-" "$2"
+  chk_has "$1 chunked user insertion omitted" "xauth_user=-" "$2"
+  chk_receipt "$1 backend received exactly one" 1
+}
+
 echo ""
-echo "K1: chunked + valid JWT on the model-routed default service → refused"
-echo "    fail-closed, nothing forwarded"
+echo "K1: chunked + valid JWT on the default service → admitted with hygiene"
 r=$(k_req 2040 chunked "$TOK_ALICE")
-k_not_served "K1 not served by a backend" "$r"
-chk_receipt  "K1 backend received nothing" 0
+k_admitted K1 "$r"
 
 echo ""
-echo "K2: chunked + valid JWT on the forward_identity service → the SAME"
-echo "    fail-closed outcome. The reviewers' worry is a chunked request"
-echo "    served WITHOUT its verified identity; here it is not served at"
-echo "    all, so no unidentified request reaches the backend."
+echo "K2: forward_identity preserves the documented chunked insertion skip"
 r=$(k_req 2045 chunked "$TOK_ALICE")
-k_not_served "K2 not served by a backend" "$r"
-chk_receipt  "K2 backend received nothing" 0
+k_admitted K2 "$r"
 
 echo ""
-echo "K3: the same request spelled 'Transfer-Encoding: Chunked' → the SAME"
-echo "    fail-closed outcome. Field values are case-insensitive (RFC"
-echo "    9112); a casing that changed the verdict would be two contracts."
+echo "K3: Transfer-Encoding: Chunked has the same admission and hygiene contract"
 r=$(k_req 2045 chunked-mixed "$TOK_ALICE")
-k_not_served "K3 casing does not change the verdict" "$r"
-chk_receipt  "K3 backend received nothing" 0
+k_admitted K3 "$r"
 
 echo ""
 echo "K4: Content-Length AND Transfer-Encoding on one request → never"
@@ -772,6 +769,20 @@ rm -f "$NONCE_FILE.last"
 r=$($hexec l3h1 python3 ./raw_http.py "$VIP" 2040 cl-te "" "$K5_NONCE" 2>/dev/null)
 k_not_served "K5 credential-free request not served" "$r"
 chk_receipt  "K5 backend received nothing" 0 "$K5_NONCE"
+
+echo ""
+echo "K6: well-formed chunked JSON without a credential → 401, no backend"
+r=$(k_req 2040 chunked "")
+chk_code "K6 missing credential refused" 401 "http_code=$(k_http_code "$r")"
+k_not_served "K6 no pool answered" "$r"
+chk_receipt "K6 backend received nothing" 0
+
+echo ""
+echo "K7: well-formed chunked JSON with a forbidden model → 403, no backend"
+r=$(k_req 2040 chunked "$TOK_BOB")
+chk_code "K7 model policy enforced" 403 "http_code=$(k_http_code "$r")"
+k_not_served "K7 no pool answered" "$r"
+chk_receipt "K7 backend received nothing" 0
 
 echo ""
 echo "== W: a request's bytes are the client's; only its header block is =="
@@ -4200,7 +4211,7 @@ echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
 echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
-EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 W1 W2 W3 W4 W5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2 \
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 K6 K7 W1 W2 W3 W4 W5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2 \
 QOS-RPS-001 QOS-RPS-002 QOS-RPS-003 QOS-RPS-004 QOS-RPS-005 \
 QOS-DEF-001 QOS-DEF-002 QOS-DEF-003 \
 QOS-VIP-001 QOS-VIP-004 \
