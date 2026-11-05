@@ -68,7 +68,12 @@ Agent-mode knobs:
   TOOLS_PER_AGENT  tools in each agent's set, default 67 (agent-style descriptions)
   TURNS_MIN/MAX    requests per conversation, default 8/12
   PRESET           agents12 (12 agents, 16-24 turns) | agents18 (18 agents, 16-24 turns);
-                   explicit AGENTS/TURNS_* override the preset
+                   agents12-shared | agents18-shared: the same sizes with ONE system
+                   prompt shared by every agent (SYSTEM_PROMPT=shared), so only the
+                   tool set differs per agent and the tools effect is isolated;
+                   explicit AGENTS/TURNS_*/SYSTEM_PROMPT override the preset
+  SYSTEM_PROMPT    per-agent (default: each agent its own topic and header) | shared
+                   (one prompt for all agents; the tool sets stay per agent)
   THINKING         kwargs (default: chat_template_kwargs enable_thinking=false,
                    preserve_thinking=true, the agent-harness shape) | prompt ("/no_think")
   SEED             tool sets, prompts and question order, default 20261105
@@ -116,7 +121,9 @@ MODE = os.environ.get("MODE", "legacy").strip().lower()
 # Presets bundle the agent-mode knobs for larger runs (explicit AGENTS/TURNS_* still win):
 #   agents12: 12 agents, 16-24 turns   agents18: 18 agents, 16-24 turns
 PRESETS = {"agents12": {"AGENTS": "12", "TURNS_MIN": "16", "TURNS_MAX": "24"},
-           "agents18": {"AGENTS": "18", "TURNS_MIN": "16", "TURNS_MAX": "24"}}
+           "agents18": {"AGENTS": "18", "TURNS_MIN": "16", "TURNS_MAX": "24"},
+           "agents12-shared": {"AGENTS": "12", "TURNS_MIN": "16", "TURNS_MAX": "24", "SYSTEM_PROMPT": "shared"},
+           "agents18-shared": {"AGENTS": "18", "TURNS_MIN": "16", "TURNS_MAX": "24", "SYSTEM_PROMPT": "shared"}}
 PRESET = os.environ.get("PRESET", "").strip().lower()
 if PRESET and PRESET not in PRESETS:
     sys.exit("PRESET must be one of %s (got %r)" % (", ".join(sorted(PRESETS)), PRESET))
@@ -130,6 +137,11 @@ TURNS_MAX = int(os.environ.get("TURNS_MAX", _P.get("TURNS_MAX", "12")))
 # {"enable_thinking": false, "preserve_thinking": true}, what agent harnesses
 # send; needs the gateway's tools-aware path) or prompt (Qwen3's "/no_think").
 THINKING = os.environ.get("THINKING", "kwargs").strip().lower()
+# System prompt per agent (own topic + header: the harness-like default) or one
+# shared prompt for every agent (control: only the tool sets differ).
+SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", _P.get("SYSTEM_PROMPT", "per-agent")).strip().lower()
+if SYSTEM_PROMPT not in ("per-agent", "shared"):
+    sys.exit("SYSTEM_PROMPT must be per-agent or shared (got %r)" % SYSTEM_PROMPT)
 if THINKING not in ("kwargs", "prompt"):
     sys.exit("THINKING must be kwargs or prompt (got %r)" % THINKING)
 SEED = int(os.environ.get("SEED", "20261105"))
@@ -434,6 +446,14 @@ def agent_tools(agent_idx, n):
 
 
 def agent_system_prompt(agent_idx, salt):
+    if SYSTEM_PROMPT == "shared":
+        # One prompt for every agent: the shared prefix ends where the tool
+        # list starts, so per-agent convergence can only come from the tools.
+        topic = list(TOPICS)[0]
+        return (f"[session {salt}] You are an autonomous engineering agent working on "
+                f"{TOPICS[topic]}. Use the available tools to gather facts before answering; call one tool "
+                "at a time, wait for its result, and keep final answers under three sentences. Never invent "
+                "identifiers: obtain them from list or search tools first.")
     topic = list(TOPICS)[agent_idx % len(TOPICS)]
     return (f"[session {salt} / agent {agent_idx}] You are an autonomous engineering agent working on "
             f"{TOPICS[topic]}. Use the available tools to gather facts before answering; call one tool "
@@ -718,7 +738,7 @@ def agent_main():
             system = agent_system_prompt(a, salt)
             size = len(json.dumps(tools))
             print(f"agent traffic: {rule}: agent {agent}: {len(tools)} tools ({size} B), {AGENT_CONC} conversation(s), "
-                  f"{TURNS_MIN}-{TURNS_MAX} turns, pace {PACE_S}s -> {url} (Host {GW_HOST}, salt {salt}, seed {SEED})", flush=True)
+                  f"{TURNS_MIN}-{TURNS_MAX} turns, pace {PACE_S}s, system {SYSTEM_PROMPT} -> {url} (Host {GW_HOST}, salt {salt}, seed {SEED})", flush=True)
             for slot in range(AGENT_CONC):
                 threading.Thread(target=agent_worker, args=(rule, url, agent, slot, system, tools, stop_at), daemon=True).start()
     while not stop_at or time.time() < stop_at:
