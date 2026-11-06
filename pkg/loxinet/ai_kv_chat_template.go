@@ -503,6 +503,16 @@ func kvExtractMessageContent(raw json.RawMessage) (string, bool) {
 // refused: the gateway does not know which engine serves the rule, and a
 // refusal only costs scoring, while acceptance would mis-hash.
 func kvChatExcludedFeature(body string, addGenerationPrompt bool) string {
+	return kvChatExcludedFeatureOpts(body, addGenerationPrompt, false)
+}
+
+// kvChatExcludedFeatureOpts is kvChatExcludedFeature with the tools-aware
+// variant: toolsAware=true skips only the tools/tool_choice refusal and the
+// chat_template_kwargs refusal, for the attested target whose render carries
+// them (ai_kv_chat_tools.go: the kwargs are then validated against a closed
+// allowlist by kvChatToolsParse, which refuses anything else); every other
+// refusal is unchanged. toolsAware=false is today's behavior exactly.
+func kvChatExcludedFeatureOpts(body string, addGenerationPrompt bool, toolsAware bool) string {
 	top, msgs, ok := kvChatDecodeExact(body)
 	if !ok {
 		// Unparseable here is unparseable for the render too (the bridge
@@ -522,13 +532,13 @@ func kvChatExcludedFeature(body string, addGenerationPrompt bool) string {
 		return json.Unmarshal(raw, &v) != nil || v != want
 	}
 	switch {
-	case kvJSONPresent(top["tools"]) || kvJSONPresent(top["tool_choice"]):
+	case !toolsAware && (kvJSONPresent(top["tools"]) || kvJSONPresent(top["tool_choice"])):
 		return "tools"
 	case kvJSONPresent(top["cache_salt"]):
 		return "cache_salt"
 	case kvJSONPresent(top["prompt_embeds"]):
 		return "prompt_embeds"
-	case kvJSONPresent(top["chat_template_kwargs"]):
+	case !toolsAware && kvJSONPresent(top["chat_template_kwargs"]):
 		return "template_kwargs"
 	case differs(top["add_generation_prompt"], addGenerationPrompt):
 		return "add_generation_prompt"
@@ -598,6 +608,14 @@ func kvChatExcludedFeature(body string, addGenerationPrompt bool) string {
 //   - a null or absent content when the template tests content for none or
 //     definedness: the gateway renders "" and cannot know the engine's value.
 func kvChatTemplateFeature(body, templateSrc string) string {
+	return kvChatTemplateFeatureOpts(body, templateSrc, nil)
+}
+
+// kvChatTemplateFeatureOpts is kvChatTemplateFeature with a set of message
+// keys whose engine meaning the caller reproduces (the tools-aware parser's
+// kvChatToolsModeledKeys); those keys skip the textual mention test. nil is
+// today's behavior exactly.
+func kvChatTemplateFeatureOpts(body, templateSrc string, modeled map[string]bool) string {
 	_, msgs, ok := kvChatDecodeExact(body)
 	if !ok {
 		return "unparseable"
@@ -616,6 +634,9 @@ func kvChatTemplateFeature(body, templateSrc string) string {
 				if kvJSONPresent(v) {
 					return "message_tools"
 				}
+				continue
+			}
+			if modeled[k] {
 				continue
 			}
 			if kvJSONPresent(v) && kvTemplateMentions(templateSrc, k) {

@@ -251,14 +251,16 @@ type kvAttestController struct {
 	info kvAttestRuleInfo
 	deps kvAttestDeps
 
-	mu           sync.Mutex
-	desired      string
-	enforced     string
-	reasons      []string
-	receipts     []KvAttestReceipt
-	lastProbeOK  time.Time
-	lastEchoOK   time.Time
-	manifestSeen string // digest of the manifest the current rungs attest to
+	mu              sync.Mutex
+	desired         string
+	enforced        string
+	reasons         []string
+	receipts        []KvAttestReceipt
+	lastProbeOK     time.Time
+	lastEchoOK      time.Time
+	manifestSeen    string // digest of the manifest the current rungs attest to
+	manifestSeenVer string // engineVersion that manifest declares ("" when absent)
+	manifestLoaded  bool   // the ladder has read the manifest at least once
 
 	stop chan struct{}
 	kick chan string
@@ -407,6 +409,25 @@ func KvAttestStatus(svcID uint32) (desired, enforced string, reasons []string, o
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.desired, c.enforced, append([]string(nil), c.reasons...), true
+}
+
+// kvAttestManifestSeen reports the manifest a rule's current attestation
+// rungs attest to: its digest and declared engineVersion (both "" when the
+// attestor found none), loaded once the ladder has read it, ok=false when the
+// rule has no controller. The request path consults this copy instead of the
+// manifest file: the attestor loads the file once per ladder run, re-reads it
+// once per probe cadence and re-attests a READY rule as manifest_changed when
+// the digest moves, so the copy follows an operator edit within one cadence.
+func kvAttestManifestSeen(svcID uint32) (digest, engineVersion string, loaded, ok bool) {
+	kvAttestMu.RLock()
+	c := kvAttestControllers[svcID]
+	kvAttestMu.RUnlock()
+	if c == nil {
+		return "", "", false, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.manifestSeen, c.manifestSeenVer, c.manifestLoaded, true
 }
 
 // KvAttestReceipts returns a copy of a rule's receipt chain.
@@ -601,11 +622,15 @@ func (c *kvAttestController) runLadder() {
 
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	manifestDigest := ""
+	manifestVersion := ""
 	if haveManifest {
 		manifestDigest = manifest.Digest
+		manifestVersion = manifest.EngineVersion
 	}
 	c.mu.Lock()
 	c.manifestSeen = manifestDigest
+	c.manifestSeenVer = manifestVersion
+	c.manifestLoaded = true
 	c.mu.Unlock()
 
 	// Rung 1 — TOKEN_PARITY_VERIFIED: identity consistency (when a manifest

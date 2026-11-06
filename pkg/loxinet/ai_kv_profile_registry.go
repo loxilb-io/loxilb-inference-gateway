@@ -169,6 +169,7 @@ func KvProfileRegistryLoadFrom(root string) error {
 	KvTokenizerPoolReset()
 	log.Infof("kv-profile: published generation %d (%d profiles, set digest %.12s…) from %s",
 		gen.Gen, len(gen.Profiles), gen.SetDigest, root)
+	kvToolsExactLogPublish(gen)
 	// §6.3: a registry republish moves every strict rule's trust inputs —
 	// fence and re-earn the ladder everywhere (each controller re-reads the
 	// new generation, manifests, and fixtures on its next pass).

@@ -434,6 +434,11 @@ func loxiNetInit() {
 	// Without this, llb_ai_kv_tokenize always returns -1 and Tier-1.5 is permanently disabled.
 	KvRegisterTokenizerBackend(NewHFTokenizerBackend())
 
+	// Resolve the tools-aware KV-exact flag before the registry publishes,
+	// so its one boot log line and the per-profile gate verdict appear in
+	// the first lines of the log.
+	KvToolsExactInit()
+
 	// Publish the model-profile registry if one is staged. A broken registry
 	// keeps the gateway up on legacy profile-less behavior (rules that
 	// REQUIRE a profile fail closed at admission instead), but the failure

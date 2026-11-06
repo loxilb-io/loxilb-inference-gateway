@@ -504,6 +504,7 @@ when the selected backend fails during the request:
 |---|---|
 | `LLB_KV_NONE_HASH_SEED` | NONE_HASH seed; **must equal vLLM's `PYTHONHASHSEED`** (≤23 bytes). Unset ⇒ zero NONE_HASH (only correct if vLLM is also unseeded) |
 | `LLB_KV_HASH_DEBUG=1` | Emit one `[KV_HASH]` log per computed block (hash + CBOR hex). Zero cost when unset |
+| `LOXILB_KV_TOOLS_EXACT` | **Tools-aware exact rendering, default off.** `1` lets strict chat rules bound to the attested target (profile `qwen3-32b-fp8-v1` with its pinned template digest, a vLLM engine contract, a deployment manifest declaring engine version 0.30.0) render `tools`, assistant `tool_calls`, tool turns and an allowlisted `chat_template_kwargs` (`enable_thinking`, `preserve_thinking`; boolean values only) exactly as the engine does, so agent requests take the KV-exact path instead of the `unsupported_feature` refusal. Resolved once at boot and logged; the gate verdict (`OPEN`, or `CLOSED` with the failing leg) is logged per profile at every registry publish. Every other profile, template, engine or kwarg keeps today's refusal. `tool_choice: "none"` is refused on this path too: whether the engine renders the tools for it depends on the serve option `--exclude-tools-when-tool-choice-none`, which the manifest does not attest. Parity is pinned by `cicd/common/kv_hash/fixtures/kv_chat_tools_vectors.json`, captured from vLLM's `/v1/chat/completions` with `return_token_ids` (the request model the gateway fronts; `/tokenize` is the secondary oracle and the fixture records where it differs, e.g. the chat path's `reasoning_content` → `reasoning` normalization) |
 | `LOXILB_KV_LB_MODE` | Tier-1.5 selection-law **mode selector**: `off`\|`hard`\|`soft`\|`adaptive`\|`adaptive-soft` (unset ⇒ `hard`; garbage ⇒ warn + `hard`) — see [doc 10 §4](10-hierarchical-kv-routing-architecture.md) |
 | `LOXILB_KV_UNIFIED_MODE` | **Legacy fallback toggle**, consulted only when `LOXILB_KV_LB_MODE` is unset. The unified prefix-CHWBL **capacity-weighted bounded-load blend** is **ON by default (the shipped default)** — Tier-1.5 keeps the cache-affinity (overlap) winner while it is under its capacity-weighted cap and *spills* CHWBL-style when it is over, so a hot prefix can no longer herd every request onto one prefill EP. Set `LOXILB_KV_UNIFIED_MODE=0` (or `false`/`off`/`no`) to **explicitly disable** it and restore the legacy pure overlap-argmax selector (byte-identical to the pre-blend baseline). Why it is the default: replicated A/B testing showed the blend is the only mode where KV-exact beats round-robin at the loose SLO — it cuts the prefill hot-spot's TTFT p90 from ~15.9 s to ~10.0 s. |
 | `LOXILB_KV_MEAN_LOAD_FACTOR` | The blend's bounded-load slack `c = (1+ε)·100`; valid `[100, 1000]` (ε ∈ [0, 9]); default `175` (ε = 0.75). Higher ⇒ more affinity-preserving (looser cap); lower ⇒ more aggressive spilling. Out-of-range/garbage ⇒ default. |
@@ -860,6 +861,17 @@ gate doesn't need them.
    (`tier15_miss_reason{reason="warmup"}` tells you).
 8. **Contract frozen at vLLM v0.17.0.** Upstream changes are detected by the non-gating drift
    stage (`KV_CONTRACT_DRIFT.md`), not by the hard gate.
+9. **Tools-aware rendering is opt-in and single-target.** With `LOXILB_KV_TOOLS_EXACT` unset,
+   strict chat rules refuse `tools`, `tool_choice` and `chat_template_kwargs` as
+   `unsupported_feature` (the request still serves, through the rule's plain selector). With it
+   set, only the attested profile renders them; `tool_choice: "none"` stays refused (its render
+   depends on a serve option the manifest does not attest); the hashed prefix is still bound to
+   `KV_MAX_TOKENS`, so a long tool list fills the bound and conversations sharing that tool set
+   converge per tool set, not per conversation. A client that keeps one connection open is
+   routed once per connection, not per request. The gate takes the deployment manifest from
+   the rule's attestor (the copy it attested, no file read on the request path), so an edited
+   `engineVersion` closes it within one probe cadence, when the attestor re-attests the rule as
+   `manifest_changed`, without a registry reload.
 
 ---
 
