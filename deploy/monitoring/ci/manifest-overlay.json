@@ -3143,11 +3143,12 @@
    },
    "loxilb_pd_fallback_to_normal_total": {
     "status": "writer-mapped",
+    "activation_precondition": "DEPRECATED since loxilb-ebpf-inference-gateway#142. Retained for compatibility and always zero because native P/D selection no longer falls back to a normal endpoint.",
     "writer_sources": [
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1209, "writes": "pdFallbackToNormalTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
-    "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1034, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+    "evidence": "DEPRECATED since loxilb-ebpf-inference-gateway#142. The collector and C snapshot field remain for compatibility, but the datapath fallback and its counter increment were removed. Native P/D selection failure now returns 503 pd_pool_unavailable, so this family stays at zero and must not be used to detect fallback routing."
    },
    "loxilb_pd_kv_tier15_fallthrough_total": {
     "status": "verified-runtime",

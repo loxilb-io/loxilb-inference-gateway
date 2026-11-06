@@ -89,5 +89,14 @@ jobs:
         run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
-      - name: EPP datapath lane
+      - name: EPP datapath lane (default and 32 KiB P/D body limits)
+        env:
+          EPP_TEST_LOG: ${{ runner.temp }}/epp-datapath.log
         run: sudo -E env "PATH=$PATH" scripts/epp-test.sh datapath
+      - name: Preserve failed datapath logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: epp-datapath-failure
+          path: ${{ runner.temp }}/epp-datapath*.log
+          if-no-files-found: ignore
