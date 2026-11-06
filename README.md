@@ -139,6 +139,24 @@ developers and other users, join the loxilb [Slack](https://www.loxilb.io/member
 loxilb questions, use the upstream
 [discussions](https://github.com/loxilb-io/loxilb/discussions).
 
+## Native P/D request bounds
+
+Bodyless HTTP/1 requests on a `pd_disagg_mode` rule use the first healthy decode
+endpoint in programmed pool order and hold no P/D role capacity or load
+reservations. A failed decode connection retries only decode endpoints. No
+usable decode returns `503 pd_pool_unavailable`.
+
+Native P/D buffers JSON bodies up to 768 KiB by default. Set the process
+environment variable `LLB_PD_MAX_BODY_BYTES` before startup to a positive byte
+count up to 786432 to lower this limit. Invalid values use the default.
+Requests over the limit receive `413 pd_body_too_large` with
+`max_body_bytes`. Chunked and streamed bodies receive
+`413 pd_body_unbufferable` before backend traffic, including non-JSON uploads
+that enter streaming above 64 KiB.
+
+This policy also applies after EPP FailOpen. Explicit EPP decisions and L7
+FORWARD routes use their own forwarding contract.
+
 ## CICD Workflow Status
 
 ### AI-Inference gateway
