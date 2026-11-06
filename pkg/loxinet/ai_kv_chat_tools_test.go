@@ -169,35 +169,45 @@ func kvTestToolsTokenizer(t *testing.T, f *kvToolsVectorFixture) KvTokenizer {
 	return tok
 }
 
-// kvTestManifestVersion stubs the manifest read for the gate and returns a
-// setter that changes the stubbed manifest in place (a new digest, the same
-// profile generation), the way an operator edit on disk reaches the gate.
-// "" is no manifest.
-func kvTestManifestVersion(t *testing.T, version string) func(string) {
+// kvTestAttestedManifest installs an attestation controller for svcID whose
+// seen manifest declares version (the way a ladder run records it) and
+// returns a setter that moves the seen manifest in place (a new digest, the
+// same profile generation), the way the attestor's manifest_changed
+// re-attest reaches the gate. "" is no manifest. No loop goroutine runs: the
+// gate reads the controller's copy, nothing probes.
+func kvTestAttestedManifest(t *testing.T, svcID uint32, version string) func(string) {
 	t.Helper()
-	prev := kvToolsExactManifestLoad
-	var mu sync.Mutex
-	cur := version
-	kvToolsExactManifestLoad = func(profileID string) (*KvAttestManifest, bool) {
-		mu.Lock()
-		v := cur
-		mu.Unlock()
+	c := newKvAttestController(kvAttestRuleInfo{svcID: svcID, profileID: kvToolsExactProfileID}, kvAttestDeps{})
+	set := func(v string) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.manifestLoaded = true
 		if v == "" {
-			return nil, false
+			c.manifestSeen, c.manifestSeenVer = "", ""
+			return
 		}
-		raw := []byte("profileId: " + profileID + "\nimageDigest: sha256:test\nengineVersion: " + v + "\n")
-		return &KvAttestManifest{ProfileID: profileID, ImageDigest: "sha256:test", EngineVersion: v, Digest: kvSha256Hex(raw)}, true
+		raw := []byte("profileId: " + kvToolsExactProfileID + "\nimageDigest: sha256:test\nengineVersion: " + v + "\n")
+		c.manifestSeen, c.manifestSeenVer = kvSha256Hex(raw), v
 	}
+	set(version)
+	kvAttestMu.Lock()
+	prev := kvAttestControllers[svcID]
+	kvAttestControllers[svcID] = c
+	kvAttestMu.Unlock()
 	kvToolsExactVerdicts.Clear()
 	t.Cleanup(func() {
-		kvToolsExactManifestLoad = prev
+		kvAttestMu.Lock()
+		if kvAttestControllers[svcID] == c {
+			if prev != nil {
+				kvAttestControllers[svcID] = prev
+			} else {
+				delete(kvAttestControllers, svcID)
+			}
+		}
+		kvAttestMu.Unlock()
 		kvToolsExactVerdicts.Clear()
 	})
-	return func(v string) {
-		mu.Lock()
-		cur = v
-		mu.Unlock()
-	}
+	return set
 }
 
 // kvRenderToolsCase renders a fixture body the way the strict bridge does on
@@ -283,15 +293,17 @@ func TestKvToolsExactOffIsByteIdentical(t *testing.T) {
 	// Gate: off means ineligible even for the attested target.
 	b := &KvExactBinding{Components: KvExactBindingComponents{
 		Profile: KvModelProfileRef{ID: f.ProfileID}, Contract: KvEngineContractRef{ID: "vllm-kv-map-v2"}}}
-	kvTestManifestVersion(t, kvToolsExactEngineVersion)
-	if kvToolsExactEligible(b, e) {
+	kvTestAttestedManifest(t, 70, kvToolsExactEngineVersion)
+	if kvToolsExactEligible(70, b, e) {
 		t.Fatal("flag off: gate reports eligible")
 	}
 }
 
 // TestKvToolsExactGate: the gate opens only for the attested target — this
-// profile id, this template digest, a vLLM contract and a manifest declaring
-// engine 0.30.0 — and the verdict is cached per profile generation.
+// profile id, this template digest, a vLLM contract and the rule's attested
+// manifest declaring engine 0.30.0 — and the verdict is cached per profile
+// generation. A rule without a controller, or whose ladder has not read the
+// manifest yet, is refused.
 func TestKvToolsExactGate(t *testing.T) {
 	defer kvToolsExactSetForTest(true)()
 	f := loadKvToolsVectors(t)
@@ -299,88 +311,144 @@ func TestKvToolsExactGate(t *testing.T) {
 	vllm := &KvExactBinding{Components: KvExactBindingComponents{
 		Profile: KvModelProfileRef{ID: f.ProfileID}, Contract: KvEngineContractRef{ID: "vllm-kv-map-v2"}}}
 
-	kvTestManifestVersion(t, kvToolsExactEngineVersion)
-	if !kvToolsExactEligible(vllm, e) {
+	set := kvTestAttestedManifest(t, 71, kvToolsExactEngineVersion)
+	if !kvToolsExactEligible(71, vllm, e) {
 		t.Fatal("attested target refused")
+	}
+	if kvToolsExactEligible(9971, vllm, e) {
+		t.Fatal("rule without an attestation controller accepted")
+	}
+	if open, reason := kvToolsExactManifestVerdict(9971, "rule-none", e); open || !strings.Contains(reason, "no attestation controller") {
+		t.Fatalf("no controller: open=%v reason=%q", open, reason)
+	}
+	fresh := newKvAttestController(kvAttestRuleInfo{svcID: 9972, profileID: kvToolsExactProfileID}, kvAttestDeps{})
+	kvAttestMu.Lock()
+	kvAttestControllers[9972] = fresh
+	kvAttestMu.Unlock()
+	t.Cleanup(func() {
+		kvAttestMu.Lock()
+		delete(kvAttestControllers, 9972)
+		kvAttestMu.Unlock()
+	})
+	if open, reason := kvToolsExactManifestVerdict(9972, "rule-fresh", e); open || !strings.Contains(reason, "not loaded the deployment manifest") {
+		t.Fatalf("ladder not run yet: open=%v reason=%q", open, reason)
 	}
 	other := *vllm
 	other.Components.Contract.ID = "sglang-kv-v1"
-	if kvToolsExactEligible(&other, e) {
+	if kvToolsExactEligible(71, &other, e) {
 		t.Fatal("non-vLLM contract accepted")
 	}
 	otherProfile := *vllm
 	otherProfile.Components.Profile.ID = "someone-else"
-	if kvToolsExactEligible(&otherProfile, e) {
+	if kvToolsExactEligible(71, &otherProfile, e) {
 		t.Fatal("binding naming another profile accepted")
 	}
 	drift := kvTestEntryLike(e, func(p *ModelPromptProfile) { p.TemplateSha256 = "00" })
-	if kvToolsExactEligible(vllm, drift) {
+	if kvToolsExactEligible(71, vllm, drift) {
 		t.Fatal("template digest drift accepted")
 	}
 	renamed := kvTestEntryLike(e, func(p *ModelPromptProfile) { p.ProfileID = "qwen3-32b-fp8-v2" })
 	vllm2 := *vllm
 	vllm2.Components.Profile.ID = renamed.Profile.ProfileID
-	if kvToolsExactEligible(&vllm2, renamed) {
+	if kvToolsExactEligible(71, &vllm2, renamed) {
 		t.Fatal("another profile id accepted")
 	}
 
-	kvTestManifestVersion(t, "0.31.0")
+	set("0.31.0")
 	e2 := kvTestPublishToolsTarget(t, f) // new generation: cache miss
-	if kvToolsExactEligible(vllm, e2) {
+	if kvToolsExactEligible(71, vllm, e2) {
 		t.Fatal("engine 0.31.0 accepted")
 	}
-	kvTestManifestVersion(t, "")
+	set("")
 	e3 := kvTestPublishToolsTarget(t, f)
-	if kvToolsExactEligible(vllm, e3) {
+	if kvToolsExactEligible(71, vllm, e3) {
 		t.Fatal("missing manifest accepted")
 	}
 }
 
 // TestKvToolsExactGateFollowsManifest: the attestor re-attests a READY rule
-// when the manifest digest changes without a registry reload, so the gate
-// must re-evaluate an edited manifest under the SAME profile generation:
-// 0.30.0 → 0.31.0 flips OPEN → CLOSED, back to 0.30.0 re-opens, a removed
-// manifest closes; each change is logged once and an unchanged manifest is
-// served from the cache without a log line.
+// when the manifest digest changes without a registry reload and records the
+// manifest it now attests to, so the gate must follow that copy under the
+// SAME profile generation: 0.30.0 → 0.31.0 flips OPEN → CLOSED, back to
+// 0.30.0 re-opens, a removed manifest closes; each change is logged once and
+// an unchanged manifest is served from the cache without a log line.
 func TestKvToolsExactGateFollowsManifest(t *testing.T) {
 	defer kvToolsExactSetForTest(true)()
 	f := loadKvToolsVectors(t)
 	e := kvTestPublishToolsTarget(t, f)
-	vllm := &KvExactBinding{Components: KvExactBindingComponents{
+	vllm := &KvExactBinding{RuleIdent: "rule-72", Components: KvExactBindingComponents{
 		Profile: KvModelProfileRef{ID: f.ProfileID}, Contract: KvEngineContractRef{ID: "vllm-kv-map-v2"}}}
-	set := kvTestManifestVersion(t, kvToolsExactEngineVersion)
+	set := kvTestAttestedManifest(t, 72, kvToolsExactEngineVersion)
 	h := kvTestCaptureLog(t)
 
-	if !kvToolsExactEligible(vllm, e) {
+	if !kvToolsExactEligible(72, vllm, e) {
 		t.Fatal("attested target refused")
+	}
+	if n := len(h.matching("gate OPEN for rule rule-72 (profile " + f.ProfileID)); n != 1 {
+		t.Fatalf("first attested manifest logged %d times, want 1: %q", n, h.matching("gate OPEN for rule"))
 	}
 	gen := e.Gen
 	set("0.31.0")
-	if kvToolsExactEligible(vllm, e) {
+	if kvToolsExactEligible(72, vllm, e) {
 		t.Fatalf("manifest edited to engineVersion 0.31.0 under gen %d still OPEN", gen)
 	}
 	if n := len(h.matching("after a manifest change")); n != 1 {
 		t.Fatalf("manifest change logged %d times, want 1: %q", n, h.matching("after a manifest change"))
 	}
-	if kvToolsExactEligible(vllm, e) {
+	if kvToolsExactEligible(72, vllm, e) {
 		t.Fatal("second evaluation of the edited manifest OPEN")
 	}
 	if n := len(h.matching("after a manifest change")); n != 1 {
 		t.Fatalf("unchanged manifest re-logged (%d lines)", n)
 	}
 	set(kvToolsExactEngineVersion)
-	if !kvToolsExactEligible(vllm, e) {
+	if !kvToolsExactEligible(72, vllm, e) {
 		t.Fatal("manifest restored to the attested version stays CLOSED")
 	}
 	if n := len(h.matching("gate OPEN for profile " + f.ProfileID + " gen " + strconv.FormatUint(gen, 10) + " after a manifest change")); n != 1 {
 		t.Fatalf("re-open logged %d times, want 1", n)
 	}
 	set("")
-	if kvToolsExactEligible(vllm, e) {
+	if kvToolsExactEligible(72, vllm, e) {
 		t.Fatal("removed manifest stays OPEN")
 	}
 	if e.Gen != gen {
 		t.Fatalf("test moved the generation (%d → %d); the point is the SAME generation", gen, e.Gen)
+	}
+}
+
+// TestKvToolsExactGateIgnoresManifestFile: the request-path verdict is taken
+// from the rule's attestor, never from the manifest file. A file beneath the
+// profile root that disagrees with the attested copy does not move the gate
+// in either direction; only the attestor's copy does (the attestor itself
+// re-reads the file once per probe cadence and re-attests on a change).
+func TestKvToolsExactGateIgnoresManifestFile(t *testing.T) {
+	defer kvToolsExactSetForTest(true)()
+	f := loadKvToolsVectors(t)
+	e := kvTestPublishToolsTarget(t, f)
+	gen := kvProfileReg.Load()
+	prevRoot := gen.SourceRoot
+	gen.SourceRoot = t.TempDir()
+	t.Cleanup(func() { gen.SourceRoot = prevRoot })
+	vllm := &KvExactBinding{RuleIdent: "rule-74", Components: KvExactBindingComponents{
+		Profile: KvModelProfileRef{ID: f.ProfileID}, Contract: KvEngineContractRef{ID: "vllm-kv-map-v2"}}}
+	set := kvTestAttestedManifest(t, 74, kvToolsExactEngineVersion)
+
+	// Disk says 0.31.0, the attestor says 0.30.0: OPEN.
+	kvWriteManifest(t, gen.SourceRoot, f.ProfileID,
+		"profileId: "+f.ProfileID+"\nimageDigest: sha256:disk\nengineVersion: 0.31.0\n")
+	if m, ok := kvAttestManifestLoad(f.ProfileID); !ok || m.EngineVersion != "0.31.0" {
+		t.Fatalf("test setup: on-disk manifest = %+v ok=%v", m, ok)
+	}
+	if !kvToolsExactEligible(74, vllm, e) {
+		t.Fatal("gate followed the manifest file (0.31.0) instead of the attested copy (0.30.0)")
+	}
+	// Disk says 0.30.0, the attestor says 0.31.0: CLOSED.
+	kvWriteManifest(t, gen.SourceRoot, f.ProfileID,
+		"profileId: "+f.ProfileID+"\nimageDigest: sha256:disk\nengineVersion: "+kvToolsExactEngineVersion+"\n")
+	set("0.31.0")
+	if kvToolsExactEligible(74, vllm, e) {
+		t.Fatal("gate followed the manifest file (0.30.0) instead of the attested copy (0.31.0)")
 	}
 }
 
@@ -479,7 +547,7 @@ func TestKvToolsExactFlagLogsOnce(t *testing.T) {
 func TestKvToolsExactPublishVerdict(t *testing.T) {
 	f := loadKvToolsVectors(t)
 	e := kvTestPublishToolsTarget(t, f)
-	kvTestManifestVersion(t, kvToolsExactEngineVersion)
+	set := kvTestAttestedManifest(t, 73, kvToolsExactEngineVersion)
 
 	restore := kvToolsExactSetForTest(false)
 	if open, reason := kvToolsExactProfileVerdict(e); open || !strings.Contains(reason, "LOXILB_KV_TOOLS_EXACT is off") {
@@ -499,19 +567,23 @@ func TestKvToolsExactPublishVerdict(t *testing.T) {
 	if open, reason := kvToolsExactProfileVerdict(drift); open || !strings.Contains(reason, "template sha256") {
 		t.Fatalf("template drift: open=%v reason=%q", open, reason)
 	}
-	kvTestManifestVersion(t, "0.31.0")
+	// The manifest leg is per rule: the attestor's seen manifest decides.
+	if open, reason := kvToolsExactManifestVerdict(73, "rule-73", e); !open || reason != "" {
+		t.Fatalf("attested manifest 0.30.0: open=%v reason=%q", open, reason)
+	}
+	set("0.31.0")
 	e2 := kvTestPublishToolsTarget(t, f)
-	if open, reason := kvToolsExactProfileVerdict(e2); open || !strings.Contains(reason, `manifest engineVersion "0.31.0"`) {
+	if open, reason := kvToolsExactManifestVerdict(73, "rule-73", e2); open || !strings.Contains(reason, `manifest engineVersion "0.31.0"`) {
 		t.Fatalf("engine 0.31.0: open=%v reason=%q", open, reason)
 	}
-	kvTestManifestVersion(t, "")
+	set("")
 	e3 := kvTestPublishToolsTarget(t, f)
-	if open, reason := kvToolsExactProfileVerdict(e3); open || !strings.Contains(reason, "no deployment manifest") {
+	if open, reason := kvToolsExactManifestVerdict(73, "rule-73", e3); open || !strings.Contains(reason, "no deployment manifest") {
 		t.Fatalf("missing manifest: open=%v reason=%q", open, reason)
 	}
 
 	// One line per profile per publish: the target OPEN, another CLOSED.
-	kvTestManifestVersion(t, kvToolsExactEngineVersion)
+	set(kvToolsExactEngineVersion)
 	e4 := kvTestPublishToolsTarget(t, f)
 	gen := kvProfileReg.Load()
 	gen.Profiles["zz-other"] = kvTestEntryLike(e4, func(p *ModelPromptProfile) { p.ProfileID = "zz-other" })
@@ -531,7 +603,7 @@ func TestKvToolsExactPublishVerdict(t *testing.T) {
 	sglang := &KvExactBinding{RuleIdent: "rule-x", Components: KvExactBindingComponents{
 		Profile: KvModelProfileRef{ID: f.ProfileID}, Contract: KvEngineContractRef{ID: "sglang-kv-v1"}}}
 	for i := 0; i < 3; i++ {
-		if kvToolsExactEligible(sglang, e4) {
+		if kvToolsExactEligible(73, sglang, e4) {
 			t.Fatal("non-vLLM contract accepted")
 		}
 	}
@@ -791,7 +863,7 @@ func TestKvToolsBridgeStrictPath(t *testing.T) {
 	f := loadKvToolsVectors(t)
 	kvDataplaneTestSetup(t)
 	e := kvTestPublishToolsTarget(t, f)
-	kvTestManifestVersion(t, kvToolsExactEngineVersion)
+	kvTestAttestedManifest(t, 61, kvToolsExactEngineVersion)
 	comps := kvTestComponents(1)
 	comps.Profile.ID = f.ProfileID
 	comps.Contract.ID = "vllm-kv-map-v2"

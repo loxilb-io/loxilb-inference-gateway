@@ -868,8 +868,10 @@ gate doesn't need them.
    depends on a serve option the manifest does not attest); the hashed prefix is still bound to
    `KV_MAX_TOKENS`, so a long tool list fills the bound and conversations sharing that tool set
    converge per tool set, not per conversation. A client that keeps one connection open is
-   routed once per connection, not per request. The gate re-reads the deployment manifest on
-   every verdict, so an edited `engineVersion` closes it without a registry reload.
+   routed once per connection, not per request. The gate takes the deployment manifest from
+   the rule's attestor (the copy it attested, no file read on the request path), so an edited
+   `engineVersion` closes it within one probe cadence, when the attestor re-attests the rule as
+   `manifest_changed`, without a registry reload.
 
 ---
 

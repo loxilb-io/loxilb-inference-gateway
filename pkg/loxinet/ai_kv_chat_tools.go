@@ -185,37 +185,41 @@ const (
 	kvToolsExactEngineVersion = "0.30.0"
 )
 
-// kvToolsExactManifestLoad is the manifest reader (a seam for tests).
-var kvToolsExactManifestLoad = kvAttestManifestLoad
-
 // kvToolsExactVerdicts caches the manifest verdict per (profile generation,
 // template digest, manifest digest) (key
 // "manifest\x00<profile>\x00<gen>\x00<template sha>\x00<manifest digest>"),
-// the last such key seen per profile generation (key
-// "manifest-last\x00<profile>\x00<gen>", so a manifest edit is logged once),
-// and the one-time log marker per (profile generation, engine contract)
-// (key "contract\x00<profile>\x00<gen>\x00<contract>"). The manifest is
-// re-read on every verdict: the attestor re-attests a READY rule when the
-// manifest digest changes without a registry reload
-// (ai_kv_attest.go, manifest_changed), so the gate cannot pin its answer to
-// the generation alone.
+// the last manifest digest seen per (profile generation, rule) (key
+// "manifest-last\x00<profile>\x00<gen>\x00<svcID>", so a rule's first
+// manifest and every change are logged once), and the one-time log marker
+// per (profile generation, engine contract) (key
+// "contract\x00<profile>\x00<gen>\x00<contract>"). The manifest digest and
+// engineVersion come from the rule's attestation controller
+// (kvAttestManifestSeen), never from a file read on the request path: the
+// attestor loads the manifest per ladder run, re-reads it once per probe
+// cadence and re-attests a READY rule as manifest_changed when the digest
+// moves (ai_kv_attest.go), so the gate follows an edited manifest within one
+// cadence without pinning its answer to the profile generation.
 var kvToolsExactVerdicts sync.Map
 
-// kvToolsExactManifestKey is the manifest digest as it appears in the cache
-// key: the loaded digest, or "absent" when no manifest is loadable.
+// kvToolsExactManifestAbsent is the manifest digest as it appears in the
+// cache key when the attestor found no manifest.
 const kvToolsExactManifestAbsent = "absent"
 
-// kvToolsExactManifestVerdict is the manifest leg of the gate: the profile's
-// deployment manifest must exist and declare the attested engine version.
-// The manifest is loaded on every call (the same trusted read the attestor
-// does per sweep) and the verdict is cached by its digest, so an edited
-// manifest re-evaluates the gate while an unchanged one costs one read. The
-// reason is "" when it passes.
-func kvToolsExactManifestVerdict(e *kvProfileEntry) (bool, string) {
-	m, ok := kvToolsExactManifestLoad(e.Profile.ProfileID)
-	digest := kvToolsExactManifestAbsent
-	if ok && m != nil && m.Digest != "" {
-		digest = m.Digest
+// kvToolsExactManifestVerdict is the manifest leg of the gate for one rule:
+// the manifest the rule's attestor currently attests to must exist and
+// declare the attested engine version. The verdict is cached by digest; a
+// rule's first digest and every later change under a live generation are
+// logged once. The reason is "" when it passes.
+func kvToolsExactManifestVerdict(svcID uint32, rule string, e *kvProfileEntry) (bool, string) {
+	digest, version, loaded, ok := kvAttestManifestSeen(svcID)
+	if !ok {
+		return false, "rule has no attestation controller"
+	}
+	if !loaded {
+		return false, "attestation has not loaded the deployment manifest yet"
+	}
+	if digest == "" {
+		digest = kvToolsExactManifestAbsent
 	}
 	genKey := e.Profile.ProfileID + "\x00" + strconv.FormatUint(e.Gen, 10)
 	key := "manifest\x00" + genKey + "\x00" + e.Profile.TemplateSha256 + "\x00" + digest
@@ -224,32 +228,47 @@ func kvToolsExactManifestVerdict(e *kvProfileEntry) (bool, string) {
 		reason = v.(string)
 	} else {
 		switch {
-		case !ok || m == nil:
+		case digest == kvToolsExactManifestAbsent:
 			reason = "no deployment manifest (manifests/" + e.Profile.ProfileID + ".yaml) beneath the profile root"
-		case m.EngineVersion != kvToolsExactEngineVersion:
-			reason = fmt.Sprintf("manifest engineVersion %q != attested %q", m.EngineVersion, kvToolsExactEngineVersion)
+		case version != kvToolsExactEngineVersion:
+			reason = fmt.Sprintf("manifest engineVersion %q != attested %q", version, kvToolsExactEngineVersion)
 		}
 		kvToolsExactVerdicts.Store(key, reason)
 	}
-	// Log every manifest change under a live generation once, including a
-	// return to a digest seen before (its verdict is cached, the change is
-	// still news): the publish-time verdict covered the first digest.
-	lastKey := "manifest-last\x00" + genKey
-	if prev, seen := kvToolsExactVerdicts.Swap(lastKey, digest); seen && prev.(string) != digest {
+	// Log the first manifest a rule attests to under a live generation, and
+	// every change after it once, including a return to a digest seen before
+	// (its verdict is cached, the change is still news). The publish-time
+	// verdict covers the profile legs only; this line is the manifest
+	// evidence.
+	lastKey := "manifest-last\x00" + genKey + "\x00" + strconv.FormatUint(uint64(svcID), 10)
+	prev, seen := kvToolsExactVerdicts.Swap(lastKey, digest)
+	switch {
+	case !seen:
 		if reason == "" {
-			log.Infof("kv-chat: tools-exact gate OPEN for profile %s gen %d after a manifest change (digest %.12s → %.12s, engineVersion %s)",
-				e.Profile.ProfileID, e.Gen, prev.(string), digest, kvToolsExactEngineVersion)
+			log.Infof("kv-chat: tools-exact gate OPEN for rule %s (profile %s gen %d, attested manifest %.12s, engineVersion %s)",
+				rule, e.Profile.ProfileID, e.Gen, digest, version)
 		} else {
-			log.Warnf("kv-chat: tools-exact gate CLOSED for profile %s gen %d after a manifest change (digest %.12s → %.12s): %s; tools/tool_choice stay UNSUPPORTED",
-				e.Profile.ProfileID, e.Gen, prev.(string), digest, reason)
+			log.Warnf("kv-chat: tools-exact gate CLOSED for rule %s (profile %s gen %d, attested manifest %.12s): %s; tools/tool_choice stay UNSUPPORTED",
+				rule, e.Profile.ProfileID, e.Gen, digest, reason)
+		}
+	case prev.(string) != digest:
+		if reason == "" {
+			log.Infof("kv-chat: tools-exact gate OPEN for profile %s gen %d after a manifest change (rule %s, digest %.12s → %.12s, engineVersion %s)",
+				e.Profile.ProfileID, e.Gen, rule, prev.(string), digest, version)
+		} else {
+			log.Warnf("kv-chat: tools-exact gate CLOSED for profile %s gen %d after a manifest change (rule %s, digest %.12s → %.12s): %s; tools/tool_choice stay UNSUPPORTED",
+				e.Profile.ProfileID, e.Gen, rule, prev.(string), digest, reason)
 		}
 	}
 	return reason == "", reason
 }
 
-// kvToolsExactProfileVerdict is the profile side of the gate (everything but
-// the rule binding): flag, profile id, template digest, manifest. The reason
-// names the first failing leg; "" when the profile is the attested target.
+// kvToolsExactProfileVerdict is the profile side of the gate: flag, profile
+// id, template digest. The manifest leg is a property of each rule's
+// attestation (kvToolsExactManifestVerdict) and the engine-contract leg of
+// each rule's binding; both are checked per rule in kvToolsExactEligible.
+// The reason names the first failing leg; "" when the profile is the
+// attested target.
 func kvToolsExactProfileVerdict(e *kvProfileEntry) (bool, string) {
 	if !kvToolsExactEnabled() {
 		return false, "LOXILB_KV_TOOLS_EXACT is off"
@@ -264,14 +283,14 @@ func kvToolsExactProfileVerdict(e *kvProfileEntry) (bool, string) {
 	if p.TemplateSha256 != kvToolsExactTemplateSha {
 		return false, fmt.Sprintf("template sha256 %.12s… != attested %.12s…", p.TemplateSha256, kvToolsExactTemplateSha)
 	}
-	return kvToolsExactManifestVerdict(e)
+	return true, ""
 }
 
 // kvToolsExactLogPublish logs the gate verdict once per profile for a freshly
 // published registry generation: OPEN names the evidence the parity proof
-// rests on, CLOSED names the first failing leg. The engine-contract leg is a
-// property of each rule's binding, not of the profile, and is logged on first
-// use per binding (kvToolsExactEligible).
+// rests on, CLOSED names the first failing leg. The manifest and
+// engine-contract legs are properties of each rule, not of the profile, and
+// are logged on first use per rule (kvToolsExactEligible).
 func kvToolsExactLogPublish(gen *kvProfileGeneration) {
 	if gen == nil {
 		return
@@ -284,7 +303,7 @@ func kvToolsExactLogPublish(gen *kvProfileGeneration) {
 	for _, id := range ids {
 		e := gen.Profiles[id]
 		if open, reason := kvToolsExactProfileVerdict(e); open {
-			log.Infof("kv-chat: tools-exact gate OPEN for profile %s gen %d (template sha256 %.12s…, manifest engineVersion %s); strict rules bound to it with a vllm engine contract render tools",
+			log.Infof("kv-chat: tools-exact gate OPEN for profile %s gen %d (template sha256 %.12s…); strict rules bound to it with a vllm engine contract and an attested manifest declaring engineVersion %s render tools",
 				id, gen.Gen, e.Profile.TemplateSha256, kvToolsExactEngineVersion)
 		} else {
 			log.Infof("kv-chat: tools-exact gate CLOSED for profile %s gen %d: %s; tools/tool_choice stay UNSUPPORTED", id, gen.Gen, reason)
@@ -292,10 +311,12 @@ func kvToolsExactLogPublish(gen *kvProfileGeneration) {
 	}
 }
 
-// kvToolsExactEligible reports whether a strict rule's binding and resolved
-// profile are the attested target and the flag is on. False keeps the
-// request on the existing path, where "tools" is UNSUPPORTED.
-func kvToolsExactEligible(b *KvExactBinding, e *kvProfileEntry) bool {
+// kvToolsExactEligible reports whether a strict rule's binding, resolved
+// profile and attested manifest are the attested target and the flag is on.
+// False keeps the request on the existing path, where "tools" is
+// UNSUPPORTED. svcID names the rule whose attestation controller holds the
+// manifest the verdict is taken from.
+func kvToolsExactEligible(svcID uint32, b *KvExactBinding, e *kvProfileEntry) bool {
 	if !kvToolsExactEnabled() || b == nil || e == nil {
 		return false
 	}
@@ -314,7 +335,8 @@ func kvToolsExactEligible(b *KvExactBinding, e *kvProfileEntry) bool {
 		}
 		return false
 	}
-	return true
+	open, _ := kvToolsExactManifestVerdict(svcID, b.RuleIdent, e)
+	return open
 }
 
 // kvChatToolsModeledKeys are the message keys the tools-aware parser gives
