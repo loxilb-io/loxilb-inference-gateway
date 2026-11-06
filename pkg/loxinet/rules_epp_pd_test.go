@@ -188,6 +188,46 @@ func TestEppOnPdDisaggRule(t *testing.T) {
 		eppTestSettled(t)
 	})
 
+	for _, tc := range []struct {
+		name string
+		port uint16
+		down cmn.LbEndPointArg
+	}{
+		{"prefill unavailable", 28216, prefill},
+		{"decode unavailable", 28218, decode},
+	} {
+		t.Run("EPP down: FailOpen refuses "+tc.name, func(t *testing.T) {
+			l, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			addr := l.Addr().String()
+			l.Close()
+			eppPdTestRule(t, tc.port, addr, prefill, decode, sidecar)
+
+			// Confirm the rule is live before toggling a single role in the datapath.
+			if code, resp, err := eppTestRequest(tc.port, body, 10*time.Second); err != nil ||
+				code != http.StatusOK || !strings.Contains(resp, `"served":"decode"`) {
+				t.Fatalf("healthy P/D rule: code=%d resp=%q err=%v", code, resp, err)
+			}
+			if rc := mh.dpEbpf.DpLBEndpointHealthUpdateByAddr(net.ParseIP(eppTestVIP), tc.port, 6,
+				net.ParseIP(tc.down.EpIP), tc.down.EpPort, true); rc != 0 {
+				t.Fatalf("mark %s inactive: rc=%d", eppAddr(tc.down), rc)
+			}
+			p0, d0, s0 := hits(seenP), hits(seenD), hits(seenS)
+			code, resp, err := eppTestRequest(tc.port, body, 10*time.Second)
+			if err != nil || code != http.StatusServiceUnavailable ||
+				!strings.Contains(resp, `"error":"pd_pool_unavailable"`) {
+				t.Errorf("code=%d resp=%q err=%v (want 503 pd_pool_unavailable)", code, resp, err)
+			}
+			if hits(seenP) != p0 || hits(seenD) != d0 || hits(seenS) != s0 {
+				t.Errorf("refused request reached a backend: prefill %d->%d decode %d->%d sidecar %d->%d",
+					p0, hits(seenP), d0, hits(seenD), s0, hits(seenS))
+			}
+			eppTestSettled(t)
+		})
+	}
+
 	t.Run("kept connection: a refused submit after a pinned request still runs the P/D legs", func(t *testing.T) {
 		f := epptest.New("echo")
 		f.Dest = eppAddr(sidecar)
