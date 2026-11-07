@@ -43,7 +43,7 @@ cd cicd/sglang-pd-disagg
 ./rmconfig.sh        # teardown
 ```
 
-Success sentinel: `SCENARIO-sglang-pd-disagg [OK]` (48 checks, 0 FAIL).
+Success sentinel: `SCENARIO-sglang-pd-disagg [OK]` (0 FAIL; see the per-leg assertions).
 
 ## Legs
 
@@ -57,7 +57,7 @@ Success sentinel: `SCENARIO-sglang-pd-disagg [OK]` (48 checks, 0 FAIL).
 | F | decode-leg death → graceful 5xx, the drain leg is not orphaned |
 | G | coexistence — the vLLM sequential machine and SGLang dual dispatch on one gateway |
 | I | prefill origin 4xx (pre-decode) relayed to the client VERBATIM (no 502 masking) |
-| J | streamable JSON over the body-inspect cap on a disagg rule → fail-closed 503 pre-dispatch |
+| J | JSON over the native P/D body limit → 413 `pd_body_too_large`, one common denial record, zero engine hits, and a complete TLS response |
 | K | three consecutive prefill 5xx → the origin-error streak opens the breaker (`[CB_ORIGIN]` dp-log marker + `pd_cb_flips`), failover holds, the tripped EP serves zero while OPEN, the heal cycle re-admits it |
 | L | the same demotion on the **vLLM dialect**, where a prefill 5xx is swallowed (degrades to decode-recompute, client stays 200) — the breaker must still open, avoid the EP, and re-admit it |
 | H | hygiene — zero mock-side contract violations, the `pd_sg_*` counter family exported |

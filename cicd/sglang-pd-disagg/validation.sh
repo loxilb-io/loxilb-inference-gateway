@@ -14,8 +14,8 @@
 #   G  coexistence: vLLM P/D rule and SGLang P/D rule on one gateway
 #   I  prefill-400 -> the origin CLIENT error is relayed to the client
 #      VERBATIM (not masked as a gateway 502), decode leg still closed fast
-#   J  streamable JSON (body over the inspect cap) -> fail-closed 503
-#      pd_sg_oversize_unroutable BEFORE any engine sees a byte
+#   J  JSON over the native P/D body limit -> 413 pd_body_too_large
+#      BEFORE any engine sees a byte; one common framing-denial receipt
 #   H  hygiene: no mock-side contract violations, pd_sg_* metrics exported
 
 source ../common.sh
@@ -350,9 +350,17 @@ done
 check "I5: decode leg closed by the gateway (DECODE-CONN-CLOSED room=$I_ROOM)" $I_CLOSED
 
 ############################################################################
-echo "Leg J: streamable JSON over the inspect cap -> fail-closed 503"
+echo "Leg J: JSON over the native P/D body limit -> fail-closed 413"
 ############################################################################
 
+# Common framing denial happens before the SGLang dialect's old inspect-cap
+# guard. Count the actual client-visible refusal, rather than requiring that
+# superseded dialect branch to execute.
+j_denied_413() {
+  $hexec llb1 curl -fsS http://localhost:11111/netlox/v1/metrics 2>/dev/null |
+    awk '$1 ~ /^loxilb_ai_requests_total\{/ && $1 ~ /outcome="denied"/ && $1 ~ /status="413"/ {s+=$2} END {printf "%.0f\n", s+0}'
+}
+J_DENIED_BASE=$(j_denied_413)
 J_OVR_BASE=$(mget loxilb_pd_sg_oversize_reject_total)
 # ~900KB JSON body: over the gateway JSON inspection cap (3/4 of the 1MB
 # sock buffer), so body buffering — and with it bootstrap injection — is
@@ -364,15 +372,25 @@ J_RESP=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
   "https://$VIP:2030/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "X-Request-Id: $RUN-leg-j-1" \
-  -d @/tmp/leg-j.json \
+  -H "Expect:" --data-binary @/tmp/leg-j.json \
   -w "\nHTTPSTATUS:%{http_code}" 2>&1)
+J_CURL_RC=$?
+[ "$J_CURL_RC" = 0 ]
+check "J0: TLS upload client received a complete response (curl exit $J_CURL_RC)" $?
 J_ST=$(status_of "$J_RESP")
-[ "$J_ST" = "503" ] && echo "$J_RESP" | grep -q "pd_sg_oversize_unroutable"
-check "J1: oversize JSON refused fail-closed 503 pd_sg_oversize_unroutable (got $J_ST)" $?
+[ "$J_ST" = "413" ] && printf '%s\n' "$J_RESP" | sed '/^HTTPSTATUS:/d' | python3 -c 'import json,sys; b=json.load(sys.stdin); sys.exit(0 if b.get("error")=="pd_body_too_large" and b.get("max_body_bytes")==786432 else 1)'
+check "J1: oversize JSON refused 413 pd_body_too_large with the default byte limit (got $J_ST)" $?
 
-J_OVR_NOW=$(mwait loxilb_pd_sg_oversize_reject_total "$J_OVR_BASE" 20)
-[ "$J_OVR_NOW" -gt "$J_OVR_BASE" ]
-check "J2: pd_sg_oversize_reject ticked ($J_OVR_BASE -> $J_OVR_NOW)" $?
+for i in $(seq 1 20); do
+  J_DENIED_NOW=$(j_denied_413)
+  [ "$J_DENIED_NOW" -gt "$J_DENIED_BASE" ] && break
+  sleep 1
+done
+[ "$J_DENIED_NOW" -eq "$((J_DENIED_BASE+1))" ]
+check "J2: common denied-413 counter moved exactly once ($J_DENIED_BASE -> $J_DENIED_NOW)" $?
+J_OVR_NOW=$(mget loxilb_pd_sg_oversize_reject_total)
+[ "$J_OVR_NOW" -eq "$J_OVR_BASE" ]
+check "J2b: earlier common guard bypassed the legacy dialect reject counter ($J_OVR_BASE -> $J_OVR_NOW)" $?
 
 # Fail-closed means REFUSED BEFORE BACKEND BYTES: no mock may have seen it.
 J_ALL_LOGS="$(eplog l3ep1 sglang-prefill1.log)
