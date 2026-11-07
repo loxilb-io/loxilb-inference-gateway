@@ -1871,6 +1871,7 @@ func applySnapshotBoot() snapshotBootOutcome {
 		if perr != nil {
 			reasons = append(reasons, perr.Error())
 		}
+		tk.LogIt(tk.LogError, "nlp: boot snapshot: preflight failed (errors=%v)\n", reasons)
 		recordBootFailure(quarantineBootSnapshot(), reasons...)
 		return bootUnhandled
 	}

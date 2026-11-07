@@ -10,10 +10,11 @@
 #    fields stripped by the EXPLICIT per-domain filters below — a new field
 #    fails the diff by default instead of being silently ignored.
 #  * No bare sleeps where a receipt is pollable: restarts poll the boot
-#    replay receipt ("boot snapshot: snapshot.json applied" in
-#    /tmp/loxilb.out) because boot restore RETRIES while late subsystems
-#    come up and every failed attempt rolls config back to empty — probing
-#    inside that window produces phantom verdicts.
+#    API replay receipt: successful snapshot boot with no degradation or
+#    fallback. Whole-node readiness also covers independent DB health and
+#    is not the boot outcome. Partial BGP recovery can serve
+#    independent rules while readiness stays503; an old success log must
+#    never turn that state into a completed replay.
 #  * Never `docker restart` a gateway whose veths must survive: in-place
 #    restart kills and relaunches the process inside the container
 #    (SIGTERM → SIGKILL escalation, datapath scrub), the same trio the
@@ -275,12 +276,23 @@ ondisk_doc_valid() {
 # --- restarts --------------------------------------------------------------
 
 wait_replay_receipt() { # wait_replay_receipt <llb>
-    local llb=$1
+    local llb=$1 code="000"
+    local receipt="$PLIB_ARTIFACTS/replay-ready-${llb}.json"
     for _ in $(seq 1 30); do
-        docker exec "$llb" grep -aq "boot snapshot: snapshot.json applied" /tmp/loxilb.out 2>/dev/null && return 0
+        code=$(plib_curl "$llb" -o "$receipt" -w "%{http_code}" \
+            "$PLIB_API/status/ready" 2>/dev/null) || code="000"
+        if [[ "$code" == "200" || "$code" == "503" ]] && jq -e '
+            ((.ready | type) == "boolean") and .boot.snapshot_found == true and
+            .boot.succeeded == true and .boot.degraded == false and
+            .boot.legacy_fallback == false and
+            ((.boot.quarantine_path // "") == "")
+        ' "$receipt" >/dev/null 2>&1; then
+            return 0
+        fi
         sleep 2
     done
-    echo "  boot snapshot never settled; restore lines:"
+    echo "  boot snapshot never completed (last readiness HTTP $code); receipt kept in $receipt"
+    jq -c '{ready, boot, reasons}' "$receipt" 2>/dev/null || true
     docker exec "$llb" grep -a "boot snapshot" /tmp/loxilb.out 2>/dev/null | tail -5
     return 1
 }

@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-07T14:07:05+00:00",
-  "source_revision": "b12bb40d76e2523aea1bdfb5341bf3bf3af79884"
+  "generated_at": "2026-11-07T22:39:10+00:00",
+  "source_revision": "d4de30686d98a2d90224291262915d7170bfdc17"
  },
  "contract": {
   "total": 355,
@@ -6782,23 +6782,23 @@
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
      "def_line": 1847,
-     "call_line": 1880,
+     "call_line": 1881,
      "calls": "PreparePendingBGP"
     },
     {
      "symbol": "LbSessionGet",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2066,
-     "call_line": 2123,
+     "def_line": 2067,
+     "call_line": 2124,
      "calls": "applySnapshotBoot"
     },
     {
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2229,
-     "call_line": 2299,
+     "def_line": 2230,
+     "call_line": 2300,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },
@@ -6855,8 +6855,8 @@
      "symbol": "LbSessionGet",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2066,
-     "call_line": 2093,
+     "def_line": 2067,
+     "call_line": 2094,
      "calls": "BootConfigConflictInc",
      "note": "boot config replay; increments only when both snapshot.json and legacy *.txt artifacts exist and newest-wins arbitration ran"
     },
@@ -6864,8 +6864,8 @@
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2229,
-     "call_line": 2299,
+     "def_line": 2230,
+     "call_line": 2300,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },
@@ -6920,8 +6920,8 @@
      "symbol": "LbSessionGet",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2066,
-     "call_line": 2143,
+     "def_line": 2067,
+     "call_line": 2144,
      "calls": "RecordBootLegacyFallback",
      "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present"
     },
@@ -6929,8 +6929,8 @@
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2229,
-     "call_line": 2299,
+     "def_line": 2230,
+     "call_line": 2300,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },
@@ -17404,8 +17404,8 @@
      "symbol": "quarantineBootSnapshot",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 1975,
-     "call_line": 1976,
+     "def_line": 1976,
+     "call_line": 1977,
      "calls": "QuarantinePersisted"
     },
     {
@@ -17421,16 +17421,16 @@
      "symbol": "LbSessionGet",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2066,
-     "call_line": 2123,
+     "def_line": 2067,
+     "call_line": 2124,
      "calls": "applySnapshotBoot"
     },
     {
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2229,
-     "call_line": 2299,
+     "def_line": 2230,
+     "call_line": 2300,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },

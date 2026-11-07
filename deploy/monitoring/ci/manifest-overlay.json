@@ -857,7 +857,7 @@
     { "symbol": "configPostOPAWatcher", "kind": "func", "file": "api/restapi/handler/opa_watcher.go", "def_line": 79, "call_line": 121, "calls": "Start", "entry_point": "http-handler" }
    ],
    "loxinet-nlp-boot": [
-    { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2229, "call_line": 2299, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
+    { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2230, "call_line": 2300, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 819, "calls": "NlpInit", "note": "guarded by !opts.Opts.NoNlp" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
@@ -1390,7 +1390,7 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "BootConfigConflictInc", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 211, "writes": "bootConfigConflict" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2066, "call_line": 2093, "calls": "BootConfigConflictInc", "note": "boot config replay; increments only when both snapshot.json and legacy *.txt artifacts exist and newest-wins arbitration ran" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2067, "call_line": 2094, "calls": "BootConfigConflictInc", "note": "boot config replay; increments only when both snapshot.json and legacy *.txt artifacts exist and newest-wins arbitration ran" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/loxinlp/nlp.go:1983 is the only call site. No test and no bed run has produced a dual-artifact boot; scenario M15 owns that arm."
@@ -1399,7 +1399,7 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "RecordBootLegacyFallback", "kind": "func", "file": "pkg/snapshot/bootstate.go", "def_line": 75, "writes": "bootLegacyFallbackTotal" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2066, "call_line": 2143, "calls": "RecordBootLegacyFallback", "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2067, "call_line": 2144, "calls": "RecordBootLegacyFallback", "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/loxinlp/nlp.go:2037 is the only call site. Needs a legacy-only boot to move; scenario M15 owns that arm."
@@ -1408,9 +1408,9 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "QuarantinePersisted", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 231, "writes": "snapshotQuarantineTotal" },
-     { "symbol": "quarantineBootSnapshot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1975, "call_line": 1976, "calls": "QuarantinePersisted" },
+     { "symbol": "quarantineBootSnapshot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1976, "call_line": 1977, "calls": "QuarantinePersisted" },
      { "symbol": "applySnapshotBoot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1847, "call_line": 1855, "calls": "quarantineBootSnapshot", "note": "one of three quarantine sites: unreadable snapshot (:1805), restore-engine construction failure (:1826), and a restore that reported errors (:1854)" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2066, "call_line": 2123, "calls": "applySnapshotBoot" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2067, "call_line": 2124, "calls": "applySnapshotBoot" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): three call sites in applySnapshotBoot. Needs a deliberately corrupted or failing boot snapshot to move; scenario M15 owns that arm."
@@ -4359,15 +4359,15 @@
       "kind": "func",
       "file": "api/loxinlp/nlp.go",
       "def_line": 1847,
-      "call_line": 1880,
+      "call_line": 1881,
       "calls": "PreparePendingBGP"
      },
      {
       "symbol": "LbSessionGet",
       "kind": "func",
       "file": "api/loxinlp/nlp.go",
-      "def_line": 2066,
-      "call_line": 2123,
+      "def_line": 2067,
+      "call_line": 2124,
       "calls": "applySnapshotBoot"
      },
      {
