@@ -29,3 +29,6 @@ jobs:
 
       - name: Verify the embedded CLI pin
         run: bash scripts/check-loxicmd-pin.sh
+
+      - name: Embedded CLI identity negative controls
+        run: python3 scripts/test_bundled_cli_identity.py

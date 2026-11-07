@@ -29,6 +29,13 @@ jobs:
         submodules: recursive
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Embedded CLI identity negative controls
+      run: python3 scripts/test_bundled_cli_identity.py
+
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
@@ -57,5 +64,15 @@ jobs:
       run: |
         TEST_TAG="ghcr.io/loxilb-io/loxilb-inference-gateway:buildcheck-${{ github.run_id }}"
         docker build --progress=plain -f Dockerfile.buildcheck . --tag "$TEST_TAG"
-        docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb-buildcheck "$TEST_TAG"
+        CGO_ENABLED=0 go build -o /tmp/bundled-cli-mock ./cicd/bundled-cli/mock
+        python3 cicd/bundled-cli/validation.py \
+          --image "$TEST_TAG" --dockerfile Dockerfile.buildcheck \
+          --mock-binary /tmp/bundled-cli-mock --evidence-dir bundled-cli-evidence
+    - name: Keep bundled CLI validation evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bundled-cli-${{ github.run_id }}
+        path: bundled-cli-evidence/
+        if-no-files-found: ignore
     - run: echo ${{ github.event.inputs.userInput }}
