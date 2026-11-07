@@ -5,7 +5,8 @@ FROM ubuntu:24.04 as test-build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
-ARG LOXICMD_TAG=1d9e9463f5732c8d170e08d85964f255ef5338f1
+ARG LOXICMD_TAG=973c53c22c3813e4d1b5cb4693427e9c2e9ee81b
+ARG LOXICMD_VERSION=v0.9.9.2
 
 # Optional apt mirror override (e.g. --build-arg APT_MIRROR=mirror.kakao.com)
 # for build hosts far from / flaky to archive.ubuntu.com. Empty = default
@@ -116,7 +117,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ruby && rm -rf 
     git checkout $LOXICMD_TAG && \
     [ "$(git rev-parse HEAD)" = "$LOXICMD_TAG" ] || { echo "loxicmd checkout resolved to $(git rev-parse HEAD), not the requested $LOXICMD_TAG" >&2; exit 1; } && \
     go get . && \
-    make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
+    [ "$(env -u VERSION make --no-print-directory -s version)" = "$LOXICMD_VERSION" ] && \
+    make VERSION="$LOXICMD_VERSION" && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion
 
 # Build and install OpenSSL

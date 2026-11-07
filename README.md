@@ -251,3 +251,16 @@ upstream loxilb.
 [config]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/latest/reference/configuration/
 [metrics]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/latest/reference/metrics/
 [sysreq]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/latest/reference/system-requirements/
+
+### Bundled CLI identity
+
+All image variants pin the same `LOXICMD_TAG` commit and `LOXICMD_VERSION`.
+The CLI version is independent of the Gateway's `VERSION` build argument;
+`loxicmd version -o json` reports the CLI's own version and source revision.
+When updating the CLI pin, update both arguments consistently and run
+`scripts/check-loxicmd-pin.sh`. The version must match the pinned CLI
+Makefile. Release builds reject a mismatched source revision or version.
+
+The bundled CLI accepts `--epp-endpoint` together with `--pd-disagg` only with
+explicit `--epp-failure-mode=FailOpen`, matching the Gateway relation
+`LB-EPP-PD-FAILOPEN`.

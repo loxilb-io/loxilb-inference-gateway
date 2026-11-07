@@ -5,7 +5,8 @@ FROM ubuntu:22.04 as build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
-ARG LOXICMD_TAG=1d9e9463f5732c8d170e08d85964f255ef5338f1
+ARG LOXICMD_TAG=973c53c22c3813e4d1b5cb4693427e9c2e9ee81b
+ARG LOXICMD_VERSION=v0.9.9.2
 ARG OPENSSL_BUILD_CPUS=0
 ARG USE_DOCKER_BUILDX_ARM64=false
 
@@ -71,7 +72,8 @@ RUN mkdir -p /opt/loxilb && \
     git checkout $LOXICMD_TAG && \
     [ "$(git rev-parse HEAD)" = "$LOXICMD_TAG" ] || { echo "loxicmd checkout resolved to $(git rev-parse HEAD), not the requested $LOXICMD_TAG" >&2; exit 1; } && \
     go get . && \
-    make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
+    [ "$(env -u VERSION make --no-print-directory -s version)" = "$LOXICMD_VERSION" ] && \
+    make VERSION="$LOXICMD_VERSION" && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion && \
     # Pre-built libtokenizers static library (KV router HF tokenizer backend)
     wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && \

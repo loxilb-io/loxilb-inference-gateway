@@ -158,29 +158,11 @@ jobs:
           docker cp "$CID:/usr/local/sbin/loxicmd" ./embedded-loxicmd
           docker rm "$CID" >/dev/null
           SHA256="$(sha256sum ./embedded-loxicmd | awk '{print $1}')"
-          # The binary must run. Once the CLI ships build identity through
-          # `version -o json`, its self-reported source revision must equal
-          # the pinned one. An older CLI answers the same invocation with
-          # human text; that is recorded rather than failed, so this gate
-          # hardens itself automatically at the CLI bump instead of going
-          # red before it.
           docker run --rm --entrypoint /usr/local/sbin/loxicmd "$IMG" version -o json > cli-version.out
-          if jq -e . cli-version.out >/dev/null 2>&1; then
-            SELF="$(jq -r '.data.sourceRevision' cli-version.out)"
-            if [ "$SELF" != "$CLI_REV" ]; then
-              echo "::error::embedded CLI reports source revision '${SELF}', but the image was built from '${CLI_REV}'"
-              exit 1
-            fi
-            SELF_REPORT="verified"
-          else
-            SELF_REPORT="unsupported"
-          fi
-          jq -n --arg variant "$VARIANT" --arg arch "$ARCH" \
-                --arg cliRevision "$CLI_REV" --arg sha256 "$SHA256" \
-                --arg selfReport "$SELF_REPORT" \
-            '{variant: $variant, arch: $arch, cliRevision: $cliRevision,
-              embeddedSha256: $sha256, identitySelfReport: $selfReport}' \
-            > "cli-attestation-${VARIANT}-${ARCH}.json"
+          python3 scripts/verify_bundled_cli.py \
+            --dockerfile "$DOCKERFILE" --input cli-version.out \
+            --sha256 "$SHA256" --variant "$VARIANT" --arch "$ARCH" \
+            --output "cli-attestation-${VARIANT}-${ARCH}.json"
           cat "cli-attestation-${VARIANT}-${ARCH}.json"
 
       - uses: actions/upload-artifact@v4

@@ -54,8 +54,19 @@ if [ -z "$FILES" ]; then
 fi
 
 PIN=""
+VERSION=""
 COUNT=0
 for f in $FILES; do
+  version=$(sed -n 's/^ARG LOXICMD_VERSION=\(.*\)$/\1/p' "$f")
+  if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$'; then
+    fail "$f has no valid explicit LOXICMD_VERSION"
+    continue
+  fi
+  if [ -z "$VERSION" ]; then VERSION=$version;
+  elif [ "$version" != "$VERSION" ]; then
+    fail "$f pins CLI version $version, the other Dockerfiles to $VERSION"
+    continue
+  fi
   v=$(sed -n 's/^ARG LOXICMD_TAG=\(.*\)$/\1/p' "$f")
   if [ -z "$v" ]; then
     fail "$f installs the CLI but declares no ARG LOXICMD_TAG"
@@ -73,7 +84,7 @@ for f in $FILES; do
   fi
   COUNT=$((COUNT + 1))
 done
-[ "$FAIL" = 0 ] && pass "LOXICMD_TAG is $PIN in all $COUNT Dockerfiles"
+[ "$FAIL" = 0 ] && pass "CLI $VERSION at $PIN agrees in all $COUNT Dockerfiles"
 
 if [ -z "$PIN" ] || [ "$FAIL" != 0 ]; then
   exit 1
@@ -97,6 +108,12 @@ if ! git clone $CLONE_OPTS "$REPO" "$TMP/cli" 2>"$TMP/err"; then
   fail "cannot fetch $BRANCH of $REPO: $(head -1 "$TMP/err")"
 elif git -C "$TMP/cli" merge-base --is-ancestor "$PIN" "$BRANCH" 2>/dev/null; then
   pass "pin $PIN is reachable from $BRANCH of $REPO"
+  SOURCE_VERSION=$(git -C "$TMP/cli" show "$PIN:Makefile" | sed -n 's/^VERSION[[:space:]]*?=[[:space:]]*\(.*\)$/\1/p')
+  if [ "$SOURCE_VERSION" = "$VERSION" ]; then
+    pass "CLI version $VERSION matches the pinned source Makefile"
+  else
+    fail "CLI version $VERSION differs from the pinned source Makefile ($SOURCE_VERSION)"
+  fi
 else
   fail "pin $PIN is not reachable from $BRANCH of $REPO (a topic-branch or rebased-away commit cannot be attested)"
 fi

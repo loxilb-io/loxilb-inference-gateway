@@ -13,6 +13,14 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
+### Bundled CLI
+
+- Pin the embedded CLI to `973c53c2`, including EPP + P/D support with explicit
+  FailOpen. FailClose and an omitted mode are rejected before any API request.
+- Build the CLI with its own explicit version (`v0.9.9.2`), independently of the
+  Gateway image version. Release identity verification checks both the pinned
+  source revision and CLI version.
+
 ### Fixed
 
 - Native HTTP/1 P/D requests follow the configured roles. Bodyless requests
