@@ -165,7 +165,7 @@ func LineageGeneration(dir string) uint64 {
 	return persistedGeneration(filepath.Join(dir, PersistFileName))
 }
 
-// Persist atomically writes doc's canonical encoding to dir/snapshot.json
+// Persist atomically writes doc's checksummed encoding to dir/snapshot.json
 // (§6 write-through target), returning the final path, the document
 // checksum Encode computed, and the lineage generation stamped into the
 // document (all reported by POST /config/persist, task G-9). Persist owns
@@ -175,6 +175,10 @@ func LineageGeneration(dir string) uint64 {
 func Persist(doc *Document, dir string) (string, string, uint64, error) {
 	doc.Generation = nextGeneration(dir)
 	data, err := Encode(doc)
+	if err != nil {
+		return "", "", 0, err
+	}
+	data, err = preservePendingBGPRaw(data, doc.pendingBGPRaw)
 	if err != nil {
 		return "", "", 0, err
 	}

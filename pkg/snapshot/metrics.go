@@ -27,6 +27,11 @@ import (
 // default registry, served by GET /metrics (promhttp).
 
 var (
+	bgpPendingGauge = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_boot_bgp_pending",
+		Help: "1 while the boot snapshot BGP group remains pending; independent domains may already serve traffic. 0 after recovery or full interactive replacement.",
+	})
+
 	snapshotTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "loxilb_snapshot_total",
 		Help: "Snapshot documents captured, partitioned by trigger (manual, write-through, pre-restore, scheduled, pre-upgrade).",

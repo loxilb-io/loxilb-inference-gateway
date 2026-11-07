@@ -138,6 +138,10 @@ func LastRestore() *OpRecord {
 //     (depFailures carries the probe errors, one per failing store).
 func ReadinessReasons(settled bool, boot BootRestoreState, lastRestore *OpRecord, autoPersist AutoPersistState, depFailures []string) []string {
 	var reasons []string
+	pending := BGPPending()
+	if pending {
+		reasons = append(reasons, "bgp_domain_pending: independent configuration is restored; BGP recovery is pending")
+	}
 	if !settled {
 		reasons = append(reasons, "boot config replay has not settled")
 	}
@@ -146,7 +150,7 @@ func ReadinessReasons(settled bool, boot BootRestoreState, lastRestore *OpRecord
 			"auto-persist failing (%d consecutive; last: %s) -- recent config changes may not survive a restart",
 			autoPersist.ConsecutiveFailures, autoPersist.LastError))
 	}
-	if boot.Degraded {
+	if boot.Degraded && !pending {
 		recovered := lastRestore != nil && lastRestore.Mode == string(ModeCommit)
 		if !recovered {
 			r := "boot snapshot restore failed"

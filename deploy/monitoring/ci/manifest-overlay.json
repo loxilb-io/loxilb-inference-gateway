@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 354,
+  "total": 355,
   "owners": {
-   "loxilb": 331,
+   "loxilb": 332,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 298,
+   "default": 299,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -422,7 +422,8 @@
   "loxilb_proxy_pools_freed_total": "P",
   "loxilb_pd_prefill_inflight": "P",
   "loxilb_pd_decode_inflight": "P",
-  "loxilb_pd_parked_connections": "P"
+  "loxilb_pd_parked_connections": "P",
+  "loxilb_boot_bgp_pending": "E"
  },
  "priority": {
   "default": "diagnostic",
@@ -572,6 +573,27 @@
  "locked_revision": {
   "rev": "f08b18beda587217265c9ba6419159119914795c",
   "expect_missing_at_locked": [
+   "loxilb_ai_admission_adapt_moves_total",
+   "loxilb_ai_admission_adapt_reason",
+   "loxilb_ai_admission_adapt_state",
+   "loxilb_ai_admission_anomalies_total",
+   "loxilb_ai_admission_decisions_total",
+   "loxilb_ai_admission_effective_limit",
+   "loxilb_ai_admission_inflight",
+   "loxilb_ai_admission_limit",
+   "loxilb_ai_admission_mode",
+   "loxilb_ai_admission_queue_wait_seconds",
+   "loxilb_ai_admission_queued",
+   "loxilb_ai_admission_tenants_active",
+   "loxilb_ai_admission_warming_endpoints",
+   "loxilb_ai_class_config_lkg_intervals_total",
+   "loxilb_ai_epp_candidates_rejected_total",
+   "loxilb_ai_epp_duration_seconds",
+   "loxilb_ai_epp_inflight",
+   "loxilb_ai_epp_pending",
+   "loxilb_ai_epp_requests_total",
+   "loxilb_ai_fc_band_total",
+   "loxilb_ai_fc_tenant_slots",
    "loxilb_ai_jwks_keys",
    "loxilb_ai_jwks_last_success_timestamp_seconds",
    "loxilb_ai_jwks_refresh_total",
@@ -580,7 +602,6 @@
    "loxilb_ai_key_store_circuit_open",
    "loxilb_ai_key_store_lookup_inflight",
    "loxilb_ai_key_store_lookup_seconds",
-   "loxilb_ai_store_write_outcome_unknown_total",
    "loxilb_ai_key_token_quota_limit_tokens",
    "loxilb_ai_key_token_quota_utilization",
    "loxilb_ai_keyed_services",
@@ -590,6 +611,8 @@
    "loxilb_ai_kv_enforcement_fault",
    "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
    "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
+   "loxilb_ai_netid_requests_total",
+   "loxilb_ai_netid_resolver_faults_total",
    "loxilb_ai_pd_decode_duration_seconds",
    "loxilb_ai_pd_decode_kv_fill_total",
    "loxilb_ai_pd_decode_selected_total",
@@ -597,7 +620,10 @@
    "loxilb_ai_pd_terminator_synthesized_total",
    "loxilb_ai_pd_tier_selected_total",
    "loxilb_ai_reap_fallback_total",
+   "loxilb_ai_reservation_clamped_total",
    "loxilb_ai_route_host_missing_total",
+   "loxilb_ai_store_write_outcome_unknown_total",
+   "loxilb_ai_stream_early_bytes_closed_total",
    "loxilb_ai_user_model_token_quota_limit_tokens",
    "loxilb_ai_user_model_token_quota_utilization",
    "loxilb_ai_user_token_quota_limit_tokens",
@@ -605,24 +631,58 @@
    "loxilb_ai_vip_token_quota_limit_tokens",
    "loxilb_ai_vip_token_quota_utilization",
    "loxilb_ai_worker_scrape_total",
+   "loxilb_audit_delegation_lookups_total",
+   "loxilb_audit_last_heartbeat_timestamp_seconds",
+   "loxilb_audit_last_write_timestamp_seconds",
+   "loxilb_audit_mgmt_timeouts_total",
+   "loxilb_audit_originator_dropped_total",
+   "loxilb_audit_orphaned_intents_total",
+   "loxilb_audit_records_dropped_total",
+   "loxilb_audit_records_lost_to_retention_total",
+   "loxilb_audit_records_unattributed_total",
+   "loxilb_audit_records_written_total",
+   "loxilb_audit_reserve_breached",
+   "loxilb_audit_result_write_failures_total",
+   "loxilb_audit_segment_seal_failures_total",
+   "loxilb_audit_segments_pruned_total",
+   "loxilb_audit_sink_connected",
+   "loxilb_audit_sink_cursor_lag_bytes",
+   "loxilb_audit_sink_cursor_lag_seconds",
+   "loxilb_audit_sink_export_failures_total",
+   "loxilb_audit_sink_lag_drops_total",
+   "loxilb_audit_sink_poison_total",
+   "loxilb_audit_sink_records_exported_total",
+   "loxilb_audit_sync_failures_total",
+   "loxilb_audit_write_failures_total",
+   "loxilb_audit_writer_panics_total",
+   "loxilb_audit_writer_restarts_total",
+   "loxilb_audit_writer_up",
    "loxilb_autopersist_consecutive_failures",
    "loxilb_backend_traffic_bytes_total",
    "loxilb_backend_traffic_connections_total",
    "loxilb_backend_traffic_packets_total",
+   "loxilb_boot_bgp_pending",
    "loxilb_boot_legacy_fallback_total",
    "loxilb_config_dirty",
+   "loxilb_kv_exact_overlap_blocks",
+   "loxilb_kv_exact_prompt_blocks",
+   "loxilb_kv_exact_stage_seconds",
    "loxilb_kv_inventory_fresh",
    "loxilb_kv_subscriber_last_event_timestamp_seconds",
    "loxilb_kv_subscriber_wire_reject_total",
+   "loxilb_log_lines_dropped_total",
    "loxilb_pd_admission_overflow_shed_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total",
+   "loxilb_pd_decode_inflight",
+   "loxilb_pd_parked_connections",
+   "loxilb_pd_prefill_inflight",
    "loxilb_persist_total",
    "loxilb_policer_attached",
-   "loxilb_proxy_client_reset_total",
-   "loxilb_proxy_context_inflight",
    "loxilb_proxy_accept_blocked_total",
    "loxilb_proxy_accept_bound",
+   "loxilb_proxy_client_reset_total",
+   "loxilb_proxy_context_inflight",
    "loxilb_proxy_halfclose_accel_early_fin_total",
    "loxilb_proxy_halfclose_accel_skipped_total",
    "loxilb_proxy_halfclose_fin_gap_seconds",
@@ -642,80 +702,22 @@
    "loxilb_proxy_header_deadline_drops_total",
    "loxilb_proxy_listen_drops_total",
    "loxilb_proxy_listen_overflows_total",
+   "loxilb_proxy_pools_freed_total",
+   "loxilb_proxy_pools_live",
    "loxilb_proxy_response_first_write_gap_seconds",
    "loxilb_proxy_response_max_write_gap_seconds",
-   "loxilb_snapshot_quarantine_total",
-   "loxilb_sockproxy_sync_peer_lag_seconds",
-   "loxilb_sockproxy_sync_peer_scope_version",
-   "loxilb_sockproxy_sync_peer_up",
-   "loxilb_audit_writer_up",
-   "loxilb_audit_records_written_total",
-   "loxilb_audit_records_dropped_total",
-   "loxilb_audit_result_write_failures_total",
-   "loxilb_audit_write_failures_total",
-   "loxilb_audit_sync_failures_total",
-   "loxilb_audit_mgmt_timeouts_total",
-   "loxilb_audit_writer_panics_total",
-   "loxilb_audit_writer_restarts_total",
-   "loxilb_audit_last_write_timestamp_seconds",
-   "loxilb_audit_last_heartbeat_timestamp_seconds",
-   "loxilb_log_lines_dropped_total",
-   "loxilb_audit_records_unattributed_total",
-   "loxilb_audit_orphaned_intents_total",
-   "loxilb_audit_segment_seal_failures_total",
-   "loxilb_audit_segments_pruned_total",
-   "loxilb_audit_reserve_breached",
-   "loxilb_audit_originator_dropped_total",
-   "loxilb_audit_delegation_lookups_total",
-   "loxilb_audit_records_lost_to_retention_total",
-   "loxilb_audit_sink_connected",
-   "loxilb_audit_sink_records_exported_total",
-   "loxilb_audit_sink_export_failures_total",
-   "loxilb_audit_sink_poison_total",
-   "loxilb_audit_sink_lag_drops_total",
-   "loxilb_audit_sink_cursor_lag_bytes",
-   "loxilb_audit_sink_cursor_lag_seconds",
-   "loxilb_ai_admission_mode",
-   "loxilb_ai_admission_inflight",
-   "loxilb_ai_admission_limit",
-   "loxilb_ai_admission_decisions_total",
-   "loxilb_ai_admission_anomalies_total",
-   "loxilb_ai_admission_effective_limit",
-   "loxilb_ai_admission_adapt_state",
-   "loxilb_ai_admission_adapt_reason",
-   "loxilb_ai_admission_adapt_moves_total",
-   "loxilb_ai_admission_warming_endpoints",
-   "loxilb_ai_admission_tenants_active",
-   "loxilb_ai_fc_tenant_slots",
-   "loxilb_ai_fc_band_total",
-   "loxilb_ai_reservation_clamped_total",
-   "loxilb_ai_netid_resolver_faults_total",
-   "loxilb_ai_netid_requests_total",
-   "loxilb_ai_stream_early_bytes_closed_total",
-   "loxilb_ai_class_config_lkg_intervals_total",
-   "loxilb_ai_admission_queued",
-   "loxilb_ai_admission_queue_wait_seconds",
+   "loxilb_proxy_sse_stall_abort_seconds",
+   "loxilb_proxy_stream_abandon_age_seconds",
+   "loxilb_proxy_stream_abandoned_total",
    "loxilb_security_aggregate_conn_blocked_total",
    "loxilb_security_aggregate_syn_blocked_total",
    "loxilb_security_aggregate_udp_blocked_total",
    "loxilb_security_tracking_failures_total",
    "loxilb_security_unsupported_packet_blocked_total",
-   "loxilb_kv_exact_overlap_blocks",
-   "loxilb_kv_exact_prompt_blocks",
-   "loxilb_kv_exact_stage_seconds",
-   "loxilb_proxy_sse_stall_abort_seconds",
-   "loxilb_proxy_stream_abandon_age_seconds",
-   "loxilb_proxy_stream_abandoned_total",
-   "loxilb_proxy_pools_live",
-   "loxilb_proxy_pools_freed_total",
-   "loxilb_pd_prefill_inflight",
-   "loxilb_pd_decode_inflight",
-   "loxilb_pd_parked_connections",
-   "loxilb_ai_epp_requests_total",
-   "loxilb_ai_epp_duration_seconds",
-   "loxilb_ai_epp_candidates_rejected_total",
-   "loxilb_ai_epp_inflight",
-   "loxilb_ai_epp_pending"
+   "loxilb_snapshot_quarantine_total",
+   "loxilb_sockproxy_sync_peer_lag_seconds",
+   "loxilb_sockproxy_sync_peer_scope_version",
+   "loxilb_sockproxy_sync_peer_up"
   ]
  },
  "coverage_waivers": {
@@ -846,8 +848,8 @@
   "tails": {
    "loxinet-prometheus-main": [
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus, so every family behind this tail needs the Prometheus subsystem enabled" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus, so every family behind this tail needs the Prometheus subsystem enabled" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "opa-watcher-rest": [
     { "symbol": "run", "kind": "method", "receiver": "Watcher", "file": "pkg/opa/watcher.go", "def_line": 158, "call_line": 167, "calls": "syncOnce", "note": "ticker loop at config.PollInterval; the first sync is the direct call at :167" },
@@ -855,16 +857,16 @@
     { "symbol": "configPostOPAWatcher", "kind": "func", "file": "api/restapi/handler/opa_watcher.go", "def_line": 79, "call_line": 121, "calls": "Start", "entry_point": "http-handler" }
    ],
    "loxinet-nlp-boot": [
-    { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2134, "call_line": 2204, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 815, "calls": "NlpInit", "note": "guarded by !opts.Opts.NoNlp" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2229, "call_line": 2299, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 819, "calls": "NlpInit", "note": "guarded by !opts.Opts.NoNlp" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "restapi-configure-main": [
     { "symbol": "ConfigureAPI", "kind": "method", "receiver": "Server", "file": "api/restapi/server.go", "def_line": 57, "call_line": 59, "calls": "configureAPI", "entry_point": "main" }
    ],
    "loxinet-sockproxy-sync-main": [
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 696, "calls": "Start", "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 697, "calls": "Start", "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "sockproxy-xsync-server": [
     { "symbol": "SockproxySessionMod", "kind": "method", "receiver": "XSync", "file": "pkg/loxinet/xsync_server.go", "def_line": 235, "call_line": 245, "calls": "ApplyOne", "entry_point": "http-handler", "note": "XSync gRPC service method -- an inbound request path from a peer Gateway, not a REST route; PullSnapshot (pkg/loxinet/sockproxy_sync.go:970) reaches the same writer on rejoin" }
@@ -878,8 +880,8 @@
    "ai-jwks-collector": [
    { "symbol": "RegisterJWKSSource", "kind": "func", "file": "api/prometheus/jwt_metrics.go", "def_line": 171, "call_line": 173, "calls": "jwksCollector", "note": "sync.Once; the collector reads the manager at scrape time rather than being set on the refresh path -- a gauge set on refresh would freeze at the last successful value exactly when the endpoint stops answering" },
    { "symbol": "JWTAuthProfileInit", "kind": "func", "file": "pkg/loxinet/jwtauthprofile.go", "def_line": 64, "call_line": 70, "calls": "RegisterJWKSSource" },
-   { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 784, "calls": "JWTAuthProfileInit" },
-   { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+   { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 785, "calls": "JWTAuthProfileInit" },
+   { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
   ],
   "ai-token-quota-collector": [
     { "symbol": "RegisterTokenQuotaSource", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1236, "call_line": 1238, "calls": "tokenQuotaCollector", "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied" },
@@ -889,56 +891,56 @@
    "prom-init-lbrule-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 813, "calls": "RunGetLBRule", "note": "collector goroutine; one pass per PrometheusDefaultPeriod" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-conntrack-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 817, "calls": "RunActiveConntrackCount" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-security-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 831, "calls": "RunSecurityRateStats" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-ipfilter-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 832, "calls": "RunIPFilterStats" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-sysutil-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 815, "calls": "RunSystemUtilization" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-fwrule-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 812, "calls": "RunGetFwRule" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-endpoint-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 811, "calls": "RunGetEndpoint" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-sockproxy-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 823, "calls": "RunSockproxyMetrics" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-listen-backlog-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 773, "call_line": 828, "calls": "RunListenBacklogMetrics" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 174, "call_line": 176, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 825, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 829, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "ai-vllm-scraper-rule-config": [
     { "symbol": "scrapeOne", "kind": "method", "receiver": "Poller", "file": "pkg/aimetrics/poll.go", "def_line": 277, "call_line": 286, "calls": "OnScrapeResult", "note": "reports through the ResultSink on EVERY exit -- six return paths plus the two success ones -- so the outcome set is exhaustive by construction and a future early return that forgets to report shows up as a total that stops matching the scrape count" },
@@ -960,8 +962,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4162,
-     "call_line": 5770,
+     "def_line": 4174,
+     "call_line": 5782,
      "calls": "syncVllmScraper",
      "note": "on create; the replace path calls it too (rules.go:5201), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
@@ -969,7 +971,7 @@
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1385, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4162, "call_line": 5722, "calls": "KvSubscriberStartRank" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5734, "calls": "KvSubscriberStartRank" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 375, "call_line": 382, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-attest-controller-loop": [
@@ -978,7 +980,7 @@
     { "symbol": "KvAttestStart", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 331, "call_line": 356, "calls": "loop" },
     { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 955, "call_line": 962, "calls": "KvAttestStart" },
     { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 383, "call_line": 387, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4162, "call_line": 5301, "calls": "kvDataplaneContractInstallAsync" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5313, "calls": "kvDataplaneContractInstallAsync" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 375, "call_line": 382, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-best-worker-cgo": [
@@ -1161,8 +1163,8 @@
      { "symbol": "PolTicker", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 391, "call_line": 428, "calls": "publishAttachment", "note": "also republished synchronously from PolAdd (qospol.go:272), PolAssociateLbRule (:333) and PolDelete (:362), so a config change is visible without waiting for the tick" },
      { "symbol": "ZoneTicker", "kind": "method", "receiver": "ZoneH", "file": "pkg/loxinet/zones.go", "def_line": 227, "call_line": 239, "calls": "PolTicker" },
      { "symbol": "loxiNetTicker", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 225, "call_line": 344, "calls": "ZoneTicker" },
-     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 916, "calls": "loxiNetTicker", "note": "go statement; the ticker goroutine runs for the life of the process" },
-     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 920, "calls": "loxiNetTicker", "note": "go statement; the ticker goroutine runs for the life of the process" },
+     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/policer_metrics_test.go asserts the published store is emitted verbatim on gather (0 for pending, 1 for attached, series vanish after republish without the policer); pkg/loxinet attachment tests pin the attached() truth table. Not yet observed on a bed; the ghost-policer red twin owns the runtime proof."
    },
@@ -1322,43 +1324,43 @@
    "loxilb_restore_total": {
     "status": "verified-static",
     "writer_sources": [
-     { "symbol": "observeRestore", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 195, "writes": "restoreTotal", "note": "result label comes from restoreResultLabel, which folds a nil result to \"rejected\" and an error to \"error\"; the mode/result children are pre-created in init at :139 so the series exist at 0 from the first scrape" },
-     { "symbol": "Restore", "kind": "method", "receiver": "Engine", "file": "pkg/snapshot/restore.go", "def_line": 220, "call_line": 225, "calls": "observeRestore", "note": "deferred, so every Restore outcome is counted once" },
-     { "symbol": "ConfigPostRestore", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 286, "call_line": 335, "calls": "Restore", "entry_point": "http-handler", "note": "boot replay reaches the same writer through applySnapshotBoot (api/loxinlp/nlp.go:1821)" }
+     { "symbol": "observeRestore", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 200, "writes": "restoreTotal", "note": "result label comes from restoreResultLabel, which folds a nil result to \"rejected\" and an error to \"error\"; the mode/result children are pre-created in init at :139 so the series exist at 0 from the first scrape" },
+     { "symbol": "Restore", "kind": "method", "receiver": "Engine", "file": "pkg/snapshot/restore.go", "def_line": 224, "call_line": 229, "calls": "observeRestore", "note": "deferred, so every Restore outcome is counted once" },
+     { "symbol": "ConfigPostRestore", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 293, "call_line": 348, "calls": "Restore", "entry_point": "http-handler", "note": "boot replay reaches the same writer through applySnapshotBoot (api/loxinlp/nlp.go:1821)" }
     ],
     "evidence": "pkg/snapshot/metrics_test.go TestMetricsCommitOKIncrementsRestoreAndSnapshotSeries and TestMetricsParseFailureCountsAsRejected assert exact per-label deltas of 1. Not yet observed on a bed; scenario M15 owns the runtime proof."
    },
    "loxilb_restore_duration_seconds": {
     "status": "verified-static",
     "writer_sources": [
-     { "symbol": "observeRestore", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 195, "writes": "restoreDuration" },
-     { "symbol": "Restore", "kind": "method", "receiver": "Engine", "file": "pkg/snapshot/restore.go", "def_line": 220, "call_line": 225, "calls": "observeRestore" },
-     { "symbol": "ConfigPostRestore", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 286, "call_line": 335, "calls": "Restore", "entry_point": "http-handler" }
+     { "symbol": "observeRestore", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 200, "writes": "restoreDuration" },
+     { "symbol": "Restore", "kind": "method", "receiver": "Engine", "file": "pkg/snapshot/restore.go", "def_line": 224, "call_line": 229, "calls": "observeRestore" },
+     { "symbol": "ConfigPostRestore", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 293, "call_line": 348, "calls": "Restore", "entry_point": "http-handler" }
     ],
     "evidence": "pkg/snapshot/metrics_test.go restoreDurationCount at :42 reads the histogram's sample count and TestMetricsCommitOKIncrementsRestoreAndSnapshotSeries asserts a delta of exactly 1. Scenario M15 owns the runtime proof."
    },
    "loxilb_last_restore_timestamp_seconds": {
     "status": "verified-static",
     "writer_sources": [
-     { "symbol": "observeRestore", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 195, "writes": "lastRestoreTimestamp", "note": "advanced only when committed is true, so dry-runs deliberately leave it unchanged" },
-     { "symbol": "Restore", "kind": "method", "receiver": "Engine", "file": "pkg/snapshot/restore.go", "def_line": 220, "call_line": 225, "calls": "observeRestore" },
-     { "symbol": "ConfigPostRestore", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 286, "call_line": 335, "calls": "Restore", "entry_point": "http-handler" }
+     { "symbol": "observeRestore", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 200, "writes": "lastRestoreTimestamp", "note": "advanced only when committed is true, so dry-runs deliberately leave it unchanged" },
+     { "symbol": "Restore", "kind": "method", "receiver": "Engine", "file": "pkg/snapshot/restore.go", "def_line": 224, "call_line": 229, "calls": "observeRestore" },
+     { "symbol": "ConfigPostRestore", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 293, "call_line": 348, "calls": "Restore", "entry_point": "http-handler" }
     ],
     "evidence": "pkg/snapshot/metrics_test.go TestMetricsLastRestoreTimestampAdvancesOnCommitNotDryRun asserts 0 after a dry-run and the exact fixed Unix time after a commit -- the dry-run arm is the red twin. Scenario M15 owns the runtime proof."
    },
    "loxilb_snapshot_total": {
     "status": "verified-static",
     "writer_sources": [
-     { "symbol": "Capture", "kind": "func", "file": "pkg/snapshot/capture.go", "def_line": 35, "writes": "snapshotTotal", "note": "one increment per capture, labelled by trigger; the pre-restore capture is counted separately at pkg/snapshot/restore.go:745 and the five trigger children are pre-created in init at :139" },
-     { "symbol": "ConfigGetSnapshot", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 221, "call_line": 237, "calls": "Capture", "entry_point": "http-handler", "note": "also reached from ConfigGetExport (api/restapi/handler/backup.go:100) and from WriteThrough (pkg/snapshot/persist.go:189) on the persist path" }
+     { "symbol": "Capture", "kind": "func", "file": "pkg/snapshot/capture.go", "def_line": 36, "writes": "snapshotTotal", "note": "one increment per capture, labelled by trigger; the pre-restore capture is counted separately at pkg/snapshot/restore.go:745 and the five trigger children are pre-created in init at :139" },
+     { "symbol": "ConfigGetSnapshot", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 228, "call_line": 244, "calls": "Capture", "entry_point": "http-handler", "note": "also reached from ConfigGetExport (api/restapi/handler/backup.go:100) and from WriteThrough (pkg/snapshot/persist.go:189) on the persist path" }
     ],
     "evidence": "pkg/snapshot/metrics_test.go TestMetricsCaptureCountsTrigger and TestMetricsCommitOKIncrementsRestoreAndSnapshotSeries assert per-trigger deltas of exactly 1. Scenario M15 owns the runtime proof."
    },
    "loxilb_config_dirty": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "MarkConfigMutated", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 102, "writes": "configDirty", "note": "cleared again by completePersistSeq at :127, and only when no mutation landed while the persist was running -- so the gauge over-reports for one debounce period rather than under-reporting" },
-     { "symbol": "AutoPersistMiddleware", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 845, "call_line": 859, "calls": "MarkConfigMutated", "entry_point": "http-handler", "note": "called on every 2xx eligible mutation, including when auto-persist is off -- there the gauge staying at 1 is the operational signal" }
+     { "symbol": "MarkConfigMutated", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 107, "writes": "configDirty", "note": "cleared again by completePersistSeq at :127, and only when no mutation landed while the persist was running -- so the gauge over-reports for one debounce period rather than under-reporting" },
+     { "symbol": "AutoPersistMiddleware", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 867, "call_line": 881, "calls": "MarkConfigMutated", "entry_point": "http-handler", "note": "called on every 2xx eligible mutation, including when auto-persist is off -- there the gauge staying at 1 is the operational signal" }
     ],
     "evidence": "pkg/snapshot/config_dirty_test.go: four tests (mutate-then-persist clears, mutation-during-persist stays dirty, out-of-order completions, concurrent mutations) assert the exact gauge value on both sides -- but they call MarkConfigMutated and completePersistSeq directly, which section B.7 tier V1 does not accept as acceptance evidence: nothing drives AutoPersistMiddleware. Scenario M15 owns the runtime proof."
    },
@@ -1366,10 +1368,10 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "recordPersistSuccess", "kind": "func", "file": "pkg/snapshot/opstate.go", "def_line": 62, "writes": "persistTotal", "note": "result=\"ok\" here; the error child is incremented by RecordAutoPersistFailure at :81, and both children are pre-created in init (pkg/snapshot/metrics.go:139)" },
-     { "symbol": "Persist", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 175, "call_line": 185, "calls": "recordPersistSuccess" },
-     { "symbol": "WriteThrough", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 200, "call_line": 208, "calls": "Persist" },
+     { "symbol": "Persist", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 175, "call_line": 189, "calls": "recordPersistSuccess" },
+     { "symbol": "WriteThrough", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 204, "call_line": 212, "calls": "Persist" },
      { "symbol": "writeThroughWithConfigWritesHeld", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 108, "call_line": 111, "calls": "WriteThrough", "note": "holds configWrites exclusively around the write-through so mutating calls wait for the capture instead of racing it" },
-     { "symbol": "ConfigPostPersist", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 456, "call_line": 462, "calls": "writeThroughWithConfigWritesHeld", "entry_point": "http-handler", "note": "also reached from the boot write-through (api/loxinlp/nlp.go:1941), from restore/import commits, and from the auto-persist debouncer (:615)" }
+     { "symbol": "ConfigPostPersist", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 478, "call_line": 484, "calls": "writeThroughWithConfigWritesHeld", "entry_point": "http-handler", "note": "also reached from the boot write-through (api/loxinlp/nlp.go:1941), from restore/import commits, and from the auto-persist debouncer (:615)" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/snapshot/opstate.go:62-89. The snapshot tests drive Persist but assert opstate records rather than this counter, so it is mapped, not verified; scenario M15 owns its proof."
    },
@@ -1377,8 +1379,8 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "RecordAutoPersistFailure", "kind": "func", "file": "pkg/snapshot/opstate.go", "def_line": 74, "writes": "autoPersistFailStreak", "note": "set to the running streak; any successful persist resets it to 0 at recordPersistSuccess:67, whichever path wrote the document" },
-     { "symbol": "autoPersistFire", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 659, "call_line": 677, "calls": "RecordAutoPersistFailure" },
-     { "symbol": "InitAutoPersist", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 638, "call_line": 643, "calls": "autoPersistFire", "note": "registration, not a call: autoPersistFire is handed to NewAutoPersister as the debouncer callback. Returns early when --config-auto-persist=off, which is the one configuration that stops this writer entirely" },
+     { "symbol": "autoPersistFire", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 681, "call_line": 699, "calls": "RecordAutoPersistFailure" },
+     { "symbol": "InitAutoPersist", "kind": "func", "file": "api/restapi/handler/snapshot.go", "def_line": 660, "call_line": 665, "calls": "autoPersistFire", "note": "registration, not a call: autoPersistFire is handed to NewAutoPersister as the debouncer callback. Returns early when --config-auto-persist=off, which is the one configuration that stops this writer entirely" },
      { "symbol": "configureAPI", "kind": "func", "file": "api/restapi/configure_loxilb_rest_api.go", "def_line": 71, "call_line": 491, "calls": "InitAutoPersist" },
      { "tail": "restapi-configure-main" }
     ],
@@ -1387,8 +1389,8 @@
    "loxilb_boot_config_conflict_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "BootConfigConflictInc", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 206, "writes": "bootConfigConflict" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1969, "call_line": 1995, "calls": "BootConfigConflictInc", "note": "boot config replay; increments only when both snapshot.json and legacy *.txt artifacts exist and newest-wins arbitration ran" },
+     { "symbol": "BootConfigConflictInc", "kind": "func", "file": "pkg/snapshot/metrics.go", "def_line": 211, "writes": "bootConfigConflict" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2066, "call_line": 2093, "calls": "BootConfigConflictInc", "note": "boot config replay; increments only when both snapshot.json and legacy *.txt artifacts exist and newest-wins arbitration ran" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/loxinlp/nlp.go:1983 is the only call site. No test and no bed run has produced a dual-artifact boot; scenario M15 owns that arm."
@@ -1397,7 +1399,7 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "RecordBootLegacyFallback", "kind": "func", "file": "pkg/snapshot/bootstate.go", "def_line": 75, "writes": "bootLegacyFallbackTotal" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1969, "call_line": 2049, "calls": "RecordBootLegacyFallback", "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2066, "call_line": 2143, "calls": "RecordBootLegacyFallback", "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/loxinlp/nlp.go:2037 is the only call site. Needs a legacy-only boot to move; scenario M15 owns that arm."
@@ -1405,10 +1407,10 @@
    "loxilb_snapshot_quarantine_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "QuarantinePersisted", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 227, "writes": "snapshotQuarantineTotal" },
-     { "symbol": "quarantineBootSnapshot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1894, "call_line": 1895, "calls": "QuarantinePersisted" },
-     { "symbol": "applySnapshotBoot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1809, "call_line": 1817, "calls": "quarantineBootSnapshot", "note": "one of three quarantine sites: unreadable snapshot (:1805), restore-engine construction failure (:1826), and a restore that reported errors (:1854)" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1969, "call_line": 2029, "calls": "applySnapshotBoot" },
+     { "symbol": "QuarantinePersisted", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 231, "writes": "snapshotQuarantineTotal" },
+     { "symbol": "quarantineBootSnapshot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1975, "call_line": 1976, "calls": "QuarantinePersisted" },
+     { "symbol": "applySnapshotBoot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1847, "call_line": 1855, "calls": "quarantineBootSnapshot", "note": "one of three quarantine sites: unreadable snapshot (:1805), restore-engine construction failure (:1826), and a restore that reported errors (:1854)" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2066, "call_line": 2123, "calls": "applySnapshotBoot" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): three call sites in applySnapshotBoot. Needs a deliberately corrupted or failing boot snapshot to move; scenario M15 owns that arm."
@@ -2318,8 +2320,8 @@
    "writer_sources": [
     { "symbol": "RecordJWKSRefresh", "kind": "func", "file": "api/prometheus/jwt_metrics.go", "def_line": 194, "writes": "aiJWKSRefreshTotal" },
     { "symbol": "JWTAuthProfileInit", "kind": "func", "file": "pkg/loxinet/jwtauthprofile.go", "def_line": 64, "call_line": 67, "calls": "RecordJWKSRefresh", "note": "the wiring site, not the calling site: this installs the recorder as jwtauth's refresh observer, and the invocation happens later on each profile's JWKS lifecycle goroutine (pkg/jwtauth/manager.go fetchOnce). The seam exists so the credential-verification core needs no metrics dependency" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 784, "calls": "JWTAuthProfileInit" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 785, "calls": "JWTAuthProfileInit" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "evidence": "pkg/jwtauth/manager_test.go TestRefreshObserverCountsEveryAttempt proves the observer fires once per attempt with the outcome reached, including a failure against a dead endpoint while the keyset stays usable. Runtime proof is owed."
   },
@@ -2976,8 +2978,8 @@
     "writer_sources": [
      { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2291, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
      { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 625, "call_line": 728, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
-     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 583, "calls": "DpEbpfInit" },
-     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1379, "call_line": 1380, "calls": "loxiNetInit", "entry_point": "main" }
+     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 370, "call_line": 584, "calls": "DpEbpfInit" },
+     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1383, "call_line": 1384, "calls": "loxiNetInit", "entry_point": "main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/dpebpf_linux.go:701 passes the compiled-in map size. Scenario M00 owns the runtime proof, where the gauge must be present on an eBPF bed and absent without one."
    },
@@ -3890,7 +3892,7 @@
     "writer_sources": [
      { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1518, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1279, "calls": "SetKvEpInfo" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4162, "call_line": 5722, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5734, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 375, "call_line": 382, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1273. Scenario M08 owns the runtime proof."
@@ -4014,7 +4016,7 @@
     "writer_sources": [
      { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1524, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4162, "call_line": 5765, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5777, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 375, "call_line": 382, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
@@ -4025,7 +4027,7 @@
     "writer_sources": [
      { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1530, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4162, "call_line": 5765, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5777, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 375, "call_line": 382, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:198. WP-5 owns the known-mismatch arm."
@@ -4339,6 +4341,40 @@
      }
     ],
     "evidence": "IPv6 malformed/fragment counter source verified; final immutable candidate qualification pending."
+   },
+   "loxilb_boot_bgp_pending": {
+    "status": "verified-runtime",
+    "activation_precondition": "A validated boot snapshot with nonempty BGP intent. 1 while the BGP group is pending; 0 after complete recovery or full interactive replacement.",
+    "writer_sources": [
+     {
+      "symbol": "PreparePendingBGP",
+      "kind": "method",
+      "receiver": "Engine",
+      "file": "pkg/snapshot/bgp_pending.go",
+      "def_line": 148,
+      "writes": "bgpPendingGauge"
+     },
+     {
+      "symbol": "applySnapshotBoot",
+      "kind": "func",
+      "file": "api/loxinlp/nlp.go",
+      "def_line": 1847,
+      "call_line": 1880,
+      "calls": "PreparePendingBGP"
+     },
+     {
+      "symbol": "LbSessionGet",
+      "kind": "func",
+      "file": "api/loxinlp/nlp.go",
+      "def_line": 2066,
+      "call_line": 2123,
+      "calls": "applySnapshotBoot"
+     },
+     {
+      "tail": "loxinet-nlp-boot"
+     }
+    ],
+    "evidence": "llbigw-1 actual-image #522 validation on b12bb40d plus the uncommitted proposal (i522-impl-v7), datapath 213b3531: healthy boot exposed gauge 1 with readiness 503 while independent LB rules served HTTP 200 and backend receipts; after verified speaker ASN 65122 recovery at 16.123 seconds, gauge 0 and readiness 200. Pending management write controls returned 409 with unchanged disk snapshot. Existing MASTER/BACKUP advertisement policy is unchanged."
    }
   }
  }

@@ -164,6 +164,13 @@ func SnapshotFreezeMiddleware(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(`{"code":503,"message":"Maintenance mode","result":"configuration is frozen while a snapshot restore is in progress"}`))
 			return
 		}
+		if snapshot.BGPPending() && (strings.HasPrefix(r.URL.Path, apiBasePath+"/config/bgp/") ||
+			r.URL.Path == apiBasePath+"/config/import") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"code":409,"message":"Resource conflict","result":"bgp_domain_pending: retry is active; replace it with a full POST /config/restore?mode=commit"}`))
+			return
+		}
 		// Third, operator-owned gate (PUT /maintenance) -- distinct from
 		// the two self-clearing internal freezes above. The exemptions
 		// are the configuration-lifecycle operations maintenance exists
@@ -322,7 +329,13 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 		return snapshotBusyError()
 	}
 	defer snapshotGate.Store(false)
+	defer snapshot.LockBGPRecovery()()
 	defer beginRestoreFreeze()()
+	if snapshot.BGPPending() && !snapshot.FullBGPReplacement(raw, parseComponents(params.Components)) {
+		return &ErrorResponse{Payload: &models.Error{Code: 409, Message: "Resource conflict",
+			Result: "bgp_domain_pending: only a full interactive snapshot restore may replace pending BGP"}}
+	}
+	wasBGPPending := snapshot.BGPPending()
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	restoreOpts := snapshot.RestoreOptions{
@@ -373,10 +386,19 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 	// failure in the errors array, never a bare "ok": the caller must know
 	// restart survival is NOT guaranteed until a later persist succeeds.
 	if mode == snapshot.ModeCommit && result.Result == snapshot.ResultOK {
+		// The recovery lock prevents a late boot retry from overwriting this
+		// transaction. Clear old intent before its new live-state capture.
+		snapshot.ResolvePendingBGP()
+		if wasBGPPending {
+			if notifier, ok := any(ApiHooks).(interface{ NetBGPRecoveryComplete() }); ok {
+				notifier.NetBGPRecoveryComplete()
+			}
+		}
 		persisted := false
 		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "snapshot: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (restore applied but will not survive restart): "+werr.Error())
+			snapshot.RecordAutoPersistFailure(werr)
 		} else {
 			persisted = true
 			result.PersistedGeneration = pdoc.Generation

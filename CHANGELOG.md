@@ -23,6 +23,20 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
+- A delayed BGP speaker no longer blocks independent snapshot domains or
+  quarantines the complete snapshot after the boot retry allowance. Independent
+  LB rules keep serving while the BGP group retries; readiness remains 503.
+  Persist and auto-persist merge live non-BGP state with the original pending
+  BGP configuration. BGP mutation APIs return `409 bgp_domain_pending` until
+  recovery or a successful full interactive restore replaces that intent.
+  Late recovery re-advertises current LB routes without resurrecting deleted
+  rules. `loxilb_boot_bgp_pending` exposes pending state.
+- Deleting an LB now withdraws its BGP advertisement (VIP and secondary IPs)
+  based on the stored rule. Previously, withdrawal depended on the `bgp` field
+  of the delete request, and a single-port lookup key mismatch skipped secondary
+  IPs, so a deleted LB's VIP could remain advertised.
+- Fix HTTP 500 from `GET /config/snapshot` when BGP is enabled without a
+  global configuration.
 - Native HTTP/1 P/D requests follow the configured roles. Bodyless requests
   use decode endpoints without holding prefill/decode role units. Requests
   previously relayed whole to prefill now fail explicitly. Non-JSON uploads,
@@ -35,6 +49,12 @@ inference-gateway delta is enumerated in detail.
   `400 pd_pipelining_unsupported` instead of counting subsequent requests
   against the current body's limit. The legacy `loxilb_pd_fallback_to_normal_total` metric is
   deprecated and remains zero after removal of the role-0 fallback.
+
+### Changed
+
+- When a snapshot is selected at boot, a stale `BFDconfig.txt` is no longer
+  applied before it. Strict failures retain snapshot authority; legacy replay
+  remains available only through the explicit compat fallback.
 
 ## [v0.9.9.1] - 2026-11-03
 

@@ -1973,7 +1973,13 @@ func (R *RuleH) GetLBRuleByServArgs(serv cmn.LbServiceArg) *ruleEnt {
 
 	l4prot := rule8Tuple{ipProto, 0xff}
 	l3dst := ruleIPTuple{*sNetAddr}
-	l4dst := rule16RTuple{serv.ServPort, serv.ServPortMax, true}
+	// AddLbRule/DeleteLbRule represent a singleton as [port, port].
+	// Lookup must use that same key when the API omits the upper bound.
+	upper := serv.ServPortMax
+	if upper == 0 {
+		upper = serv.ServPort
+	}
+	l4dst := rule16RTuple{serv.ServPort, upper, true}
 	rt := ruleTuples{
 		l3Dst:         l3dst,
 		l4Prot:        l4prot,
@@ -2010,7 +2016,13 @@ func (R *RuleH) GetLBRuleSecIPs(serv cmn.LbServiceArg) []string {
 
 	l4prot := rule8Tuple{ipProto, 0xff}
 	l3dst := ruleIPTuple{*sNetAddr}
-	l4dst := rule16RTuple{serv.ServPort, serv.ServPortMax, true}
+	// AddLbRule/DeleteLbRule represent a singleton as [port, port].
+	// Lookup must use that same key when the API omits the upper bound.
+	upper := serv.ServPortMax
+	if upper == 0 {
+		upper = serv.ServPort
+	}
+	l4dst := rule16RTuple{serv.ServPort, upper, true}
 	rt := ruleTuples{
 		l3Dst:         l3dst,
 		l4Prot:        l4prot,
