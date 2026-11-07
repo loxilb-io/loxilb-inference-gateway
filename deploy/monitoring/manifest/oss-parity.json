@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-10-27T02:34:22+00:00",
-  "source_revision": "a6c7a0d33718204d7292d04c30eb34ceef39d3c0",
+  "generated_at": "2026-11-07T22:10:53+00:00",
+  "source_revision": "d4de30686d98a2d90224291262915d7170bfdc17",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "4fa515f08017e845470218990a0a8961f5426e7e"
  },
  "contract": {
-  "gateway_families": 354,
+  "gateway_families": 355,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 319,
+  "absent": 320,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -2050,6 +2050,17 @@
      "endpoint",
      "service"
     ]
+   }
+  },
+  {
+   "name": "loxilb_boot_bgp_pending",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
    }
   },
   {
