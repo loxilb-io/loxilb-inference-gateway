@@ -139,6 +139,52 @@ developers and other users, join the loxilb [Slack](https://www.loxilb.io/member
 loxilb questions, use the upstream
 [discussions](https://github.com/loxilb-io/loxilb/discussions).
 
+## Native P/D request bounds
+
+Bodyless HTTP/1 requests on a `pd_disagg_mode` rule use the first healthy decode
+endpoint in programmed pool order and hold no P/D role capacity or load
+reservations. A failed decode connection retries only decode endpoints. No
+usable decode returns `503 pd_pool_unavailable`.
+
+Native P/D buffers JSON bodies up to 768 KiB by default. Set the process
+environment variable `LLB_PD_MAX_BODY_BYTES` before startup to a positive byte
+count up to 786432 to lower this limit. Invalid values use the default.
+Requests over the limit receive `413 pd_body_too_large` with
+`max_body_bytes`. A body requires a JSON Content-Type. Non-JSON bodies of any
+size receive `415 pd_body_unsupported_media`. Chunked JSON bodies receive
+`413 pd_body_unbufferable`. Request preparation completes before connecting
+either role. Rewrite or allocation failures receive `500 pd_prepare_failed`
+and release the P/D reservations and admission units.
+
+The daemon logs the effective byte limit once at startup. These native P/D
+routing and body-enforcement rules apply to HTTP/1 only. HTTP/2 uses a separate
+bridge and does not apply this policy. Use HTTP/1.1 for native P/D clients.
+Send one request at a time on each keep-alive connection. Pipelined requests
+are refused with `400 pd_pipelining_unsupported`.
+
+For the umbrella Helm chart, merge this entry into your values file's existing
+`loxilb-igw.extraEnv` list and apply it with your normal Helm upgrade.
+
+```yaml
+loxilb-igw:
+  extraEnv:
+    - name: LLB_PD_MAX_BODY_BYTES
+      value: "32768"
+```
+
+For Docker Compose, add the environment entry to the gateway service and
+recreate that service.
+
+```yaml
+services:
+  gateway:
+    environment:
+      LLB_PD_MAX_BODY_BYTES: "32768"
+```
+
+This policy also applies after EPP FailOpen. Explicit EPP decisions and L7
+FORWARD routes use their own forwarding contract.
+
 ## CICD Workflow Status
 
 ### AI-Inference gateway

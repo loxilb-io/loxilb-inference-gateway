@@ -68,29 +68,59 @@ datapath_lane() {
   # relink when the C library changed: Go's build cache does not see it.
   export CGO_LDFLAGS="-L$ROOT/loxilb-ebpf/libbpf/src/build/usr/lib64 ${CGO_LDFLAGS:-}"
   local bust; bust="$(stat -c %Y "$lib")"
-  # TestMain is the harness (loxiNetInit); without it in -run every EPP test
-  # skips, which is why the skip count is checked below.
-  if go test -count=1 -v -ldflags="-X=main.eppbust=$bust" \
-       -run 'TestMain|TestEpp' ./pkg/loxinet/ >"$LOG" 2>&1; then
-    pass "go test pkg/loxinet -run 'TestMain|TestEpp'"
-  else
-    fail "go test pkg/loxinet -run 'TestMain|TestEpp'"
-    grep -E '^(\s*--- FAIL|FAIL|panic:)' "$LOG" | head -20
-    grep -B2 -A12 '^\s*--- FAIL' "$LOG" | head -80
-  fi
-  local passed skipped
-  passed="$(grep -c '^--- PASS: TestEpp' "$LOG")"
-  skipped="$(grep -c '^\s*--- SKIP: TestEpp' "$LOG")"
-  printf '        %s EPP tests passed, %s skipped\n' "$passed" "$skipped"
-  if [ "$passed" -lt 8 ]; then
-    fail "only $passed EPP tests ran: the harness did not start (not root, or TestMain not in -run)"
-  fi
-  if [ "$skipped" -gt 1 ]; then
-    fail "$skipped EPP tests skipped (only the netns remote-backend test may skip)"
-    grep '^\s*--- SKIP: TestEpp' "$LOG"
-  elif [ "$skipped" = 1 ]; then
-    printf '        skipped: %s\n' "$(grep '^\s*--- SKIP: TestEpp' "$LOG" | tr -s ' ')"
-  fi
+  # The body-policy cases must run, including the one-worker refusal test.
+  # Do not inherit a developer's body limit for the default arm. Each arm is
+  # a fresh process, since the effective limit is cached at startup.
+  local required=(
+    TestEppPdBodyPolicy TestEppPdBodyPolicyHonorsExplicitPick
+    TestEppPdBodylessDecodeOrder TestEppPdBodylessDoesNotHoldRoleCapacity
+    TestEppPdLargeUploadCurl TestEppPdPipelinedBodyBound
+    TestEppPdNonPdPipeline TestEppPdNonPdPipelineCredentials
+    TestEppPdRefusalWorkerLatency
+  )
+  datapath_case() {
+    local label=$1 pattern=$2; shift 2
+    local output="${LOG%.log}.${label}.log" passed skipped unexpected test
+    # TestMain initializes the real harness; merely compiling EPP tests does
+    # not prove that the datapath cases ran.
+    if "$@" go test -count=1 -v -ldflags="-X=main.eppbust=$bust" \
+         -run "$pattern" ./pkg/loxinet/ >"$output" 2>&1; then
+      pass "EPP datapath $label"
+    else
+      fail "EPP datapath $label (full log: $output)"
+      tail -60 "$output"
+      return 1
+    fi
+    passed="$(grep -c '^--- PASS: TestEpp' "$output")"
+    skipped="$(grep -c '^[[:space:]]*--- SKIP: TestEpp' "$output")"
+    printf '        %s EPP tests passed, %s skipped; log: %s\n' "$passed" "$skipped" "$output"
+    if [ "$passed" -lt 8 ]; then
+      fail "only $passed EPP tests ran in $label: harness did not start"
+      return 1
+    fi
+    # Only this optional netns test may skip; a skipped body/latency test is
+    # a failure even if many unrelated EPP tests passed.
+    unexpected="$(grep -E '^[[:space:]]*--- SKIP: TestEpp' "$output" |
+      grep -vE -- '--- SKIP: TestEppRemoteBackendConnectsOncePerRequest([ (]|$)')"
+    if [ -n "$unexpected" ]; then
+      fail "required datapath test skipped in $label"
+      printf '%s\n' "$unexpected"
+      return 1
+    fi
+    for test in "${required[@]}"; do
+      if ! grep -Eq -- "^--- PASS: ${test}([ (]|$)" "$output"; then
+        fail "$test did not pass in $label"
+        return 1
+      fi
+    done
+    return 0
+  }
+  [ "$FAILED" = 0 ] || return
+  if ! datapath_case default 'TestMain|TestEpp' \
+       env -u LLB_PD_MAX_BODY_BYTES LLB_PROXY_WORKERS=1; then return; fi
+  datapath_case 32768 'TestMain|TestEppPd' \
+    env LLB_PD_MAX_BODY_BYTES=32768 LLB_PROXY_WORKERS=1
+
 }
 
 case "$LANE" in
@@ -100,6 +130,6 @@ case "$LANE" in
   *) echo "usage: $0 [unit|datapath|all]" >&2; exit 2 ;;
 esac
 
-rm -f "$LOG"
+if [ "$FAILED" = 0 ]; then rm -f "$LOG"; fi
 if [ "$FAILED" != 0 ]; then echo "==== epp-test: FAILED ===="; exit 1; fi
 echo "==== epp-test: ok ===="

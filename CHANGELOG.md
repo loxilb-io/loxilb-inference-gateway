@@ -13,6 +13,21 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Native HTTP/1 P/D requests follow the configured roles. Bodyless requests
+  use decode endpoints without holding prefill/decode role units. Requests
+  previously relayed whole to prefill now fail explicitly. Non-JSON uploads,
+  including those above 64 KiB, receive `415 pd_body_unsupported_media`.
+  JSON bodies above 768 KiB or the configured `LLB_PD_MAX_BODY_BYTES` limit
+  receive `413 pd_body_too_large`, and chunked JSON bodies receive
+  `413 pd_body_unbufferable`. Rewrite and allocation failures receive
+  `500 pd_prepare_failed` before connecting either role, with reservations
+  released. Pipelined native P/D requests receive
+  `400 pd_pipelining_unsupported` instead of counting subsequent requests
+  against the current body's limit. The legacy `loxilb_pd_fallback_to_normal_total` metric is
+  deprecated and remains zero after removal of the role-0 fallback.
+
 ## [v0.9.9.1] - 2026-11-03
 
 `v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.

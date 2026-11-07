@@ -32,6 +32,7 @@ func eppPdTestEngine(t *testing.T, name string, role int, prefill bool) (cmn.LbE
 		t.Fatal(err)
 	}
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Test-Engine", name)
 		body, _ := io.ReadAll(r.Body)
 		if r.Method != http.MethodPost {
 			// The gateway's own GET probes of a pd_disagg rule's engines
