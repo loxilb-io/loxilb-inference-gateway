@@ -179,7 +179,7 @@ func (ch *CIStateH) CITicker() {
 }
 
 // CISpawn - Spawn CI application
-func (ch *CIStateH) CISpawn() {
+func (ch *CIStateH) CISpawn(snapshotSelected bool) {
 	bs := bfd.StructNew(3784)
 	ch.Bs = bs
 	if ch.initSync != nil {
@@ -188,7 +188,7 @@ func (ch *CIStateH) CISpawn() {
 	// The existence gate and ApplyBFDConfig's reader must agree on the
 	// directory: a hardcoded /etc/loxilb here silently skipped the replay
 	// (or replayed the wrong file) under a non-default --config-path.
-	if _, err := os.Stat(filepath.Join(opts.Opts.ConfigPath, "BFDconfig.txt")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(opts.Opts.ConfigPath, "BFDconfig.txt")); !errors.Is(err, os.ErrNotExist) && !snapshotSelected {
 		nlp.ApplyBFDConfig()
 		return
 	}

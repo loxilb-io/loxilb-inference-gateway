@@ -25,6 +25,7 @@
 package snapshot
 
 import (
+	"encoding/json"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -324,6 +325,10 @@ type Domains struct {
 // /config/restore -- task G-3) and persisted to disk (snapshot.json --
 // task G-5/G-9).
 type Document struct {
+	// Pending boot intent retains the original JSON values only in memory.
+	// Persist preserves these values verbatim; no schema or second file is used.
+	pendingBGPRaw map[string]json.RawMessage
+
 	SchemaVersion  string    `json:"schema_version"`
 	Kind           string    `json:"kind"`
 	CreatedAt      time.Time `json:"created_at"`

@@ -95,6 +95,76 @@ verify unchanged configuration or compensating rollback after failure.
 
 ## Verify delivery after every recovery
 
+### A BGP speaker that is late or unavailable
+
+When a valid boot snapshot contains BGP configuration, the Gateway restores
+independent domains first. Ordinary and BGP-enabled LB datapaths can serve
+requests while the BGP group is pending. The BGP global, neighbor, defined-set,
+policy-definition and policy-assignment group retries with bounded RPCs and a
+backoff. Exceeding the former boot allowance does not quarantine the full
+document or erase the independent LB rules. A partial boot skips legacy per-domain
+replay in both `strict` and `compat`; old `*.txt` files cannot overwrite it.
+Corrupt or incompatible documents still fail validation before independent apply.
+
+Check `GET /netlox/v1/status/ready`. While pending it returns HTTP 503,
+`ready=false`, and a `bgp_domain_pending` reason. Independent traffic success is
+not whole-node recovery. Readiness returns to normal only after the BGP group
+applies and verifies, subject to the other readiness reasons. Check an independent
+BGP peer's RIB as well as actual HTTP completion before declaring route recovery.
+The `loxilb_boot_bgp_pending` gauge is 1 during pending recovery and returns to 0
+after recovery or full interactive replacement. It is independent of ordinary
+LB traffic and of process liveness.
+
+The BGP sections of the existing checksummed `snapshot.json` remain the durable
+intent; there is no extra intent file or epoch. Explicit persist and auto-persist
+capture live non-BGP configuration and merge the original BGP and
+`bgppolicyassignment` JSON value bytes verbatim, including their formatting and
+order. The surrounding live document receives a new valid checksum and generation.
+Snapshot exports during pending also include that desired BGP state, rather than
+the absent or partly applied speaker state. Use the speaker/peer RIB to inspect
+actual BGP convergence. An unrelated LB change saved during pending survives a
+restart together with the pending BGP configuration.
+
+While pending, BGP mutation APIs return HTTP **409** with
+`bgp_domain_pending`. This covers global settings, neighbors, defined sets,
+definitions and assignments. Safe non-BGP management and explicit persist remain
+available. Component restores and the deprecated import endpoint cannot replace
+pending BGP state. The explicit operator replacement path is a **full interactive
+restore**:
+
+```sh
+curl -sS --config ./admin.curl -X POST "$API/config/restore?mode=dry-run" \
+  -H 'Content-Type: application/json' --data-binary @full-replacement.private.json
+curl -sS --config ./admin.curl -X POST "$API/config/restore?mode=commit" \
+  -H 'Content-Type: application/json' --data-binary @full-replacement.private.json
+```
+
+Use a complete current-schema snapshot covering every supported domain, with no
+`components` filter, and the required external resources. Dry-run does not cancel
+pending recovery. A failed commit preserves the original pending intent and the
+transaction's rollback behavior. A committed replacement stops the old retry
+before capturing its replacement state. Verify `result=ok`, `persisted=true`,
+readback and traffic; `persisted=false` explicitly means the replacement is not
+guaranteed to survive restart. Repair persistence and save before restarting.
+
+The bundled Helm chart uses `/netlox/v1/version` for its Gateway readiness probe
+and controller startup wait; its liveness probe is disabled by default.
+The kube-loxilb integration client health check uses the API base path, rather
+than `/status/ready`. The pending 503 therefore does not change these default
+health inputs. Preserve this distinction if overriding probes: an EndpointSlice
+whose `ready` condition becomes false is excluded by kube-loxilb discovery, and a
+liveness probe pointed at `/status/ready` can restart a healthy process merely
+because BGP is pending. Whole-node recovery status is not a process-liveness
+check. Verify the effective chart values and controller image for your deployment.
+
+Late advertisement reconciliation keeps the existing HA policy: MASTER to
+BACKUP lowers advertisement priority, rather than withdrawing every route.
+Deleting the LB withdraws its route. Role-decision advertisement barriers are a
+separate HA startup change; reducing the existing 90-second sync wait is not part
+of this boot-domain recovery change.
+
+### Verify application delivery
+
 ```sh
 curl -sS --max-time 5 --config ./key.curl -H 'Content-Type: application/json' \
   -H 'X-Test-Nonce: restored-normal' --data-binary @request-normal.json \

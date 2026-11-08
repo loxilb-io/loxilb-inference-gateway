@@ -67,6 +67,10 @@ type RestoreOptions struct {
 	// loader (nlp.go); wired here now per task G-2's instructions so G-5
 	// needs no engine changes later.
 	Boot bool
+	// PlanOnly validates and plans a boot document without reading live
+	// optional subsystems or applying anything. Used before splitting boot
+	// domains; interactive dry-run and commit semantics are unchanged.
+	PlanOnly bool
 }
 
 func (o RestoreOptions) modeString() string {
@@ -80,7 +84,7 @@ func (o RestoreOptions) modeString() string {
 }
 
 func (o RestoreOptions) isDryRun() bool {
-	return !o.Boot && o.Mode != ModeCommit
+	return o.PlanOnly || (!o.Boot && o.Mode != ModeCommit)
 }
 
 // PlanItem is one row of the §5.2 `plan` array: how many live items this

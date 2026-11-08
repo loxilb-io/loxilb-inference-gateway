@@ -403,8 +403,14 @@ func (na *NetAPIStruct) NetLbRuleDel(lm *cmn.LbRuleMod) (int, error) {
 	defer mh.mtx.Unlock()
 
 	ips := mh.zr.Rules.GetLBRuleSecIPs(lm.Serv)
+	// The delete key does not require a bgp query parameter. Advertisement
+	// ownership belongs to the stored rule, not to the caller's delete body.
+	advertised := false
+	if rule := mh.zr.Rules.GetLBRuleByServArgs(lm.Serv); rule != nil {
+		advertised = rule.bgp
+	}
 	ret, err := mh.zr.Rules.DeleteLbRule(lm.Serv)
-	if lm.Serv.Bgp {
+	if err == nil && advertised {
 		if mh.bgp != nil {
 			ips = append(ips, lm.Serv.ServIP)
 			mh.bgp.DelBGPRule(cmn.CIDefault, ips)
@@ -2354,4 +2360,44 @@ func (na *NetAPIStruct) NetGoBGPGCReplace(target *cmn.GoBGPGlobalConfig) (int, e
 		return 0, errors.New("loxilb BGP mode is disabled")
 	}
 	return mh.bgp.BGPGlobalConfigReplace(*target)
+}
+
+// NetBGPRecoveryComplete replays the CURRENT advertisement cache only after
+// the complete BGP group (including operator policies) has applied. Rules
+// installed while the speaker was absent otherwise miss its connect event.
+func (na *NetAPIStruct) NetBGPRecoveryComplete() {
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	if mh.bgp == nil {
+		return
+	}
+	rules, err := mh.zr.Rules.GetLBRule()
+	if err != nil {
+		return
+	}
+	mh.bgp.mtx.Lock()
+	defer mh.bgp.mtx.Unlock()
+	// Reconcile from CURRENT rules: retries must not inflate refcounts, and
+	// a rule deleted while disconnected must not be resurrected by recovery.
+	ci := mh.bgp.ciMap[cmn.CIDefault]
+	if ci == nil {
+		ci = &goCI{name: cmn.CIDefault, vip: net.IPv4zero, hastate: cmn.CIStateNotDefined}
+		mh.bgp.ciMap[cmn.CIDefault] = ci
+	}
+	ci.rules = liveBGPAdvertisements(rules)
+	mh.bgp.reAdvertise = true
+}
+
+func liveBGPAdvertisements(rules []cmn.LbRuleMod) map[string]int {
+	refs := make(map[string]int)
+	for _, rule := range rules {
+		if !rule.Serv.Bgp {
+			continue
+		}
+		refs[rule.Serv.ServIP]++
+		for _, ip := range rule.SecIPs {
+			refs[ip.SecIP]++
+		}
+	}
+	return refs
 }

@@ -18,6 +18,7 @@ package snapshot
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -42,9 +43,16 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 	// derived from included_domains, so a components-filtered capture must
 	// not claim (and a later restore must not wipe) domains it never read.
 	doc.IncludedDomains = entryNames(selected)
+	pending := pendingBGPDocument()
 	for _, entry := range selected {
 		if err := faultCaptureError(entry.Name); err != nil {
 			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)
+		}
+		// The disk snapshot's BGP section is authoritative until recovery.
+		// Reading an absent/partly applied speaker here would either fail an
+		// unrelated persist or durably erase unapplied operator intent.
+		if pending != nil && isBGPDomain(entry.Name) {
+			continue
 		}
 		if err := entry.Get(hooks, doc); err != nil {
 			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)
@@ -57,6 +65,23 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 	if err := NormalizeDomains(&doc.Domains); err != nil {
 		return nil, fmt.Errorf("capture: normalize: %w", err)
 	}
+	// Merge AFTER normalization: preserve the pending BGP section's exact
+	// values and ordering, including operator policy and assignment order.
+	if pending != nil {
+		for _, entry := range selected {
+			switch entry.Name {
+			case DomainBGP:
+				doc.Domains.BGP = pending.Domains.BGP
+				doc.pendingBGPRaw = cloneBGPRaw(pending.pendingBGPRaw)
+			case DomainBGPPolicyAssignment:
+				doc.Domains.BGPPolicyAssignment = pending.Domains.BGPPolicyAssignment
+				if doc.pendingBGPRaw == nil {
+					doc.pendingBGPRaw = make(map[string]json.RawMessage)
+				}
+				doc.pendingBGPRaw[DomainBGPPolicyAssignment] = append(json.RawMessage(nil), pending.pendingBGPRaw[DomainBGPPolicyAssignment]...)
+			}
+		}
+	}
 	// Declare the §6 recovery_dependencies manifest (schema 1.4). A
 	// capture that cannot determine its dependency identities would
 	// produce a document claiming independence it does not have -- fail
@@ -64,6 +89,15 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 	deps, err := hooks.NetRecoveryDepsGet()
 	if err != nil {
 		return nil, fmt.Errorf("capture: recovery dependencies: %w", err)
+	}
+	for name := range doc.pendingBGPRaw {
+		included := false
+		for _, entry := range selected {
+			included = included || entry.Name == name
+		}
+		if !included || len(doc.pendingBGPRaw[name]) == 0 {
+			delete(doc.pendingBGPRaw, name)
+		}
 	}
 	doc.RecoveryDependencies = buildRecoveryManifest(doc, deps)
 	snapshotTotal.WithLabelValues(string(trigger)).Inc()

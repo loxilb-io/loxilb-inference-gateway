@@ -26,6 +26,7 @@ package loxinet
 
 import (
 	"context"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	"time"
 
 	tk "github.com/loxilb-io/loxilib"
@@ -92,6 +93,9 @@ var (
 // `KvSubscriberStopAll` for each service so the per-EP `cancel` map is
 // fully drained.
 func shutdownWorkers(ctx context.Context) error {
+	if err := snapshot.StopBGPRecovery(ctx); err != nil {
+		return err
+	}
 	// Snapshot service IDs under the registry lock; release before
 	// invoking KvSubscriberStopAll (which takes the lock again).
 	kvServicesMu.Lock()

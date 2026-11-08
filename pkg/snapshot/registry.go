@@ -1250,6 +1250,17 @@ func bgpNeighGetModToMod(n cmn.GoBGPNeighGetMod) *cmn.GoBGPNeighMod {
 }
 
 func getBGP(hooks Hooks, doc *Document) error {
+	// GoBGP without StartBgp is reachable but rejects ListDefinedSet with
+	// "invalid defined-set type: 0". An unset global is an empty domain;
+	// transport/read errors remain errors, never an empty configuration.
+	gc, err := hooks.NetGoBGPGCGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.BGP = BGPDomain{}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get bgp global_config: %w", err)
+	}
 	neighbors, err := hooks.NetGoBGPNeighGet()
 	if isSubsystemUnavailable(err) {
 		doc.Domains.BGP = BGPDomain{}
@@ -1257,6 +1268,11 @@ func getBGP(hooks Hooks, doc *Document) error {
 	}
 	if err != nil {
 		return fmt.Errorf("get bgp neighbors: %w", err)
+	}
+
+	if gc.LocalAs == 0 && len(neighbors) == 0 {
+		doc.Domains.BGP = BGPDomain{}
+		return nil
 	}
 
 	var definedSets []cmn.GoBGPPolicyDefinedSetMod
@@ -1293,13 +1309,6 @@ func getBGP(hooks Hooks, doc *Document) error {
 
 	// G-7: capture global config; zero LocalAs means "not configured" and
 	// keeps GlobalConfig nil (omitempty).
-	gc, err := hooks.NetGoBGPGCGet()
-	if isSubsystemUnavailable(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("get bgp global_config: %w", err)
-	}
 	if gc.LocalAs != 0 {
 		doc.Domains.BGP.GlobalConfig = &gc
 	}

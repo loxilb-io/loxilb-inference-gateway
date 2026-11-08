@@ -345,6 +345,7 @@ func TestMirrorGetModConvertsToMirrModForApplyAndDelete(t *testing.T) {
 
 func TestBGPDefinedSetsGetLoopsOverEveryType(t *testing.T) {
 	hooks := newMockHooks()
+	hooks.bgpGC = &cmn.GoBGPGlobalConfig{LocalAs: 65122, RouterID: "192.0.2.22"}
 	hooks.bgpDefined["prefix"] = []cmn.GoBGPPolicyDefinedSetMod{{Name: "pfx1", DefinedTypeString: "prefix"}}
 	hooks.bgpDefined["neigh"] = []cmn.GoBGPPolicyDefinedSetMod{{Name: "n1", DefinedTypeString: "neigh"}}
 

@@ -78,6 +78,7 @@ on:
       - 'cicd/cfg-persist-*/**'
       - 'cicd/common/persist_lib.sh'
       - 'cicd/common/test_persist_securityrate.sh'
+      - 'cicd/common/test_persist_replay_receipt.sh'
       # a datapath-only change arrives as the submodule pointer bump
       - 'loxilb-ebpf'
       - '.github/workflows/persist-sanity.yml'
@@ -112,6 +113,7 @@ on:
       - 'cicd/cfg-persist-*/**'
       - 'cicd/common/persist_lib.sh'
       - 'cicd/common/test_persist_securityrate.sh'
+      - 'cicd/common/test_persist_replay_receipt.sh'
       # a datapath-only change arrives as the submodule pointer bump
       - 'loxilb-ebpf'
       - '.github/workflows/persist-sanity.yml'
@@ -137,6 +139,8 @@ jobs:
           go test -count=1 ./pkg/snapshot/...
       - name: Persistence security-rate compatibility oracle
         run: bash cicd/common/test_persist_securityrate.sh
+      - name: Persistence boot replay receipt oracle
+        run: bash cicd/common/test_persist_replay_receipt.sh
 
       # The producer half of the config-lifecycle contract check. The CLI
       # repository pins the operations and fields it decodes from the

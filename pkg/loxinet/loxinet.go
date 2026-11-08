@@ -508,6 +508,7 @@ func loxiNetInit() {
 	// shutdown ctx, constructed BEFORE any
 	// long-lived goroutine is spawned so all of them can be wired to it.
 	mh.shutdownCtx, mh.shutdownCancel = context.WithCancel(context.Background())
+	snapshot.SetBGPRecoveryContext(mh.shutdownCtx)
 
 	// global AI-controller applier start — env-gated
 	// (LOXILB_AI_CTRL_ADDR unset ⇒ returns immediately: no goroutine, no
@@ -810,6 +811,9 @@ func loxiNetInit() {
 	// Initialize the nlp subsystem. The interface filter applies with --nonlp
 	// too: L3 reconciliation consults it either way.
 	nlp.NlpSetIntfFilter(opts.Opts.BlackList, opts.Opts.WhiteList)
+	// Capture BFD's authority before NLP can quarantine a failed snapshot.
+	// Strict failure must not make a later filesystem check replay stale BFD.
+	bootSnapshotSelected := nlp.SnapshotBootSelected()
 	if !opts.Opts.NoNlp {
 		nlp.NlpRegister(NetAPIInit(opts.Opts.BgpPeerMode))
 		nlp.NlpInit(opts.Opts.BgpPeerMode, opts.Opts.BlackList, opts.Opts.WhiteList, opts.Opts.IPVSCompat)
@@ -827,7 +831,7 @@ func loxiNetInit() {
 
 	if !opts.Opts.BgpPeerMode {
 		// Spawn CI maintenance application
-		mh.has.CISpawn()
+		mh.has.CISpawn(bootSnapshotSelected)
 	}
 
 	// Initialize the user service subsystem

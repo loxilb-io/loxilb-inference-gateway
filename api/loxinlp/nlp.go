@@ -316,10 +316,37 @@ func ApplyBFDConfig() bool {
 		tk.LogIt(tk.LogError, "nlp: Failed to Unmarshal File: %v\n", err)
 		return false
 	}
+	ok := true
 	for _, bfd := range resp.Attr {
-		hooks.NetBFDAdd(&bfd)
+		if _, err := hooks.NetBFDAdd(&bfd); err != nil {
+			tk.LogIt(tk.LogError, "nlp: legacy BFD apply failed: %v\n", err)
+			ok = false
+		}
 	}
-	return true
+	return ok
+}
+
+// Only the explicit compat fallback may replay BFD after snapshot failure.
+// CISpawn initializes its store concurrently with NLP, so wait for that store
+// while the boot write gate is still held rather than race a late replay with
+// operator writes. Partial/complete snapshot paths never call this function.
+func applyFallbackBFDConfig() {
+	if _, err := os.Stat(opt.Opts.ConfigPath + "/BFDconfig.txt"); err != nil {
+		return
+	}
+	for attempt := 0; attempt < bootRetries; attempt++ {
+		_, err := hooks.NetBFDGet()
+		if err == nil {
+			ApplyBFDConfig()
+			return
+		}
+		if !errors.Is(err, cmn.ErrBFDUnavailable) {
+			tk.LogIt(tk.LogError, "nlp: legacy BFD not available: %v\n", err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	tk.LogIt(tk.LogError, "nlp: legacy BFD store did not initialize during compat fallback\n")
 }
 
 func applyRoutes(name string) {
@@ -1806,7 +1833,18 @@ var nNl *NlH
 // restore rolls back to the empty boot state, so retrying is safe; retries
 // stop as soon as the failure is not a subsystem-startup error (e.g. a
 // genuinely incompatible document fails once, immediately).
-func applySnapshotBoot() bool {
+type snapshotBootOutcome uint8
+
+const (
+	bootUnhandled snapshotBootOutcome = iota
+	bootComplete
+	bootPartial
+)
+
+func (o snapshotBootOutcome) handled() bool { return o == bootComplete || o == bootPartial }
+
+// handled partial boot never enters per-domain legacy replay, in either profile.
+func applySnapshotBoot() snapshotBootOutcome {
 	raw, err := snapshot.LoadPersisted(opt.Opts.ConfigPath)
 	if err != nil {
 		// A snapshot.json exists (arbitration chose it) but cannot be
@@ -1815,30 +1853,74 @@ func applySnapshotBoot() bool {
 		// persist overwrite the only forensic copy.
 		tk.LogIt(tk.LogError, "nlp: boot snapshot: read %s/%s: %v\n", opt.Opts.ConfigPath, snapshot.PersistFileName, err)
 		recordBootFailure(quarantineBootSnapshot(), "read persisted snapshot: "+err.Error())
-		return false
+		return bootUnhandled
 	}
 	if raw == nil {
 		// Vanished between the arbitration stat and the read; nothing to
 		// quarantine, the legacy replay proceeds as if it never existed.
-		return false
+		return bootUnhandled
 	}
 	hostname, herr := os.Hostname()
 	if herr != nil {
 		hostname = "unknown"
 	}
 	engine := snapshot.NewEngine(hooks, cmn.Version, hostname, opt.Opts.ConfigPath)
+	independent, bgp, preflight, perr := engine.BootDomainGroups(raw)
+	if perr != nil || preflight.Result != snapshot.ResultOK {
+		reasons := preflight.Errors
+		if perr != nil {
+			reasons = append(reasons, perr.Error())
+		}
+		tk.LogIt(tk.LogError, "nlp: boot snapshot: preflight failed (errors=%v)\n", reasons)
+		recordBootFailure(quarantineBootSnapshot(), reasons...)
+		return bootUnhandled
+	}
+
+	var startBGP func()
+	if len(bgp) != 0 {
+		startBGP, err = engine.PreparePendingBGP(raw, bgp)
+		if err != nil {
+			recordBootFailure("", "prepare BGP recovery: "+err.Error())
+			return bootUnhandled
+		}
+		released := false
+		defer func() {
+			if !released {
+				defer snapshot.LockBGPRecovery()()
+				snapshot.ResolvePendingBGP()
+			}
+		}()
+		// startBGP owns the release flag so failed independent apply cancels it.
+		begin := startBGP
+		startBGP = func() { released = true; begin() }
+	}
 
 	start := time.Now()
 	for attempt := 1; ; attempt++ {
-		result, err := engine.Restore(raw, snapshot.RestoreOptions{Boot: true})
+		result := preflight
+		var err error
+		if len(independent) != 0 {
+			result, err = engine.Restore(raw, snapshot.RestoreOptions{Boot: true, Components: independent})
+		}
 		if err != nil {
 			// Engine-level precondition failure: same durable-wipe risk
 			// as a pipeline failure, so quarantine here too.
 			tk.LogIt(tk.LogError, "nlp: boot snapshot: engine: %v\n", err)
 			recordBootFailure(quarantineBootSnapshot(), "restore engine: "+err.Error())
-			return false
+			return bootUnhandled
 		}
 		if result.Result == snapshot.ResultOK {
+			if len(bgp) != 0 {
+				snapshot.RecordBootRestoreState(snapshot.BootRestoreState{
+					Profile: opt.Opts.ConfigBootProfile, SnapshotFound: true, Degraded: true,
+					Generation: result.SnapshotGeneration,
+					Reasons:    []string{"bgp_domain_pending: independent domains restored; retrying the BGP group"},
+				})
+				startBGP()
+				tk.LogIt(tk.LogWarning, "nlp: boot snapshot: independent domains restored; BGP pending, original snapshot retained\n")
+				return bootPartial
+			}
+
 			tk.LogIt(tk.LogInfo, "nlp: boot snapshot: %s applied (%d domains planned, attempt %d, generation %d)\n",
 				snapshot.PersistFileName, len(result.Plan), attempt, result.SnapshotGeneration)
 			// Tolerated anomalies (e.g. duplicate document entries skipped
@@ -1853,7 +1935,7 @@ func applySnapshotBoot() bool {
 				Succeeded:     true,
 				Generation:    result.SnapshotGeneration,
 			})
-			return true
+			return bootComplete
 		}
 		if bootRetryAllowed(attempt, time.Since(start), result.Errors) {
 			tk.LogIt(tk.LogWarning, "nlp: boot snapshot: attempt %d hit subsystem startup ordering (%v); retrying\n",
@@ -1864,7 +1946,7 @@ func applySnapshotBoot() bool {
 		tk.LogIt(tk.LogError, "nlp: boot snapshot: restore failed (result=%q errors=%v)\n",
 			result.Result, result.Errors)
 		recordBootFailure(quarantineBootSnapshot(), result.Errors...)
-		return false
+		return bootUnhandled
 	}
 }
 
@@ -1942,6 +2024,22 @@ func newestLegacyConfigMtime() (time.Time, bool) {
 	return newest, found
 }
 
+// SnapshotBootSelected gives early legacy loaders the SAME authority decision
+// as LbSessionGet. In particular, BFDconfig.txt must not run before a persisted
+// snapshot and leave foreign BFD state that makes independent VERIFY fail.
+func SnapshotBootSelected() bool {
+	info, err := os.Stat(opt.Opts.ConfigPath + "/" + snapshot.PersistFileName)
+	if err != nil {
+		return false
+	}
+	newest, legacy := newestLegacyConfigMtime()
+	return snapshotBootSelected(info, newest, legacy, snapshot.LineageGeneration(opt.Opts.ConfigPath))
+}
+
+func snapshotBootSelected(info os.FileInfo, newest time.Time, legacy bool, generation uint64) bool {
+	return info != nil && (!legacy || generation > 0 || !info.ModTime().Before(newest))
+}
+
 // bootWriteThrough persists the just-replayed legacy config as
 // snapshot.json (§6.2: makes *.txt → snapshot migration automatic; the next
 // boot loads snapshot.json and the arbitration branch goes quiet).
@@ -1986,27 +2084,26 @@ func LbSessionGet(done bool) int {
 		// artifacts exist, load the NEWER of the two (never silently discard
 		// the more recent operator intent), warn loudly, and count the
 		// conflict so lingering dual-artifact hosts are visible.
-		useSnapshot := false
 		snapInfo, serr := os.Stat(opt.Opts.ConfigPath + "/" + snapshot.PersistFileName)
 		snapExists := serr == nil
 		txtNewest, txtExists := newestLegacyConfigMtime()
+		generation := snapshot.LineageGeneration(opt.Opts.ConfigPath)
+		useSnapshot := snapshotBootSelected(snapInfo, txtNewest, txtExists, generation)
 		switch {
 		case snapExists && txtExists:
 			snapshot.BootConfigConflictInc()
-			if gen := snapshot.LineageGeneration(opt.Opts.ConfigPath); gen > 0 {
+			if gen := generation; gen > 0 {
 				// The snapshot carries a lineage generation: it was
 				// written by a gateway's persisted lineage, not
 				// hand-dropped. That authority outranks mtime -- a cp
 				// without -p or clock skew must not flip the boot source.
 				// The operator override is explicit: remove snapshot.json
 				// to boot from the *.txt set.
-				useSnapshot = true
 				tk.LogIt(tk.LogWarning, "nlp: boot: BOTH %s (lineage generation %d) and legacy *.txt files exist; the persisted lineage wins regardless of mtimes. Remove %s to boot from the *.txt set, or remove the *.txt files to silence this warning.\n",
 					snapshot.PersistFileName, gen, snapshot.PersistFileName)
 			} else {
 				// Pre-generation or unreadable snapshot: newest-mtime
 				// arbitration, as before generations existed.
-				useSnapshot = !snapInfo.ModTime().Before(txtNewest)
 				chosen, ts := snapshot.PersistFileName, snapInfo.ModTime()
 				if !useSnapshot {
 					chosen, ts = "legacy *.txt files", txtNewest
@@ -2014,8 +2111,6 @@ func LbSessionGet(done bool) int {
 				tk.LogIt(tk.LogWarning, "nlp: boot: BOTH %s (mtime %s) and legacy *.txt files (newest mtime %s) exist; loading the newer: %s (mtime %s). Remove the stale artifact to silence this warning.\n",
 					snapshot.PersistFileName, snapInfo.ModTime().Format(time.RFC3339), txtNewest.Format(time.RFC3339), chosen, ts.Format(time.RFC3339))
 			}
-		case snapExists:
-			useSnapshot = true
 		}
 
 		// Baseline boot record (profile + what arbitration chose); a
@@ -2026,8 +2121,8 @@ func LbSessionGet(done bool) int {
 		})
 
 		if useSnapshot {
-			if applySnapshotBoot() {
-				tk.LogIt(tk.LogInfo, "nlp: boot config restored from snapshot.json; legacy *.txt replay skipped\n")
+			if outcome := applySnapshotBoot(); outcome.handled() {
+				tk.LogIt(tk.LogInfo, "nlp: boot snapshot handled (complete or BGP pending); legacy *.txt replay skipped\n")
 				return 0
 			}
 			// The snapshot boot failed (quarantined + recorded loudly
@@ -2047,6 +2142,7 @@ func LbSessionGet(done bool) int {
 			// gateway may be running older (*.txt-era) configuration.
 			if _, txtAny := newestLegacyConfigMtime(); txtAny {
 				snapshot.RecordBootLegacyFallback()
+				applyFallbackBFDConfig()
 				tk.LogIt(tk.LogWarning, "nlp: boot: compat profile: falling back to the legacy *.txt replay after the failed snapshot restore (degraded: replayed config may be older than the quarantined snapshot)\n")
 			}
 		}
