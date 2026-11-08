@@ -105,6 +105,17 @@ type bfdSession struct {
 	Mutex          sync.RWMutex
 	Notify         Notifer
 	PktDat         [24]byte
+
+	// Leases are accepted under Mutex until stopping is published. The
+	// operation token serializes transitions/callbacks without holding the
+	// table or state lock across an external notifier.
+	stopping     bool
+	started      bool
+	stopOnce     sync.Once
+	finalizeOnce sync.Once
+	done         chan struct{}
+	work         sync.WaitGroup
+	ops          chan struct{}
 }
 
 type Struct struct {
@@ -122,87 +133,136 @@ func StructNew(port uint16) *Struct {
 
 func (bs *Struct) BFDAddRemote(args ConfigArgs, cbs Notifer) error {
 	bs.BFDMtx.Lock()
-	defer bs.BFDMtx.Unlock()
-
-	sess := bs.BFDSessMap[args.RemoteIP]
-	if sess != nil {
-		source := net.ParseIP(args.SourceIP)
-		if source == nil || (!source.IsUnspecified() && !sess.MyIP.Equal(source)) || sess.RemoteName != fmt.Sprintf("%s:%d", args.RemoteIP, args.Port) || sess.Instance != args.Instance {
-			return errors.New("bfd existing session source, port or instance differs")
-		}
-		if (args.Interval == 0 || sess.DesMinTxInt == args.Interval) && (args.Multi == 0 || sess.MyMulti == args.Multi) {
-			return nil
-		}
-		var update bool
-		if sess.Instance == args.Instance {
-			if args.Interval != 0 && sess.DesMinTxInt != args.Interval {
-				sess.DesMinTxInt = args.Interval
-				sess.ReqMinRxInt = args.Interval
-				sess.ReqMinEchoInt = args.Interval
-				update = true
-			}
-			if args.Multi != 0 && sess.MyMulti != args.Multi {
-				sess.MyMulti = args.Multi
-				update = true
-			}
-			if update {
-				sess.Fin <- true
-				sess.TxTicker.Stop()
-				sess.RxTicker.Stop()
-				sess.State = BFDDown
-
-				sess.TxTicker = time.NewTicker(time.Duration(sess.DesMinTxInt) * time.Microsecond)
-				sess.RxTicker = time.NewTicker(time.Duration(BFDMinSysRXIntervalUs) * time.Microsecond)
-				go sess.bfdSessionTicker()
-
-				return nil
-			}
-		}
-		return errors.New("bfd existing session")
+	if sess := bs.BFDSessMap[args.RemoteIP]; sess != nil {
+		bs.BFDMtx.Unlock()
+		return sess.update(args)
 	}
-
+	defer bs.BFDMtx.Unlock()
 	if args.Interval < BFDMinSysTXIntervalUs || args.Multi == 0 {
 		return errors.New("bfd malformed args")
 	}
-
-	sess = new(bfdSession)
-	sess.Instance = args.Instance
-	sess.Notify = cbs
-	sess.StartGate = args.StartGate
-
-	err := sess.initialize(args.RemoteIP, args.SourceIP, args.Port, args.Interval, args.Multi)
-	if err != nil {
+	sess := &bfdSession{Instance: args.Instance, Notify: cbs, StartGate: args.StartGate}
+	if err := sess.initialize(args.RemoteIP, args.SourceIP, args.Port, args.Interval, args.Multi); err != nil {
 		return err
-		//return errors.New("bfd failed to init session")
 	}
-
 	bs.BFDSessMap[args.RemoteIP] = sess
-
 	return nil
+}
+
+const bfdSessionStopWait = time.Second
+
+func (b *bfdSession) beginWork() bool {
+	b.Mutex.Lock()
+	defer b.Mutex.Unlock()
+	if b.stopping {
+		return false
+	}
+	b.work.Add(1)
+	return true
+}
+
+func (b *bfdSession) takeOperation(timeout time.Duration) error {
+	if timeout == 0 {
+		select {
+		case b.ops <- struct{}{}:
+			return nil
+		case <-b.Fin:
+			return errors.New("bfd session is stopping")
+		}
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case b.ops <- struct{}{}:
+		return nil
+	case <-b.Fin:
+		return errors.New("bfd session is stopping")
+	case <-timer.C:
+		return errors.New("bfd session update timed out")
+	}
+}
+
+func (b *bfdSession) update(args ConfigArgs) error {
+	if !b.beginWork() {
+		return errors.New("bfd session is stopping")
+	}
+	defer b.work.Done()
+	b.Mutex.RLock()
+	source := net.ParseIP(args.SourceIP)
+	valid := source != nil && (source.IsUnspecified() || b.MyIP.Equal(source)) && b.RemoteName == fmt.Sprintf("%s:%d", args.RemoteIP, args.Port) && b.Instance == args.Instance
+	unchanged := (args.Interval == 0 || b.DesMinTxInt == args.Interval) && (args.Multi == 0 || b.MyMulti == args.Multi)
+	b.Mutex.RUnlock()
+	if !valid {
+		return errors.New("bfd existing session source, port or instance differs")
+	}
+	if unchanged {
+		return nil
+	}
+	if err := b.takeOperation(bfdSessionStopWait); err != nil {
+		return err
+	}
+	defer func() { <-b.ops }()
+	b.Mutex.Lock()
+	defer b.Mutex.Unlock()
+	if b.stopping {
+		return errors.New("bfd session is stopping")
+	}
+	changed := false
+	if args.Interval != 0 && b.DesMinTxInt != args.Interval {
+		b.DesMinTxInt, b.ReqMinRxInt, b.ReqMinEchoInt = args.Interval, args.Interval, args.Interval
+		changed = true
+	}
+	if args.Multi != 0 && b.MyMulti != args.Multi {
+		b.MyMulti = args.Multi
+		changed = true
+	}
+	if changed {
+		b.State = BFDDown
+		// One worker owns both stable ticker pointers for the whole session.
+		b.TxTicker.Reset(time.Duration(b.DesMinTxInt) * time.Microsecond)
+	}
+	return nil
+}
+
+func (b *bfdSession) requestStop() {
+	b.stopOnce.Do(func() {
+		b.Mutex.Lock()
+		b.stopping = true
+		close(b.Fin)
+		b.Mutex.Unlock()
+		go func() { b.work.Wait(); close(b.done) }()
+	})
 }
 
 func (bs *Struct) BFDDeleteRemote(args ConfigArgs) error {
 	bs.BFDMtx.Lock()
-	defer bs.BFDMtx.Unlock()
-
 	sess := bs.BFDSessMap[args.RemoteIP]
 	if sess == nil {
+		bs.BFDMtx.Unlock()
 		return errors.New("no bfd session")
 	}
-
-	sess.destruct()
-	delete(bs.BFDSessMap, args.RemoteIP)
-
+	sess.requestStop() // close-only; never waits for a receiver or callback
+	bs.BFDMtx.Unlock()
+	if err := sess.destruct(); err != nil {
+		tk.LogIt(tk.LogWarning, "remote %s: bfd session stop timed out; session retained for retry\n", args.RemoteIP)
+		return err
+	}
+	bs.BFDMtx.Lock()
+	if bs.BFDSessMap[args.RemoteIP] == sess {
+		delete(bs.BFDSessMap, args.RemoteIP)
+	}
+	bs.BFDMtx.Unlock()
 	return nil
 }
 
 func (bs *Struct) BFDGet() ([]cmn.BFDMod, error) {
 	var res []cmn.BFDMod
 
-	bs.BFDMtx.Lock()
-	defer bs.BFDMtx.Unlock()
+	bs.BFDMtx.RLock()
+	defer bs.BFDMtx.RUnlock()
 
 	for _, s := range bs.BFDSessMap {
+		s.Mutex.RLock()
 		var temp cmn.BFDMod
 		pair := strings.Split(s.RemoteName, ":")
 		temp.Instance = s.Instance
@@ -213,6 +273,7 @@ func (bs *Struct) BFDGet() ([]cmn.BFDMod, error) {
 		temp.Interval = uint64(s.DesMinTxInt)
 		temp.RetryCount = s.MyMulti
 		temp.State = BFDStateMap[uint8(s.State)]
+		s.Mutex.RUnlock()
 		res = append(res, temp)
 	}
 
@@ -250,14 +311,16 @@ func (bs *Struct) processBFD(conn *net.UDPConn) {
 	}
 
 	raw := decodeCtrlPacket(buf[:], n)
+	if raw == nil {
+		return
+	}
 
 	remIP := addr.IP
 	if remIP != nil {
 		//fmt.Printf("raw %v:%s:%v\n", raw, remIP.String(), raw.State)
-		bs.BFDMtx.Lock()
-		defer bs.BFDMtx.Unlock()
-
+		bs.BFDMtx.RLock()
 		sess := bs.BFDSessMap[remIP.String()]
+		bs.BFDMtx.RUnlock()
 		if sess != nil && sess.active() {
 			sess.RunSessionSM(raw)
 		} /* else {
@@ -287,11 +350,21 @@ func (bs *Struct) bfdStartListener(port uint16) error {
 }
 
 func (b *bfdSession) RunSessionSM(raw *WireRaw) {
-	inst := b.Instance
-	rem := b.RemoteName
-	oldState := b.State
-
+	if raw == nil || !b.beginWork() {
+		return
+	}
+	defer b.work.Done()
+	if err := b.takeOperation(0); err != nil {
+		return
+	}
+	defer func() { <-b.ops }()
 	b.Mutex.Lock()
+	if b.stopping || !b.gateOpen() {
+		b.Mutex.Unlock()
+		return
+	}
+	b.started = true
+	oldState := b.State
 
 	b.RemMulti = raw.Multi
 	b.RemDisc = raw.Disc
@@ -330,18 +403,24 @@ func (b *bfdSession) RunSessionSM(raw *WireRaw) {
 			}
 		}
 	}
-	newState := b.State
+	notify := b.stateNotificationLocked(b.State, oldState)
 	b.Mutex.Unlock()
-
-	b.sendStateNotification(newState, oldState, inst, rem)
+	if notify != nil {
+		notify()
+	}
 }
 
 func (b *bfdSession) checkSessTimeout() {
-	inst := b.Instance
-	rem := b.RemoteName
-	oldState := b.State
-
+	if err := b.takeOperation(0); err != nil {
+		return
+	}
+	defer func() { <-b.ops }()
 	b.Mutex.Lock()
+	if b.stopping {
+		b.Mutex.Unlock()
+		return
+	}
+	oldState := b.State
 	if b.State == BFDUp {
 		if time.Duration(time.Since(b.LastRxTS).Microseconds()) > time.Duration(b.TimeOut) {
 			b.State = BFDDown
@@ -349,37 +428,48 @@ func (b *bfdSession) checkSessTimeout() {
 			tk.LogIt(tk.LogInfo, "%s: BFD State -> Down (%v:%v)\n", b.RemoteName, b.MyDisc, b.RemDisc)
 		}
 	}
-	newState := b.State
+	notify := b.stateNotificationLocked(b.State, oldState)
 	b.Mutex.Unlock()
-
-	b.sendStateNotification(newState, oldState, inst, rem)
+	if notify != nil {
+		notify()
+	}
 }
 
-func (b *bfdSession) sendStateNotification(newState, oldState SessionState, inst string, remote string) {
+// Called under Mutex and the operation token. Capture the callback arguments
+// before unlocking; notifier calls never hold Mutex or the BFD table lock.
+func (b *bfdSession) stateNotificationLocked(newState, oldState SessionState) func() {
 	if newState == oldState || b.RemDisc == 0 {
-		return
+		return nil
 	}
-
+	var ciState string
 	if newState == BFDUp {
-		ciState := cmn.CIBackupStateString
+		ciState = cmn.CIBackupStateString
 		if b.MyDisc > b.RemDisc {
 			ciState = cmn.CIMasterStateString
 		}
 		tk.LogIt(tk.LogInfo, "%s: State change (%v:%v)\n", b.RemoteName, b.MyDisc, b.RemDisc)
-		b.CiState = ciState
-		b.Notify.BFDSessionNotify(inst, remote, ciState)
 	} else if newState == BFDDown && oldState == BFDUp {
-		ciState := cmn.CIMasterStateString
-		b.CiState = ciState
-		b.Notify.BFDSessionNotify(inst, remote, ciState)
+		ciState = cmn.CIMasterStateString
 	} else if b.RemDisc == b.MyDisc {
-		ciState := cmn.CIUnDefStateString
-		b.CiState = ciState
-		b.Notify.BFDSessionNotify(inst, remote, ciState)
+		ciState = cmn.CIUnDefStateString
+	} else {
+		return nil
 	}
+	b.CiState = ciState
+	notify, inst, remote := b.Notify, b.Instance, b.RemoteName
+	if notify == nil {
+		return nil
+	}
+	return func() { notify.BFDSessionNotify(inst, remote, ciState) }
 }
 
 func (b *bfdSession) active() bool {
+	b.Mutex.RLock()
+	defer b.Mutex.RUnlock()
+	return !b.stopping && b.gateOpen()
+}
+
+func (b *bfdSession) gateOpen() bool {
 	if b.StartGate == nil {
 		return true
 	}
@@ -392,6 +482,9 @@ func (b *bfdSession) active() bool {
 }
 
 func (b *bfdSession) bfdSessionTicker() {
+	defer b.work.Done()
+	defer b.TxTicker.Stop()
+	defer b.RxTicker.Stop()
 	if b.StartGate != nil {
 		select {
 		case <-b.StartGate:
@@ -400,6 +493,13 @@ func (b *bfdSession) bfdSessionTicker() {
 		}
 	}
 
+	b.Mutex.Lock()
+	if b.stopping {
+		b.Mutex.Unlock()
+		return
+	}
+	b.started = true
+	b.Mutex.Unlock()
 	for {
 		select {
 		case <-b.Fin:
@@ -482,6 +582,9 @@ func (b *bfdSession) initialize(remoteIP string, sourceIP string, port uint16, i
 	}
 
 	b.Fin = make(chan bool)
+	b.done = make(chan struct{})
+	b.ops = make(chan struct{}, 1)
+	b.work.Add(1)
 	b.TxTicker = time.NewTicker(time.Duration(b.DesMinTxInt) * time.Microsecond)
 	b.RxTicker = time.NewTicker(time.Duration(BFDMinSysRXIntervalUs) * time.Microsecond)
 
@@ -489,19 +592,32 @@ func (b *bfdSession) initialize(remoteIP string, sourceIP string, port uint16, i
 	return nil
 }
 
-func (b *bfdSession) destruct() {
-	b.State = BFDAdminDown
-	b.Fin <- true
-	b.TxTicker.Stop()
-	b.RxTicker.Stop()
-	// A pending session has not communicated with its peer yet.
-	if b.active() {
-		b.encodeCtrlPacket()
-		b.sendBFDPacket()
+func (b *bfdSession) destruct() error {
+	b.requestStop()
+	timer := time.NewTimer(bfdSessionStopWait)
+	defer timer.Stop()
+	select {
+	case <-b.done:
+	case <-timer.C:
+		return errors.New("bfd session stop timed out")
 	}
+	b.finalizeOnce.Do(func() {
+		b.Mutex.Lock()
+		b.State = BFDAdminDown
+		started := b.started
+		b.Mutex.Unlock()
+		if started {
+			b.encodeCtrlPacket()
+			b.sendBFDPacket()
+		}
+		b.Cxn.Close()
+	})
+	return nil
 }
 
 func (b *bfdSession) encodeCtrlPacket() error {
+	b.Mutex.Lock()
+	defer b.Mutex.Unlock()
 
 	b.PktDat[0] = byte(byte(0x1<<5) | byte(0))
 	b.PktDat[1] = (uint8(b.State) << 6)
@@ -518,8 +634,13 @@ func (b *bfdSession) encodeCtrlPacket() error {
 }
 
 func (b *bfdSession) sendBFDPacket() error {
-	b.Cxn.SetDeadline(time.Now().Add(500 * time.Millisecond))
-	_, err := b.Cxn.Write(b.PktDat[:])
+	b.Mutex.RLock()
+	packet, conn := b.PktDat, b.Cxn
+	b.Mutex.RUnlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		return err
+	}
+	_, err := conn.Write(packet[:])
 	if err != nil {
 		tk.LogIt(-1, "Error in sending %s\n", err)
 	}

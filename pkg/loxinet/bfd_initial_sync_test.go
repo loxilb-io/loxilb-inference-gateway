@@ -57,6 +57,11 @@ func TestBFDSessionWaitsForInitialHASync(t *testing.T) {
 	if _, err := ch.CIBFDSessionAdd(boot); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := ch.Bs.BFDDeleteRemote(bfd.ConfigArgs{RemoteIP: boot.RemoteIP.String()}); err != nil {
+			t.Errorf("stop test-owned BFD session: %v", err)
+		}
+	})
 	if sent(bootPeer, 5*time.Duration(interval)*time.Microsecond) {
 		t.Fatal("boot session sent BFD before the initial HA sync was done")
 	}
@@ -71,6 +76,11 @@ func TestBFDSessionWaitsForInitialHASync(t *testing.T) {
 	if _, err := ch.CIBFDSessionAdd(runtime); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := ch.Bs.BFDDeleteRemote(bfd.ConfigArgs{RemoteIP: runtime.RemoteIP.String()}); err != nil {
+			t.Errorf("stop test-owned BFD session: %v", err)
+		}
+	})
 	if !sent(runtimePeer, 2*time.Second) {
 		t.Fatal("session added after the initial HA sync did not start")
 	}

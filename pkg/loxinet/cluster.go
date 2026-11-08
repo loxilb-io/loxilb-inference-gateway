@@ -95,8 +95,9 @@ type CIStateH struct {
 	initRules6  bool
 	// bfdCfgMtx serialises BFD session adds and deletes, which mh.mtx no
 	// longer keeps atomic. Lock order for BFD configuration:
-	//  - a BFD notification takes mh.mtx while it holds the BFD table lock
-	//    (BFDMtx), so BFDMtx is never taken while holding mh.mtx;
+	//  - a BFD notification takes mh.mtx without the BFD table/state locks;
+	//    session stop/join may wait for it, so the global mutex is released
+	//    before calling BFD session operations;
 	//  - bfdCfgMtx is taken first, never while holding mh.mtx or BFDMtx;
 	//    under it, mh.mtx is held only around CIStateH state and released
 	//    before the BFD table is entered;
