@@ -23,6 +23,27 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
+- HA role gating follows configured KA/BFD or a valid cistate request. CT-only
+  cluster peers, role-unmanaged active-active deployments, and egress endpoints
+  retain NotDefined advertisements. Xsync startup requests run on an independent
+  worker with per-peer backoff and source-address hello readiness; dead-peer
+  network I/O no longer holds the broker membership mutex. Normal gobgpd shutdown
+  sends SIGTERM, waits for graceful exit, and uses a bounded 5-second SIGKILL
+  fallback. External daemon crashes retain their separate recovery semantics.
+
+- Clustered BGP startup prepares the daemon and configuration independently of
+  the HA hello wait. Initial peer registration, membership changes and transport
+  reconnections request conntrack again; an empty startup peer list cannot
+  permanently suppress sync. Early CT notifications are ignored until the local zone/rule
+  initialization barrier opens. Configured HA blocks new and recovered LB
+  advertisements until its role is known. Egress-only VXLAN endpoints retain
+  standalone advertisements and reconnect replay without requiring an HA role.
+  Application VIPs wait for both CI initialization (including saved BFD) and
+  boot configuration replay before advertising, so LB replay cannot precede
+  role-barrier activation. The 90-second wait default and
+  MASTER/BACKUP advertisement priorities are unchanged. Wait logs distinguish
+  ready, timeout and cancellation; hello readiness does not prove full CT sync.
+
 - A delayed BGP speaker no longer blocks independent snapshot domains or
   quarantines the complete snapshot after the boot retry allowance. Independent
   LB rules keep serving while the BGP group retries; readiness remains 503.

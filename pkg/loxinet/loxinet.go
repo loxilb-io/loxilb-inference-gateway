@@ -157,6 +157,8 @@ type loxiNetH struct {
 	// go-swagger apiserver's "Server already shutting down" guard race
 	// (D-B1-02).
 	shutdownInProgress atomic.Bool
+	// C map notifications can arrive before the root zone is published.
+	ctNotificationsReady atomic.Bool
 
 	// sockproxy HA state-sync coordinator. Initialised lazily on
 	// first CGO emit-event arrival (via NewSockproxySync), but stored here
@@ -286,6 +288,7 @@ func loxiNetTicker(bgpPeerMode bool) {
 
 				tk.LogIt(tk.LogCritical, "Shutdown on sig %v\n", sig)
 				// Shutdown tracing subsystem first
+				mh.ctNotificationsReady.Store(false)
 				mh.shutdownTracing()
 
 				// D-B1-04 cancel-before-destroy: broadcast cancellation
@@ -297,6 +300,8 @@ func loxiNetTicker(bgpPeerMode bool) {
 					mh.shutdownCancel()
 				}
 
+				// Wait for SIGTERM/Cease, including the bounded SIGKILL fallback, before PID 1 exits.
+				runShutdownStage("bgp", 6*time.Second, shutdownBGPDaemon)
 				runShutdownStage("workers", 1*time.Second, shutdownWorkersFn)
 				runShutdownStage("doca", 2*time.Second, shutdownDocaFn)
 				runShutdownStage("ebpf", 3*time.Second, shutdownEbpfFn)
@@ -368,6 +373,7 @@ func sysctlPostInit() {
 }
 
 func loxiNetInit() {
+	mh.ctNotificationsReady.Store(false)
 	var rpcMode int
 
 	// Initialize logger and specify the log file.
@@ -625,10 +631,6 @@ func loxiNetInit() {
 		}
 
 		if clusterMode {
-			if opts.Opts.Bgp {
-				tk.LogIt(tk.LogInfo, "init-wait cluster mode\n")
-				time.Sleep(10 * time.Second)
-			}
 			// Add cluster nodes if specified
 			cNodes := strings.Split(opts.Opts.ClusterNodes, ",")
 			for _, cNode := range cNodes {
@@ -683,11 +685,9 @@ func loxiNetInit() {
 				return nil
 			}
 			// Peer enumeration under the canonical mh.dp.SyncMtx RLock.
-			// Writer is DpWorkOnPeerOp which takes the exclusive Lock
-			// (see DpXsyncRPCReset at dpbroker.go:55 for the
-			// mirroring read pattern). copy into a fresh slice so the
-			// returned value cannot race with a subsequent peer add/
-			// remove after RUnlock.
+			// DpWorkOnPeerOp takes the exclusive lock. Copy into a fresh
+			// slice so the returned value cannot race with a subsequent
+			// peer add/remove after RUnlock.
 			mh.dp.SyncMtx.RLock()
 			defer mh.dp.SyncMtx.RUnlock()
 			out := make([]DpPeer, len(mh.dp.Peers))
@@ -832,6 +832,9 @@ func loxiNetInit() {
 	if !opts.Opts.BgpPeerMode {
 		// Spawn CI maintenance application
 		mh.has.CISpawn(bootSnapshotSelected)
+		if mh.bgp != nil {
+			mh.bgp.finishRoleInit()
+		}
 	}
 
 	// Initialize the user service subsystem
@@ -949,6 +952,11 @@ func loxiNetInit() {
 	}
 
 	mh.ready = true
+	if mh.dp != nil {
+		DpBrokerSyncBarrier(mh.dp)
+		mh.dp.FinishPeerInit()
+	}
+	mh.ctNotificationsReady.Store(true)
 }
 
 // initTracing initializes the HTTP/HTTPS Protocol Analyzer subsystem

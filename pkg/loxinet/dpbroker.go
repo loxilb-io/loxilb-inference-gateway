@@ -17,6 +17,7 @@
 package loxinet
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -542,6 +543,7 @@ type RPCHookInterface interface {
 // XSync - Remote sync peer information
 type XSync struct {
 	RemoteID int
+	peerIP   string // transport identity bound by the RPC server, never supplied by the hello
 	RPCState bool
 	// For peer to peer RPC
 	RPCType  int
@@ -676,173 +678,129 @@ type DpPeer struct {
 	// (capSessionSync, capSessionBulkGet, capRateLimiterSync, capSockproxySnapshot).
 	// Default = 0xFFFFFFFF until the coordinator sees its first Unimplemented.
 	CapMask uint32
+	// ctRequested means the asynchronous CT request was accepted, not transferred.
+	ctRequested bool
+	syncState   *peerSyncState
 }
 
 // DpH - datapath context container
 type DpH struct {
-	ToDpCh   chan interface{}
-	FromDpCh chan interface{}
-	ToFinCh  chan int
-	DpHooks  DpHookInterface
-	SyncMtx  sync.RWMutex
-	Peers    []DpPeer
-	RPC      *XSync
-	Remotes  []XSync
+	ToDpCh        chan interface{}
+	FromDpCh      chan interface{}
+	ToFinCh       chan int
+	DpHooks       DpHookInterface
+	SyncMtx       sync.RWMutex
+	Peers         []DpPeer
+	RPC           *XSync
+	Remotes       map[string]XSync
+	remoteMtx     sync.Mutex      // hello reception must not block behind an outbound RPC
+	peerInitDone  bool            // local receiver and initial peer registration are ready
+	expectedPeers map[string]bool // guarded by remoteMtx
+	syncWake      chan struct{}
+	syncDone      chan struct{}
+	syncNow       func() time.Time // nil uses monotonic time.Now; tests may supply a clock
 }
 
-// DpXsyncRPCReset - Routine to reset Sunc RPC Client connections
-func (dp *DpH) DpXsyncRPCReset() int {
+// FinishPeerInit publishes the local receiver and all queued startup peers.
+// An empty set is ready only after this point (the standalone case).
+func (dp *DpH) FinishPeerInit() {
 	dp.SyncMtx.Lock()
-	defer dp.SyncMtx.Unlock()
-	for idx := range mh.dp.Peers {
-		pe := &mh.dp.Peers[idx]
-		dp.RPC.RPCHooks.RPCReset(pe)
-	}
-	return 0
+	dp.peerInitDone = true
+	dp.SyncMtx.Unlock()
+	dp.wakePeerSync()
 }
 
-// DpXsyncInSync - Routine to check if remote peer is in sync
+// DpXsyncInSync reports hello/transport readiness, NOT complete CT transfer.
 func (dp *DpH) DpXsyncInSync() bool {
-	dp.SyncMtx.Lock()
-	defer dp.SyncMtx.Unlock()
-
-	return len(dp.Remotes) >= len(mh.has.NodeMap)
+	// Outbound RPCs may be slow. Never let one extend the wait's deadline.
+	if !dp.SyncMtx.TryRLock() {
+		return false
+	}
+	defer dp.SyncMtx.RUnlock()
+	if !dp.peerInitDone {
+		return false
+	}
+	for _, pe := range dp.Peers {
+		if !pe.ctRequested {
+			return false
+		}
+	}
+	dp.remoteMtx.Lock()
+	defer dp.remoteMtx.Unlock()
+	for _, pe := range dp.Peers {
+		if !dp.Remotes[pe.Peer.String()].RPCState {
+			return false
+		}
+	}
+	return true
 }
 
-// WaitXsyncReady - Routine to wait till it ready for syncing the peer entity
-func (dp *DpH) WaitXsyncReady(who string) {
-	begin := time.Now()
+const xsyncReadyTimeout = 90 * time.Second
+
+type xsyncWaitResult string
+
+const (
+	xsyncReady     xsyncWaitResult = "ready"
+	xsyncTimeout   xsyncWaitResult = "timeout"
+	xsyncCancelled xsyncWaitResult = "cancelled"
+)
+
+func (dp *DpH) waitXsyncReady(ctx context.Context, limit, interval time.Duration) xsyncWaitResult {
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
+		if ctx.Err() != nil {
+			return xsyncCancelled
+		}
 		if dp.DpXsyncInSync() {
-			return
+			return xsyncReady
 		}
-		if time.Duration(time.Since(begin).Seconds()) >= 90 {
-			return
+		select {
+		case <-ctx.Done():
+			return xsyncCancelled
+		case <-timer.C:
+			return xsyncTimeout
+		case <-ticker.C:
 		}
-		tk.LogIt(tk.LogDebug, "%s:waiting for Xsync..\n", who)
-		time.Sleep(2 * time.Second)
 	}
 }
 
-// DpXsyncRPC - Routine for syncing connection information with peers
+// WaitXsyncReady retains the 90-second default and distinguishes wait outcomes.
+func (dp *DpH) WaitXsyncReady(who string) xsyncWaitResult {
+	begin := time.Now()
+	result := dp.waitXsyncReady(bgpOperationContext(), xsyncReadyTimeout, 2*time.Second)
+	tk.LogIt(tk.LogInfo, "HA stage=xsync-hello who=%s result=%s elapsed=%s ct_complete=unverified\n", who, result, time.Since(begin))
+	return result
+}
+
+// RequestPeerSync probes existing transports so a quiet restarted peer is
+// discovered too, then requests CT only for new/reconnected peers. The protocol
+// uses the existing hello and asynchronous get RPCs for rolling compatibility.
+func (dp *DpH) RequestPeerSync() {
+	hello := &DpCtInfo{Proto: "xsync", Sport: uint16(mh.self)}
+	dp.DpXsyncRPC(DpSyncBcast, hello)
+	dp.DpXsyncRPC(DpSyncGet, nil)
+}
+
+// DpXsyncRPC snapshots membership under a short lock. Network I/O and per-peer
+// serialization never hold SyncMtx, so broker membership work cannot wait on a dead peer.
 func (dp *DpH) DpXsyncRPC(op DpSyncOpT, arg interface{}) int {
-	var ret int
-	var err error
-
-	dp.SyncMtx.Lock()
-	defer dp.SyncMtx.Unlock()
-
-	if len(mh.has.NodeMap) != len(mh.dp.Peers) {
+	peers, ready := dp.peerSnapshot()
+	if !ready {
 		return -1
 	}
-
-	rpcRetries := 0
-	rpcErr := false
-	var cti *DpCtInfo
-	var blkCti []DpCtInfo
-
-	switch na := arg.(type) {
-	case *DpCtInfo:
-		cti = na
-	case []DpCtInfo:
-		blkCti = na
-	}
-
-	for idx := range mh.dp.Peers {
-	restartRPC:
-		pe := &mh.dp.Peers[idx]
-		if pe.Client == nil {
-			ret = dp.RPC.RPCHooks.RPCConnect(pe)
-			if ret != 0 {
-				rpcErr = true
-				continue
-			}
-		}
-
-		reply := 0
-		rpcCallStr := ""
-		if op == DpSyncAdd || op == DpSyncBcast {
-			if len(blkCti) > 0 {
-				rpcCallStr = "XSync.DpWorkOnBlockCtAdd"
-			} else {
-				rpcCallStr = "XSync.DpWorkOnCtAdd"
-			}
-		} else if op == DpSyncDelete {
-			if len(blkCti) > 0 {
-				rpcCallStr = "XSync.DpWorkOnBlockCtDelete"
-			} else {
-				rpcCallStr = "XSync.DpWorkOnCtDelete"
-			}
-		} else if op == DpSyncGet {
-			rpcCallStr = "XSync.DpWorkOnCtGet"
-		} else if op == DpSyncSockproxySession {
-			// the sockproxy coordinator (sockproxy_sync.go) maintains
-			// its own per-peer dispatch goroutines and does NOT funnel through
-			// DpXsyncRPC. These cases exist so callers that DO route through
-			// this orchestrator (e.g. future bulk-broadcast paths) have a
-			// well-known rpcCallStr; the client-side switch in callGRPC
-			// (xsync_client.go) recognises it and falls through to its
-			// gRPC-method invocation. Task A3 wires the real Args type.
-			rpcCallStr = "XSync.SockproxySessionMod"
-		} else if op == DpSyncSockproxyBulkGet {
-			rpcCallStr = "XSync.SockproxySessionBulkGet"
-		} else if op == DpSyncRateLimiter {
-			rpcCallStr = "XSync.RateLimiterSync"
-		} else if op == DpSyncSockproxySnapshot {
-			rpcCallStr = "XSync.GetSockproxySnapshot"
-		} else {
+	ret := 0
+	for _, pe := range peers {
+		if bgpOperationContext().Err() != nil {
 			return -1
 		}
-
-		if op == DpSyncAdd || op == DpSyncDelete || op == DpSyncBcast {
-			if op != DpSyncBcast {
-				if cti == nil && len(blkCti) <= 0 {
-					return -1
-				}
-
-				var tmpCti *DpCtInfo
-				if cti == nil {
-					tmpCti = &blkCti[0]
-				} else {
-					tmpCti = cti
-				}
-				// NOTE: the cluster-instance state is read without synchronizing
-				// against concurrent HA transitions — a racing failover can observe
-				// a stale state for one cycle; the next sync pass converges it.
-				cIState, _ := mh.has.CIStateGetInst(tmpCti.CI)
-				if cIState != cmn.CIMasterStateString {
-					return 0
-				}
-			}
-			if cti != nil {
-				reply, err = dp.RPC.RPCHooks.RPCSend(pe, rpcCallStr, *cti)
-			} else {
-				reply, err = dp.RPC.RPCHooks.RPCSend(pe, rpcCallStr, blkCti)
-			}
-		} else {
-			async := 1
-			reply, err = dp.RPC.RPCHooks.RPCSend(pe, rpcCallStr, int32(async))
-		}
-
-		if err != nil {
-			tk.LogIt(tk.LogError, "XSync call failed(%s)\n", err)
-			rpcErr = true
-			pe.Client = nil
-			rpcRetries++
-			if rpcRetries < 2 {
-				goto restartRPC
-			}
-		}
-		if reply != 0 {
-			tk.LogIt(tk.LogError, "Xsync server returned error (%d)\n", reply)
-			rpcErr = true
+		if dp.callPeer(pe, op, arg) != 0 {
+			ret = -1
 		}
 	}
-
-	if rpcErr {
-		return -1
-	}
-	return 0
+	return ret
 }
 
 // DpBrokerInit - initialize the DP broker subsystem
@@ -862,6 +820,9 @@ func DpBrokerInit(dph DpHookInterface, rpcMode int) *DpH {
 		nDp.RPC.RPCHooks = &gRPCClient{}
 	}
 
+	nDp.syncWake = make(chan struct{}, 1)
+	nDp.syncDone = make(chan struct{})
+	go nDp.runPeerSync(bgpOperationContext())
 	go DpWorker(nDp, nDp.ToFinCh, nDp.ToDpCh)
 
 	return nDp
@@ -1003,6 +964,8 @@ func (dp *DpH) DpWorkOnSockVIP(vsWq *SockVIPDpWorkQ) DpRetT {
 
 // DpWorkOnPeerOp - routine to work on a peer request for clustering
 func (dp *DpH) DpWorkOnPeerOp(pWq *PeerDpWorkQ) DpRetT {
+	dp.SyncMtx.Lock()
+	defer dp.SyncMtx.Unlock()
 	if pWq.Work == DpCreate {
 		var newPeer DpPeer
 		for _, pe := range dp.Peers {
@@ -1011,20 +974,31 @@ func (dp *DpH) DpWorkOnPeerOp(pWq *PeerDpWorkQ) DpRetT {
 			}
 		}
 		newPeer.Peer = pWq.PeerIP
+		newPeer.syncState = &peerSyncState{}
 		// start with all RPC-family bits set; coordinator clears bits
 		// on codes.Unimplemented (per-peer graceful degrade, SPEC D1).
 		newPeer.CapMask = 0xFFFFFFFF
 		dp.Peers = append(dp.Peers, newPeer)
+		dp.expectPeer(newPeer.Peer.String(), true)
+		dp.wakePeerSync()
 		tk.LogIt(tk.LogInfo, "Added cluster-peer %s\n", newPeer.Peer.String())
 		return 0
 	} else if pWq.Work == DpRemove {
 		for idx := range dp.Peers {
 			pe := &dp.Peers[idx]
 			if pe.Peer.Equal(pWq.PeerIP) {
-				if pe.Client != nil {
-					dp.RPC.RPCHooks.RPCClose(pe)
+				// An in-flight caller owns its client and closes it after observing removal.
+				if pe.syncState != nil {
+					pe.syncState.removed.Store(true)
+				}
+				if pe.syncState != nil && pe.syncState.mu.TryLock() {
+					if pe.Client != nil {
+						dp.RPC.RPCHooks.RPCClose(pe)
+					}
+					pe.syncState.mu.Unlock()
 				}
 				dp.Peers = append(dp.Peers[:idx], dp.Peers[idx+1:]...)
+				dp.expectPeer(pWq.PeerIP.String(), false)
 				tk.LogIt(tk.LogInfo, "Deleted cluster-peer %s\n", pWq.PeerIP.String())
 				return 0
 			}
