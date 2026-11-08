@@ -409,6 +409,10 @@ func (gbh *GoBgpH) AdvertiseRoute(rtPrefix string, pLen int, nh string, pref uin
 
 // DelAdvertiseRoute - delete previously advertised route in goBGP
 func (gbh *GoBgpH) DelAdvertiseRoute(rtPrefix string, pLen int, nh string, pref uint32, med uint32) int {
+	family := &api.Family{Afi: api.Family_AFI_IP, Safi: api.Family_SAFI_UNICAST}
+	if net.ParseIP(rtPrefix).To4() == nil {
+		family.Afi = api.Family_AFI_IP6
+	}
 
 	// del routes
 	nlri, _ := apb.New(&api.IPAddressPrefix{
@@ -432,22 +436,16 @@ func (gbh *GoBgpH) DelAdvertiseRoute(rtPrefix string, pLen int, nh string, pref 
 		Med: med,
 	})
 
-	a5, _ := apb.New(&api.AsPathAttribute{
-		Segments: []*api.AsSegment{
-			{
-				Type:    1, // SET
-				Numbers: []uint32{gbh.localAs},
-			},
-		},
-	})
-
-	attrs := []*apb.Any{a1, a2, a3, a4, a5}
+	// No AS_PATH: this path is locally originated. goBGP prepends the local AS
+	// towards an eBGP peer and sends an empty AS_PATH to an iBGP peer. Our own AS
+	// here reads as a loop to goBGP's export filter and to any standard iBGP peer.
+	attrs := []*apb.Any{a1, a2, a3, a4}
 
 	ctx, cancel := context.WithTimeout(bgpOperationContext(), time.Second*5)
 	defer cancel()
 	_, err := gbh.client.DeletePath(ctx, &api.DeletePathRequest{
 		Path: &api.Path{
-			Family: &api.Family{Afi: api.Family_AFI_IP, Safi: api.Family_SAFI_UNICAST},
+			Family: family,
 			Nlri:   nlri,
 			Pattrs: attrs,
 		},
@@ -637,6 +635,15 @@ func (gbh *GoBgpH) roleAllowsAdvertisement(ci *goCI) bool {
 	return !gbh.requireRole.Load() && !ka && ci.hastate == cmn.CIStateNotDefined
 }
 
+// canonicalBGPIP keeps route ownership independent of an address's textual
+// spelling, including IPv4-mapped IPv6. Rule admission validates the addresses.
+func canonicalBGPIP(ip string) string {
+	if parsed := net.ParseIP(ip); parsed != nil {
+		return parsed.String()
+	}
+	return ""
+}
+
 // AddBGPRule - add a bgp rule in goBGP
 func (gbh *GoBgpH) AddBGPRule(instance string, IP []string) {
 	var pref uint32
@@ -656,6 +663,10 @@ func (gbh *GoBgpH) AddBGPRule(instance string, IP []string) {
 	}
 
 	for _, ip := range IP {
+		ip = canonicalBGPIP(ip)
+		if ip == "" {
+			continue
+		}
 		ci.rules[ip]++
 
 		if gbh.state == BGPConnected && ci.rules[ip] == 1 && !snapshot.BGPPending() && gbh.roleAllowsAdvertisement(ci) {
@@ -692,10 +703,18 @@ func (gbh *GoBgpH) DelBGPRule(instance string, IP []string) {
 	}
 
 	for _, ip := range IP {
-		if ci.rules[ip] > 0 {
-			ci.rules[ip]--
+		ip = canonicalBGPIP(ip)
+		if ip == "" || ci.rules[ip] <= 0 {
+			continue
 		}
-		if gbh.state == BGPConnected && ci.rules[ip] == 0 {
+		ci.rules[ip]--
+		if ci.rules[ip] > 0 {
+			continue
+		}
+		// Drop exhausted intent even while disconnected so replay cannot
+		// resurrect it. An absent reference never owns a speaker withdrawal.
+		delete(ci.rules, ip)
+		if gbh.state == BGPConnected {
 			if ci.hastate == cmn.CIStateBackup {
 				pref = cmn.LowLocalPref
 				med = cmn.LowMed
@@ -710,9 +729,6 @@ func (gbh *GoBgpH) DelBGPRule(instance string, IP []string) {
 				gbh.DelAdvertiseRoute(ip, 32, "0.0.0.0", pref, med)
 			} else {
 				gbh.DelAdvertiseRoute(ip, 128, "::", pref, med)
-			}
-			if ci.rules[ip] == 0 {
-				delete(ci.rules, ip)
 			}
 			tk.LogIt(tk.LogDebug, "[GoBGP] Del BGP Rule %s\n", ip)
 		}
