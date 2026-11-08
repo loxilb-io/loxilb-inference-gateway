@@ -93,6 +93,11 @@ echo ">> tag=$VERSION_TAG version=$PKG_VERSION release=$PKG_RELEASE arch=$ARCH"
 if [ "$FROM_DOCKER" = 1 ]; then
   echo ">> building artifacts via packaging/Dockerfile.build (arch=$ARCH)"
   build_args=()
+  if [ -n "${GH_TOKEN:-}" ]; then
+    build_args+=(--secret id=github_token,env=GH_TOKEN)
+  elif [ -n "${GITHUB_TOKEN:-}" ]; then
+    build_args+=(--secret id=github_token,env=GITHUB_TOKEN)
+  fi
   host_arch=$(uname -m | sed -e s/aarch64/arm64/ -e s/x86_64/amd64/)
   if [ "$ARCH" != "$host_arch" ]; then
     build_args+=(--platform "linux/$ARCH")

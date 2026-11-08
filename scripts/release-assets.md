@@ -28,6 +28,11 @@ Pin provenance (version, asset ID and digest must be updated together):
 | OpenSSL source | 3.4.1 | Official `openssl-3.4.1.tar.gz.sha256` release asset |
 | bpftool/libbpf source | v7.2.0 | SHA-256 of official source asset 106403783 retrieved through the authenticated release API; this release provides no separate source-archive checksum |
 | Gitleaks Linux x64 | v8.24.3 | Official `gitleaks_8.24.3_checksums.txt` release asset |
+| Prometheus/promtool Linux amd64/arm64 | v2.53.4 | Official `sha256sums.txt` release asset |
+| nfpm Linux amd64/arm64 deb | v2.41.3 | Official `checksums.txt` release asset |
+| k3d Linux amd64/arm64 | v5.9.0 | Official release-asset API SHA-256 fields |
+| Gateway API standard CRDs | v1.5.1 | Official release-asset API SHA-256 field |
+| CodeQL Go bundle | v2.27.4 | Official release-asset API SHA-256 field; the same version selected by the failing CodeQL action |
 
 The bpftool content pin is an integrity baseline, not a publisher signature.
 Versions, architectures, CGO settings and build flags are unchanged by the

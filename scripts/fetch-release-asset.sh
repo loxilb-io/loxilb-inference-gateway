@@ -72,6 +72,30 @@ main() {
         gitleaks-linux-x64)
             repo=gitleaks/gitleaks; tag=v8.24.3; name=gitleaks_8.24.3_linux_x64.tar.gz
             id=245568496; digest=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c ;;
+        prometheus-2.53.4-linux-amd64)
+            repo=prometheus/prometheus; tag=v2.53.4; name=prometheus-2.53.4.linux-amd64.tar.gz
+            id=238575500; digest=b8b497c4610d1b93208252b60c8f20f6b2e78596ae8df43397a2e805aa53d475 ;;
+        prometheus-2.53.4-linux-arm64)
+            repo=prometheus/prometheus; tag=v2.53.4; name=prometheus-2.53.4.linux-arm64.tar.gz
+            id=238575507; digest=ec7236ecea7154d0bfe142921708b1ae7b5e921e100e0ee85ab92b7c444357e0 ;;
+        nfpm-linux-amd64)
+            repo=goreleaser/nfpm; tag=v2.41.3; name=nfpm_2.41.3_amd64.deb
+            id=233150009; digest=f92bf886c0f96767abcdc17195449faadb93fb20105532609820a412b4b2a46f ;;
+        nfpm-linux-arm64)
+            repo=goreleaser/nfpm; tag=v2.41.3; name=nfpm_2.41.3_arm64.deb
+            id=233150006; digest=d526788317678eb872fab950533eba55fdc5dfd99a8f6518cd45c4b35f4d7047 ;;
+        k3d-5.9.0-linux-amd64)
+            repo=k3d-io/k3d; tag=v5.9.0; name=k3d-linux-amd64
+            id=436305793; digest=06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0 ;;
+        k3d-5.9.0-linux-arm64)
+            repo=k3d-io/k3d; tag=v5.9.0; name=k3d-linux-arm64
+            id=436305757; digest=03cde5cf23e6e8e67de5a039ecf26e5b85aca82fba3e5d13dadf904cd218a250 ;;
+        gateway-api-1.5.1)
+            repo=kubernetes-sigs/gateway-api; tag=v1.5.1; name=standard-install.yaml
+            id=373337904; digest=751002b3b91a87f7ae3bd2517c79a47a8d7ed6702901808a1cf9bd97d284f9b8 ;;
+        codeql-go-2.27.4)
+            repo=github/codeql-action; tag=codeql-bundle-v2.27.4; name=codeql-bundle-go-linux64.tar.zst
+            id=692238984; digest=d79b33f86ec8b20af73d3456041349a2780c1081ee8c0eca624b9a25c5cb2e15 ;;
         *) echo "unsupported pinned release asset: $1" >&2; return 2 ;;
     esac
     fetch_verified "https://api.github.com/repos/$repo/releases/assets/$id" \

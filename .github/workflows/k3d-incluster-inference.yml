@@ -74,6 +74,7 @@ jobs:
           echo "IGW_IMAGE=ghcr.io/loxilb-io/loxilb-inference-gateway:k3d-epp-local" >> "$GITHUB_ENV"
       - name: Run the scenario
         env:
+          GH_TOKEN: ${{ github.token }}
           KLB_REF: ${{ github.event.inputs.klbRef || 'feat/auth-annotation' }}
         run: |
           cd cicd/${{ matrix.scenario }}

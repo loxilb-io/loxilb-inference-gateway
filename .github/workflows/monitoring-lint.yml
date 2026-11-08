@@ -49,10 +49,11 @@ jobs:
           python-version: '3.x'
 
       - name: Install promtool (pinned Prometheus release)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           arch=$(dpkg --print-architecture)   # amd64 / arm64
-          url="https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-${arch}.tar.gz"
-          curl -sSL "$url" -o /tmp/prom.tgz
+          bash scripts/fetch-release-asset.sh "prometheus-${PROM_VERSION}-linux-${arch}" /tmp/prom.tgz
           tar xzf /tmp/prom.tgz -C /tmp
           sudo install "/tmp/prometheus-${PROM_VERSION}.linux-${arch}/promtool" /usr/local/bin/promtool
           promtool --version

@@ -37,11 +37,17 @@ jobs:
         with:
           go-version: 'stable'
 
+      - name: Fetch pinned CodeQL tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-release-asset.sh codeql-go-2.27.4 "$RUNNER_TEMP/codeql-bundle-go-linux64.tar.zst"
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: go
           build-mode: manual
+          tools: ${{ runner.temp }}/codeql-bundle-go-linux64.tar.zst
 
       - name: Install build dependencies
         env:
