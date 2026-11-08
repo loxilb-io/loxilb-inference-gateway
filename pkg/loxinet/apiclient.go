@@ -880,8 +880,8 @@ func (na *NetAPIStruct) NetBFDGet() ([]cmn.BFDMod, error) {
 	}
 	bp := mh.has.Bs
 	mh.mtx.Unlock()
-	// Protocol notifications take the global mutex while holding the BFD
-	// table lock. Preserve the read path's release-before-table-lock order.
+	// Notifications acquire the global mutex outside BFD locks. Keep this
+	// read path outside the global mutex as well.
 	return bp.BFDGet()
 }
 
