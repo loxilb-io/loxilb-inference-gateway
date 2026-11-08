@@ -95,7 +95,9 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves libbsd-dev build-essential bison flex libjson-c-dev libnghttp2-dev
       - name: Install libtokenizers (cgo link dependency of the router)
-        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       # The handler package links the eBPF userland, so the tree must build
       # before its tests can compile.
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
@@ -167,7 +169,9 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev jq
       - name: Install libtokenizers (cgo link dependency of the router)
-        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
       - name: Login to GitHub Container Registry
@@ -179,7 +183,9 @@ jobs:
       # Same image recipe as the AI-gateway sanity workflow: pull the
       # published image (or build it), overlay the freshly built binary,
       # and commit — the scenario then tests THIS tree, not the registry.
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: sudo -E env "PATH=$PATH" make docker-cp
       - run: docker exec -dit loxilb mkllb_bpffs
@@ -227,7 +233,9 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev jq
       - name: Install libtokenizers (cgo link dependency of the router)
-        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
 
       # HAVE_AUDIT_FAULTS is carried by EVERY make invocation below, the
@@ -243,7 +251,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: sudo -E env "PATH=$PATH" make docker-cp HAVE_AUDIT_FAULTS=1 ${{ matrix.trace.flags }}
       - run: docker exec -dit loxilb mkllb_bpffs
@@ -281,7 +291,9 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev jq openssl
       - name: Install libtokenizers (cgo link dependency of the router)
-        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
 
       # HAVE_AUDIT_FAULTS on every make invocation, the overlay included:
@@ -293,7 +305,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: sudo -E env "PATH=$PATH" make docker-cp HAVE_AUDIT_FAULTS=1
       - run: docker exec -dit loxilb mkllb_bpffs

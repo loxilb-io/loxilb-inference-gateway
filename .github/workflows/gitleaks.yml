@@ -24,12 +24,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify release downloader controls
+        run: python3 scripts/test_fetch_release_asset.py
+
       - name: Install gitleaks
         env:
-          GITLEAKS_VERSION: 8.24.3
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          bash scripts/fetch-release-asset.sh gitleaks-linux-x64 "$RUNNER_TEMP/gitleaks.tar.gz"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" gitleaks
           ./gitleaks version
 
       - name: Scan full history

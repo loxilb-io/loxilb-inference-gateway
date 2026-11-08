@@ -39,7 +39,11 @@ k3d_bin() {
   case "$(uname -m)" in aarch64|arm64) arch=arm64 ;; *) arch=amd64 ;; esac
   if [ ! -x "$bin" ]; then
     mkdir -p "$K8SINF/.bin"
-    curl -sfL "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/k3d-linux-$arch" -o "$bin" || return 1
+    if [ "$K3D_VERSION" = v5.9.0 ]; then
+      bash "$K8SINF/../../../scripts/fetch-release-asset.sh" "k3d-5.9.0-linux-$arch" "$bin" || return 1
+    else
+      curl -sfL "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/k3d-linux-$arch" -o "$bin" || return 1
+    fi
     chmod +x "$bin"
   fi
   echo "$bin"
@@ -150,7 +154,13 @@ igw_deploy_kube_loxilb() { # <extra kube-loxilb args appended to the baseline>
 }
 
 igw_install_gwapi_crds() {
-  kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GWAPI_VERSION/standard-install.yaml" >/dev/null || return 1
+  if [ "$GWAPI_VERSION" = v1.5.1 ]; then
+    mkdir -p "$K8SINF/.work"
+    bash "$K8SINF/../../../scripts/fetch-release-asset.sh" gateway-api-1.5.1 "$K8SINF/.work/standard-install.yaml" || return 1
+    kubectl apply -f "$K8SINF/.work/standard-install.yaml" >/dev/null || return 1
+  else
+    kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GWAPI_VERSION/standard-install.yaml" >/dev/null || return 1
+  fi
   kubectl apply -k "https://github.com/kubernetes-sigs/gateway-api-inference-extension/config/crd?ref=$GIE_VERSION" >/dev/null || return 1
 }
 

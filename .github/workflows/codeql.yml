@@ -37,13 +37,21 @@ jobs:
         with:
           go-version: 'stable'
 
+      - name: Fetch pinned CodeQL tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-release-asset.sh codeql-go-2.27.4 "$RUNNER_TEMP/codeql-bundle-go-linux64.tar.zst"
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: go
           build-mode: manual
+          tools: ${{ runner.temp }}/codeql-bundle-go-linux64.tar.zst
 
       - name: Install build dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \
@@ -52,7 +60,7 @@ jobs:
           # Pre-built libtokenizers static lib (KV router HF tokenizer backend),
           # mirroring the Dockerfile so the cgo link resolves -ltokenizers.
           arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-          wget -q "https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz" -O /tmp/libtokenizers.tar.gz
+          bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz
           sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/
           sudo mkdir -p /opt/loxilb /usr/lib64
           sudo chown -R "$(id -u)" /opt/loxilb /usr/lib64

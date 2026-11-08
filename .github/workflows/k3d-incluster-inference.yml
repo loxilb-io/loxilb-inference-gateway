@@ -66,12 +66,15 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Build loxilb from this checkout (the EPP scenario tests the branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
         if: matrix.scenario == 'k3d-incluster-inference-epp'
         run: |
-          docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:k3d-epp-local .
+          docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:k3d-epp-local .
           echo "IGW_IMAGE=ghcr.io/loxilb-io/loxilb-inference-gateway:k3d-epp-local" >> "$GITHUB_ENV"
       - name: Run the scenario
         env:
+          GH_TOKEN: ${{ github.token }}
           KLB_REF: ${{ github.event.inputs.klbRef || 'feat/auth-annotation' }}
         run: |
           cd cicd/${{ matrix.scenario }}

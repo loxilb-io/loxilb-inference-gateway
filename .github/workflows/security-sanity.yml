@@ -114,7 +114,9 @@ jobs:
       # default) produces are refused by the runner's 6.17 kernel verifier (E2BIG).
       - run: sudo apt-get -y install clang clang-14 llvm llvm-14 libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
       - name: Install libtokenizers (KV-router HF backend)
-        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - name: Install KV publisher python deps
         # On ubuntu-24.04 the Debian-managed packages (pip itself, typing_extensions, ...)
         # have no RECORD file, so pip cannot uninstall them for an upgrade: the self-upgrade
@@ -129,10 +131,12 @@ jobs:
       # has no binary to run while the eBPF build needs one for vmlinux.h. Build the same
       # bpftool the container images carry (libbpf's v7.2.0 release) when that happens.
       - name: bpftool for the running kernel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! bpftool version >/dev/null 2>&1; then
             sudo apt-get -y install zlib1g-dev
-            wget -q https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz -O /tmp/bpftool.tar.gz
+            bash scripts/fetch-release-asset.sh bpftool-7.2.0 /tmp/bpftool.tar.gz
             tar -xzf /tmp/bpftool.tar.gz -C /tmp && make -s -C /tmp/bpftool/src -j "$(nproc)"
             # where the Ubuntu wrapper looks for the running kernel's binary, and first on PATH
             sudo install -D -m 0755 /tmp/bpftool/src/bpftool "/usr/lib/linux-tools/$(uname -r)/bpftool"
@@ -152,7 +156,9 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN || github.token }}
       # The :latest image is the base; the binary built from this change is overlaid
       # (make docker-cp) so every scenario below runs the change, not the published image.
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: bash cicd/common/reflect-echo/docker-build.sh
       - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: sudo -E env "PATH=$PATH" make docker-cp

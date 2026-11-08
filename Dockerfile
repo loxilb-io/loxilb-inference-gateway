@@ -1,6 +1,8 @@
 # Download base image ubuntu 22.04 for build
 FROM ubuntu:22.04 as build
 
+COPY scripts/fetch-release-asset.sh /usr/local/bin/fetch-release-asset
+
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -34,7 +36,7 @@ RUN mkdir -p /root/loxilb-io/loxilb
 COPY . /root/loxilb-io/loxilb/
 
 # Install loxilb related packages
-RUN mkdir -p /opt/loxilb && \
+RUN --mount=type=secret,id=github_token mkdir -p /opt/loxilb && \
     mkdir -p /usr/lib64/ && \
     mkdir -p /opt/loxilb/cert/ && \
     mkdir -p /etc/loxilb/certs/ && \
@@ -49,7 +51,7 @@ RUN mkdir -p /opt/loxilb && \
     elfutils dwarves git libbsd-dev bridge-utils wget unzip build-essential \
     bison flex sudo iproute2 pkg-config tcpdump iputils-ping curl bash-completion libjson-c-dev libnghttp2-dev && \
     # Install openssl-3.4.1
-    wget https://github.com/openssl/openssl/releases/download/openssl-3.4.1/openssl-3.4.1.tar.gz && tar -xvzf openssl-3.4.1.tar.gz && \
+    bash /usr/local/bin/fetch-release-asset openssl-3.4.1 openssl-3.4.1.tar.gz && tar -xvzf openssl-3.4.1.tar.gz && \
     cd openssl-3.4.1 && ./Configure enable-ktls '-Wl,-rpath,$(LIBRPATH)' --prefix=/usr/local/build && \
     make -j$cpus && make install_dev install_modules && cd - && \
     cp -a /usr/local/build/include/openssl /usr/include/ && \
@@ -57,7 +59,7 @@ RUN mkdir -p /opt/loxilb && \
     cp -fr /usr/local/build/lib/* /usr/lib/ && ldconfig && \
     rm -fr openssl-3.4.1*  && \
     # Install bpftool
-    wget https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz && \
+    bash /usr/local/bin/fetch-release-asset bpftool-7.2.0 bpftool-libbpf-v7.2.0-sources.tar.gz && \
     tar -xvzf bpftool-libbpf-v7.2.0-sources.tar.gz && cd bpftool/src/ && \
     make clean && 	make -j $(nproc) && cp -f ./bpftool /usr/local/sbin/bpftool && \
     cd - && rm -fr bpftool* && \
@@ -76,7 +78,7 @@ RUN mkdir -p /opt/loxilb && \
     make VERSION="$LOXICMD_VERSION" && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion && \
     # Pre-built libtokenizers static library (KV router HF tokenizer backend)
-    wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && \
+    bash /usr/local/bin/fetch-release-asset tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && \
     tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
     # Install loxilb
     cd /root/loxilb-io/loxilb/ && \

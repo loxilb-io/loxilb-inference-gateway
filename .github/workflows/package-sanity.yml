@@ -85,12 +85,16 @@ jobs:
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
       - name: Install nfpm
+        env:
+          GH_TOKEN: ${{ github.token }}
         if: inputs.artifact_prefix == ''
         run: |
-          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.3/nfpm_2.41.3_$(dpkg --print-architecture).deb" -o /tmp/nfpm.deb
+          bash scripts/fetch-release-asset.sh "nfpm-linux-$(dpkg --print-architecture)" /tmp/nfpm.deb
           sudo dpkg -i /tmp/nfpm.deb
 
       - name: Build packages from this tree
+        env:
+          GH_TOKEN: ${{ github.token }}
         if: inputs.artifact_prefix == ''
         run: |
           packaging/build-pkgs.sh --arch "${{ matrix.arch }}" --from-docker \
