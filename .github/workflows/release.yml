@@ -121,6 +121,8 @@ jobs:
       - name: Build per-arch image (load for scan)
         uses: docker/build-push-action@v6
         with:
+          secrets: |
+            github_token=${{ github.token }}
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
@@ -193,6 +195,8 @@ jobs:
         id: push
         uses: docker/build-push-action@v6
         with:
+          secrets: |
+            github_token=${{ github.token }}
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}

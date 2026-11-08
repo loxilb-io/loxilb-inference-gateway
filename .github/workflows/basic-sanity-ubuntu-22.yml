@@ -40,6 +40,8 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iproute2 libjson-c-dev libnghttp2-dev
       - name: Install libtokenizers (KV-router HF backend)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - run: | 
             sudo ip netns add test
@@ -48,7 +50,9 @@ jobs:
       - run: sudo -E env "PATH=$PATH" make
       - run: sudo -E env "PATH=$PATH" make test
       - run: for iface in $(ls /sys/class/net); do sudo tc filter delete dev $iface ingress >> /dev/null 2>&1 | true; sudo tc filter delete dev $iface egress >> /dev/null 2>&1 | true; done
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp-ebpf
       - run: docker exec -dit loxilb mkllb_bpffs

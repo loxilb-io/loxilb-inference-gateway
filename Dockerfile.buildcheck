@@ -44,13 +44,13 @@ RUN set -eux; \
       bison flex sudo iproute2 pkg-config tcpdump iputils-ping curl bash-completion libjson-c-dev libnghttp2-dev
 
 # Pre-built libtokenizers static library (KV router HF tokenizer backend)
-RUN set -eux; \
+RUN --mount=type=secret,id=github_token set -eux; \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
     bash /usr/local/bin/fetch-release-asset tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz; \
     tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/; \
     rm /tmp/libtokenizers.tar.gz
 
-RUN set -eux; \
+RUN --mount=type=secret,id=github_token set -eux; \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
     if [[ "$arch" == "arm64" ]]; then cpus=1; else cpus=$(nproc); fi; \
     bash /usr/local/bin/fetch-release-asset openssl-3.4.1 openssl-3.4.1.tar.gz; \
@@ -66,7 +66,7 @@ RUN set -eux; \
     ldconfig; \
     rm -fr openssl-3.4.1*
 
-RUN set -eux; \
+RUN --mount=type=secret,id=github_token set -eux; \
     bash /usr/local/bin/fetch-release-asset bpftool-7.2.0 bpftool-libbpf-v7.2.0-sources.tar.gz; \
     tar -xvzf bpftool-libbpf-v7.2.0-sources.tar.gz; \
     cd bpftool/src/; \

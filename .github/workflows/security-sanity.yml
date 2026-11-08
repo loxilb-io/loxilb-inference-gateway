@@ -114,6 +114,8 @@ jobs:
       # default) produces are refused by the runner's 6.17 kernel verifier (E2BIG).
       - run: sudo apt-get -y install clang clang-14 llvm llvm-14 libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
       - name: Install libtokenizers (KV-router HF backend)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - name: Install KV publisher python deps
         # On ubuntu-24.04 the Debian-managed packages (pip itself, typing_extensions, ...)
@@ -129,6 +131,8 @@ jobs:
       # has no binary to run while the eBPF build needs one for vmlinux.h. Build the same
       # bpftool the container images carry (libbpf's v7.2.0 release) when that happens.
       - name: bpftool for the running kernel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! bpftool version >/dev/null 2>&1; then
             sudo apt-get -y install zlib1g-dev
@@ -152,7 +156,9 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN || github.token }}
       # The :latest image is the base; the binary built from this change is overlaid
       # (make docker-cp) so every scenario below runs the change, not the published image.
-      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: bash cicd/common/reflect-echo/docker-build.sh
       - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: sudo -E env "PATH=$PATH" make docker-cp

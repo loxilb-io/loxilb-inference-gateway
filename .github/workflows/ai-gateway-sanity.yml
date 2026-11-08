@@ -562,7 +562,9 @@ jobs:
       - run: sudo apt-get -y install linux-tools-$(uname -r) linux-tools-common nodejs
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - name: Build the image the sockmap testbed starts (Dockerfile defaults)
-        run: docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       # The suite creates a key and drives keyed traffic, so the testbed brings
       # up its optional PostgreSQL key store (the same fixture cicd/ai-apikey
       # uses). Without the knob the suite refuses to start.
@@ -595,7 +597,9 @@ jobs:
       - run: sudo apt-get -y install linux-tools-$(uname -r) linux-tools-common nodejs
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - name: Build the image the sockmap testbed starts (Dockerfile defaults)
-        run: docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - name: A half-closed client is held for its answer and let go on a reset
         run: |
           cd cicd/sockmap-fullproxy/
@@ -620,7 +624,9 @@ jobs:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
       - name: Build the image the restart check starts (Dockerfile defaults)
-        run: docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - name: The same container comes back from two restarts with its rule
         run: cicd/sockmap-restart/validation.sh
       - uses: actions/upload-artifact@v4

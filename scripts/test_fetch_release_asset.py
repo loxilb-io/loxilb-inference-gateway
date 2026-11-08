@@ -2,11 +2,13 @@
 """Exercise real curl/checksum/atomic-file behavior against a local HTTP server."""
 import hashlib
 import http.server
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("fetch-release-asset.sh")
 PAYLOAD = b"verified release fixture\n"
@@ -19,12 +21,14 @@ class FetchReleaseAssetTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.output = Path(self.tmp.name) / "asset with spaces.tar.gz"
         self.requests = []
+        self.auth_headers = []
         self.responses = {"/api": (200, PAYLOAD), "/browser": (200, PAYLOAD)}
         outer = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 outer.requests.append(self.path)
+                outer.auth_headers.append(self.headers.get("Authorization"))
                 code, body = outer.responses[self.path]
                 self.send_response(code)
                 self.end_headers()
@@ -75,12 +79,26 @@ class FetchReleaseAssetTest(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), b"old file")
         self.assertEqual(list(Path(self.tmp.name).glob("*.part.*")), [])
 
+    def test_http_failures_are_bounded_without_publishing(self):
+        self.responses = {"/api": (504, b"timeout"), "/browser": (504, b"timeout")}
+        self.assertNotEqual(self.fetch().returncode, 0)
+        self.assertEqual(self.requests, ["/api", "/browser"] * 3)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(list(Path(self.tmp.name).glob("*.part.*")), [])
+
     def test_unknown_asset_fails_before_network(self):
         result = subprocess.run(["bash", str(SCRIPT), "tokenizers-linux-unknown",
                                  str(self.output)], capture_output=True)
         self.assertEqual(result.returncode, 2)
         self.assertFalse(self.output.exists())
         self.assertEqual(self.requests, [])
+
+    def test_ci_token_is_not_sent_to_other_hosts(self):
+        self.responses["/api"] = (504, b"timeout")
+        with patch.dict(os.environ, {"GH_TOKEN": "not-a-real-token"}):
+            self.assertEqual(self.fetch().returncode, 0)
+        self.assertEqual(self.requests, ["/api", "/browser"])
+        self.assertEqual(self.auth_headers, [None, None])
 
 
 if __name__ == "__main__":

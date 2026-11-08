@@ -53,8 +53,10 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Build the Ubuntu 24.04 image
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
-          docker build -f Dockerfile.u24 . \
+          docker build --secret id=github_token,env=GH_TOKEN -f Dockerfile.u24 . \
             --tag ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName || 'latest-u24' }}
 
     - name: Publish the Ubuntu 24.04 image

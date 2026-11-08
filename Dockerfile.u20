@@ -18,7 +18,7 @@ RUN mkdir -p /root/loxilb-io/loxilb
 COPY . /root/loxilb-io/loxilb/
 
 # Install loxilb related packages
-RUN mkdir -p /opt/loxilb && \
+RUN --mount=type=secret,id=github_token mkdir -p /opt/loxilb && \
     mkdir -p /usr/lib64/ && \
     mkdir -p /opt/loxilb/cert/ && \
     mkdir -p /etc/loxilb/certs/ && \

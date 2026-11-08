@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fetch only pinned build dependencies. Public asset API requests need no token,
-# including inside Docker builds; credentials must not enter image layers.
+# Fetch only pinned build dependencies. CI may authenticate API requests; Docker
+# builds accept the token only through a BuildKit secret, never a build argument.
 set -euo pipefail
 
 verify_asset() {
@@ -10,25 +10,39 @@ verify_asset() {
 fetch_verified() (
     set -euo pipefail
     local api_url=$1 browser_url=$2 digest=$3 output=$4 partial attempt url
+    local token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+    if [ -z "$token" ] && [ -r /run/secrets/github_token ]; then
+        token=$(cat /run/secrets/github_token)
+    fi
+    local -a headers=()
     if [ -f "$output" ] && verify_asset "$digest" "$output"; then
         return 0
     fi
     partial=$(mktemp "${output}.part.XXXXXX")
-    trap 'rm -f "$partial"' EXIT
+    trap 'rm -f "$partial" "$partial.headers"' EXIT
     for attempt in 1 2 3; do
         for url in "$api_url" "$browser_url"; do
+            headers=(-H 'Accept: application/octet-stream')
+            if [[ "$url" == https://api.github.com/* ]] && [ -n "$token" ]; then
+                headers+=(-H "Authorization: Bearer $token")
+            fi
             printf 'release asset: attempt %s: %s\n' "$attempt" "$url" >&2
             # An explicit file, HTTP error handling and a deadline avoid empty
             # tar streams, quiet wget exit 4 and unbounded network waits.
             if curl --fail --show-error --silent --location \
                 --connect-timeout 10 --max-time 60 \
-                -H 'Accept: application/octet-stream' "$url" -o "$partial"; then
+                "${headers[@]}" \
+                --dump-header "$partial.headers" "$url" -o "$partial"; then
                 if verify_asset "$digest" "$partial"; then
                     mv -f "$partial" "$output"
                     return 0
                 fi
                 printf 'release asset: SHA-256 mismatch from %s\n' "$url" >&2
             fi
+            # Preserve useful status/rate-limit diagnostics, never redirect URLs
+            # or request/authorization headers.
+            awk 'tolower($0) ~ /^(http\/|x-ratelimit-|retry-after:)/ {print}' \
+                "$partial.headers" >&2
         done
         if [ "$attempt" -lt 3 ]; then sleep "$((attempt * 2))"; fi
     done

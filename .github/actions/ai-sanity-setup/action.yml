@@ -31,6 +31,8 @@ runs:
     - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
       shell: bash
     - name: Install libtokenizers (KV-router HF backend)
+      env:
+        GH_TOKEN: ${{ github.token }}
       shell: bash
       run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
     - name: Install KV publisher python deps (pyzmq/msgpack/cbor2/xxhash/transformers)
@@ -73,7 +75,9 @@ runs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ inputs.ghcr-token }}
-    - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+    - env:
+        GH_TOKEN: ${{ github.token }}
+      run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build --secret id=github_token,env=GH_TOKEN -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       shell: bash
     # reflect-echo backend image (KV-cache scenarios) — always built from the local context
     - run: bash cicd/common/reflect-echo/docker-build.sh

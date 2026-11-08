@@ -61,9 +61,11 @@ jobs:
         echo "Done"
 
     - name: Build the loxilb Docker image (build-check)
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         TEST_TAG="ghcr.io/loxilb-io/loxilb-inference-gateway:buildcheck-${{ github.run_id }}"
-        docker build --progress=plain -f Dockerfile.buildcheck . --tag "$TEST_TAG"
+        docker build --secret id=github_token,env=GH_TOKEN --progress=plain -f Dockerfile.buildcheck . --tag "$TEST_TAG"
         CGO_ENABLED=0 go build -o /tmp/bundled-cli-mock ./cicd/bundled-cli/mock
         python3 cicd/bundled-cli/validation.py \
           --image "$TEST_TAG" --dockerfile Dockerfile.buildcheck \

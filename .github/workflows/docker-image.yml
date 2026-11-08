@@ -31,15 +31,19 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
         
     - name: Build and run the latest loxilb Docker image
+      env:
+        GH_TOKEN: ${{ github.token }}
       if: github.event.inputs.tagName == ''
       run: |
-          docker build . --tag ghcr.io/loxilb-io/loxilb-inference-gateway:latest-amd64
+          docker build --secret id=github_token,env=GH_TOKEN . --tag ghcr.io/loxilb-io/loxilb-inference-gateway:latest-amd64
           docker run -u root --cap-add SYS_ADMIN  --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest-amd64
       
     - name: Build and run the loxilb Docker image with given tag
+      env:
+        GH_TOKEN: ${{ github.token }}
       if: github.event.inputs.tagName != ''
       run: |
-          docker build . --tag ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName }}
+          docker build --secret id=github_token,env=GH_TOKEN . --tag ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName }}
           docker run -u root --cap-add SYS_ADMIN  --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName }}
       
     - name: Publish the latest loxilb Docker image

@@ -3,8 +3,18 @@
 `fetch-release-asset.sh` is shared by native CI setup and Docker builds. It
 requires Bash, curl and sha256sum, and accepts only the named assets in its
 case table. Both release-asset API and browser-download responses must match
-the pinned SHA-256 before the output is atomically replaced. Public downloads
-need no credentials. Do not pass GitHub tokens as Docker build arguments.
+the pinned SHA-256 before the output is atomically replaced. Local public
+downloads can work without credentials; hosted runners can receive API HTTP
+403 responses, so CI supplies its scoped GitHub token only to download/build
+steps. Authorization is added only for api.github.com, not the browser route.
+Docker builds receive it through an optional BuildKit secret, never a build
+argument or persistent environment variable:
+
+```sh
+docker build --secret id=github_token,env=GH_TOKEN .
+```
+
+Token values are not written to output files, image layers or diagnostics.
 
 Each request has a 10-second connection limit and 60-second total limit. There
 are at most three attempts across two routes, with two/four-second backoff.

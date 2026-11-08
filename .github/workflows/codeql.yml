@@ -44,6 +44,8 @@ jobs:
           build-mode: manual
 
       - name: Install build dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \

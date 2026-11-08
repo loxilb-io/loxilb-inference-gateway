@@ -45,8 +45,10 @@ jobs:
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
     - name: Build amd64 image
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
-        docker build \
+        docker build --secret id=github_token,env=GH_TOKEN \
           --progress=plain \
           --build-arg TAG=${BUILD_REF} \
           --tag ${IMAGE_NAME}:buildcheck-amd64 \
@@ -63,8 +65,10 @@ jobs:
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
     - name: Build arm64 image
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
-        docker build \
+        docker build --secret id=github_token,env=GH_TOKEN \
           --progress=plain \
           --build-arg TAG=${BUILD_REF} \
           --build-arg USE_DOCKER_BUILDX_ARM64=false \
@@ -97,6 +101,8 @@ jobs:
     - name: Build and push amd64 image
       uses: docker/build-push-action@v6
       with:
+        secrets: |
+          github_token=${{ github.token }}
         context: .
         platforms: linux/amd64
         push: true
@@ -132,6 +138,8 @@ jobs:
     - name: Build and push arm64 image
       uses: docker/build-push-action@v6
       with:
+        secrets: |
+          github_token=${{ github.token }}
         context: .
         platforms: linux/arm64
         push: true

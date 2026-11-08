@@ -28,6 +28,8 @@ jobs:
         run: python3 scripts/test_fetch_release_asset.py
 
       - name: Install gitleaks
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bash scripts/fetch-release-asset.sh gitleaks-linux-x64 "$RUNNER_TEMP/gitleaks.tar.gz"
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" gitleaks
