@@ -32,7 +32,7 @@ runs:
       shell: bash
     - name: Install libtokenizers (KV-router HF backend)
       shell: bash
-      run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
     - name: Install KV publisher python deps (pyzmq/msgpack/cbor2/xxhash/transformers)
       # The sglang/vllm KV scenarios drive kv_event_publisher.py, which imports these.
       # A fresh runner has none of them and apt for the native modules is unreliable

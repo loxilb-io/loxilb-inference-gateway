@@ -32,7 +32,7 @@ jobs:
       # library (pkg/loxinet/ai_kv_tokenizer_hf.go, no build tag). Without it the
       # Go link fails on -ltokenizers. Matches the step in the other builder workflows.
       - name: Install libtokenizers (KV-router HF backend)
-        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+        run: arch=$(dpkg --print-architecture) && bash scripts/fetch-release-asset.sh tokenizers-linux-"${arch}" /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       # Authenticate to GHCR so the private image pull below succeeds; without
       # this the pull is 'unauthorized' and CI falls back to a fragile full
       # from-source docker build.

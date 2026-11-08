@@ -24,31 +24,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify release downloader controls
+        run: python3 scripts/test_fetch_release_asset.py
+
       - name: Install gitleaks
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # Official v8.24.3 linux_x64 asset and release checksum. Keep these
-          # pins together when updating the scanner; never execute an unchecked download.
-          GITLEAKS_ASSET_ID: '245568496'
-          GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
         run: |
-          archive="$RUNNER_TEMP/gitleaks.tar.gz"
-          # The browser release URL can return 504 while the asset API works.
-          # Download to a file so an HTTP error cannot become an empty tar stream.
-          for attempt in 1 2 3; do
-            if gh api -H 'Accept: application/octet-stream' \
-                "repos/gitleaks/gitleaks/releases/assets/$GITLEAKS_ASSET_ID" > "$archive" &&
-                echo "$GITLEAKS_SHA256  $archive" | sha256sum -c -; then
-              break
-            fi
-            rm -f "$archive"
-            if [ "$attempt" -eq 3 ]; then
-              echo 'Unable to download and verify pinned gitleaks' >&2
-              exit 1
-            fi
-            sleep "$((attempt * 2))"
-          done
-          tar -xzf "$archive" gitleaks
+          bash scripts/fetch-release-asset.sh gitleaks-linux-x64 "$RUNNER_TEMP/gitleaks.tar.gz"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" gitleaks
           ./gitleaks version
 
       - name: Scan full history
