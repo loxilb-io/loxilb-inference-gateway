@@ -461,7 +461,6 @@ type DpEbpfH struct {
 	ctBcast                  chan bool
 	nID                      uint
 	tbN                      uint
-	CtSync                   bool
 	RssEn                    bool
 	ToMapCh                  chan interface{}
 	mtx                      sync.RWMutex
@@ -576,14 +575,7 @@ func dpEbpfTicker() {
 				mh.dpEbpf.gcTS = time.Now()
 			}
 
-			// This means around 10s from start
-			if !mh.dpEbpf.CtSync {
-				tk.LogIt(tk.LogDebug, "Get xsync()\n")
-				ret := mh.dp.DpXsyncRPC(DpSyncGet, nil)
-				if ret == 0 {
-					mh.dpEbpf.CtSync = true
-				}
-			}
+			// Hello, connect and initial requests run independently of this ticker.
 			dpCTMapChkUpdates()
 			mh.dpEbpf.tbN++
 		}
@@ -720,7 +712,7 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 	ne.gcTS = time.Now()
 	ne.gcTiVal = ctGCTiValDefault
 	ne.ToMapCh = make(chan interface{}, mapNotifierChLen)
-	ne.ctBcast = make(chan bool)
+	ne.ctBcast = make(chan bool, 1)
 	ne.ticker = time.NewTicker(dpEbpfLinuxTiVal * time.Second)
 	ne.ctMap = make(map[string]*DpCtInfo)
 	ne.RssEn = rssEn
@@ -4419,6 +4411,9 @@ func (e *DpEbpfH) DpSockVIPDel(w *SockVIPDpWorkQ) int {
 
 //export goMapNotiHandler
 func goMapNotiHandler(m *mapNoti) {
+	if !mh.ctNotificationsReady.Load() {
+		return
+	}
 
 	ctKey := (*C.struct_dp_ct_key)(unsafe.Pointer(m.key))
 
@@ -4439,6 +4434,11 @@ func goMapNotiHandler(m *mapNoti) {
 }
 
 func dpCTMapNotifierWorker(cti *DpCtInfo) {
+	// have_mtrace can deliver another instance's notification during startup.
+	// Publish local rule/zone readiness before dereferencing those structures.
+	if !mh.ctNotificationsReady.Load() {
+		return
+	}
 	var tact *C.struct_dp_ct_tact
 	var act *C.struct_dp_ct_dat
 	var addOp bool
@@ -4969,7 +4969,13 @@ func (e *DpEbpfH) DpCtDel(w *DpCtInfo) int {
 
 // DpCtGetAsync - routine to work on a ebpf ct get async request
 func (e *DpEbpfH) DpCtGetAsync() {
-	e.ctBcast <- true
+	// Coalesce pending full-map broadcasts. Never block the RPC handler on
+	// the ticker, which may itself be waiting for a get reply from this peer.
+	select {
+	case <-e.stop:
+	case e.ctBcast <- true:
+	default:
+	}
 }
 
 // DpTakeLock - routine to take underlying DP lock

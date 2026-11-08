@@ -102,12 +102,13 @@ type CIStateH struct {
 	//    before the BFD table is entered;
 	//  - callers of CIBFDSessionAdd/Del must not hold mh.mtx.
 	bfdCfgMtx sync.Mutex
-	// initSync is closed once the initial HA sync of this process is done:
+	// initSync is closed after the initial HA wait and cool-off:
 	// XSync has reached the cluster peers (or given up waiting), followed by
 	// the KAInitTiVal cool-off. A BFD session added before then -- by the
 	// --ka start, the BFDconfig.txt replay or the boot snapshot restore --
 	// stays silent until it closes, so a restarted node cannot take MASTER
-	// back before it holds the peer's conntrack. Sessions added after it
+	// back before the existing hello/timeout gate. This is not proof of full
+	// conntrack transfer. Sessions added after it
 	// start at once. A nil channel means there is no initial sync to wait for.
 	initSync chan struct{}
 }
@@ -131,7 +132,11 @@ func (ch *CIStateH) startBFDProto(bfdSessConfigArgs bfd.ConfigArgs) {
 	}
 
 	if ch.initSync != nil {
-		<-ch.initSync
+		select {
+		case <-ch.initSync:
+		case <-bgpOperationContext().Done():
+			return
+		}
 	}
 
 	txInterval := uint32(bfd.BFDDflSysTXIntervalUs)
@@ -148,14 +153,26 @@ func (ch *CIStateH) startBFDProto(bfdSessConfigArgs bfd.ConfigArgs) {
 	tk.LogIt(tk.LogInfo, "KA - Added BFD remote %s:%s:%vus\n", ch.RemoteIP.String(), ch.SourceIP.String(), txInterval)
 }
 
-// waitInitialSync - closes initSync once the initial HA sync is done
+// waitInitialSync retains the existing timeout/cool-off policy for BFD.
+// A hello is transport readiness, not proof of a complete conntrack snapshot.
 func (ch *CIStateH) waitInitialSync() {
+	begin := time.Now()
+	result := xsyncReady
 	if mh.dp != nil {
-		mh.dp.WaitXsyncReady("ka")
+		result = mh.dp.WaitXsyncReady("ka")
 	}
-	// We need some cool-off period for loxilb to self sync-up in the cluster
-	time.Sleep(KAInitTiVal * time.Second)
-	tk.LogIt(tk.LogInfo, "KA - initial HA sync done, BFD sessions may start\n")
+	if result == xsyncCancelled {
+		return
+	}
+	timer := time.NewTimer(KAInitTiVal * time.Second)
+	defer timer.Stop()
+	select {
+	case <-bgpOperationContext().Done():
+		tk.LogIt(tk.LogInfo, "HA stage=ka-cooloff result=cancelled elapsed=%s\n", time.Since(begin))
+		return
+	case <-timer.C:
+	}
+	tk.LogIt(tk.LogInfo, "HA stage=ka-gate result=%s elapsed=%s ct_complete=unverified\n", result, time.Since(begin))
 	close(ch.initSync)
 }
 
@@ -566,6 +583,12 @@ func (ch *CIStateH) IsCIKAMode() bool {
 // CIStateUpdate - routine to update cluster state
 func (ch *CIStateH) CIStateUpdate(cm cmn.HASMod) (int, error) {
 
+	// A valid role-control request is a sticky signal, even if the state is unchanged.
+	// CIInit calls UpdateCIState directly and must not enable this gate.
+	if _, valid := ch.StateMap[cm.State]; valid && mh.bgp != nil {
+		mh.bgp.requireRole.Store(true)
+	}
+
 	if _, ok := ch.ClusterMap[cm.Instance]; !ok {
 		ch.ClusterMap[cm.Instance] = &ClusterInstance{State: cmn.CIStateNotDefined,
 			StateStr: cmn.CIUnDefStateString,
@@ -639,6 +662,7 @@ func (ch *CIStateH) ClusterNodeAdd(node cmn.ClusterNodeMod) (int, error) {
 	cNode.Egress = node.Egress
 	ch.NodeMap[node.Addr.String()] = cNode
 
+	// CT peers (including active-active) and egress endpoints do not enable role management.
 	cNode.DP(DpCreate)
 
 	return 0, nil
@@ -735,6 +759,9 @@ func (ch *CIStateH) bfdSessionAddArgs(bm cmn.BFDMod) (bfd.ConfigArgs, bool, erro
 
 	tk.LogIt(tk.LogInfo, "[CLUSTER] Cluster Instance %s starting BFD..\n", bm.Instance)
 	ch.SpawnKa = true
+	if mh.bgp != nil {
+		mh.bgp.requireRole.Store(true)
+	}
 
 	ch.RemoteIP = bm.RemoteIP
 	ch.SourceIP = bm.SourceIP

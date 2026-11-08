@@ -27,9 +27,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
@@ -101,6 +104,12 @@ type GoBgpH struct {
 	reAdvertise bool
 	pMode       bool
 	resetTS     time.Time
+	requireRole atomic.Bool
+	daemonDone  chan struct{}
+	// bootRolePending is protected by mtx. Boot replay may install LB rules
+	// before saved BFD activates requireRole; both loaders must settle first.
+	bootRolePending bool
+	ciBootReady     atomic.Bool
 }
 
 func (gbh *GoBgpH) getGlobalConfig() error {
@@ -316,7 +325,7 @@ func (gbh *GoBgpH) GetgoBGPRoutesEvents(client api.GobgpApiClient) int {
 	}
 
 	// the change of the peer state and path
-	routes, err := client.WatchEvent(context.Background(),
+	routes, err := client.WatchEvent(bgpOperationContext(),
 		&api.WatchEventRequest{
 			Table: &api.WatchEventRequest_Table{
 				Filters: []*api.WatchEventRequest_Table_Filter{
@@ -459,6 +468,7 @@ func GoBgpInit(bgpPeerMode bool) *GoBgpH {
 	gbh := new(GoBgpH)
 
 	gbh.eventCh = make(chan goBgpEvent, cmn.RuWorkQLen)
+	gbh.daemonDone = make(chan struct{})
 	gbh.host = "127.0.0.1:50052"
 	if gbh.ciMap = make(map[string]*goCI); gbh.ciMap == nil {
 		panic("gbh.ciMap alloc failure")
@@ -466,6 +476,7 @@ func GoBgpInit(bgpPeerMode bool) *GoBgpH {
 	gbh.state = BGPDisconnected
 	gbh.tDone = make(chan bool)
 	gbh.pMode = bgpPeerMode
+	gbh.bootRolePending = !bgpPeerMode
 	gbh.ticker = time.NewTicker(30 * time.Second)
 	gbh.fTicker = time.NewTicker(5 * time.Second)
 	// B1: best-effort skip; relies on process exit (RESEARCH §Open Q5).
@@ -477,18 +488,19 @@ func GoBgpInit(bgpPeerMode bool) *GoBgpH {
 }
 
 func (gbh *GoBgpH) goBgpSpawn(bgpPeerMode bool) {
+	if gbh.daemonDone != nil {
+		defer close(gbh.daemonDone)
+	}
 	command := "pkill gobgpd"
 	cmd := exec.Command("bash", "-c", command)
 	err := cmd.Run()
 	if err != nil {
 		tk.LogIt(tk.LogError, "Error in stopping gpbgp:%s\n", err)
 	}
-	if !bgpPeerMode {
-		mh.dp.WaitXsyncReady("bgp")
-	}
-	// We need some cool-off period for loxilb to self sync-up in the cluster
-	time.Sleep(GoBGPInitTiVal * time.Second)
-	for {
+	// Speaker/config readiness is independent of the HA hello/role gate.
+	begin := time.Now()
+	ctx := bgpOperationContext()
+	for ctx.Err() == nil {
 		cfgOpts := ""
 		confFile := fmt.Sprintf("%s%s.conf", "/etc/gobgp/gobgp", os.Getenv("HOSTNAME"))
 		if _, err := os.Stat(confFile); errors.Is(err, os.ErrNotExist) {
@@ -505,28 +517,35 @@ func (gbh *GoBgpH) goBgpSpawn(bgpPeerMode bool) {
 			cfgOpts = "-f " + confFile
 		}
 
-		command := fmt.Sprintf("gobgpd %s --api-hosts=127.0.0.1:50052", cfgOpts)
-		cmd := exec.Command("bash", "-c", command)
+		command := fmt.Sprintf("exec gobgpd %s --api-hosts=127.0.0.1:50052", cfgOpts)
+		tk.LogIt(tk.LogInfo, "BGP stage=daemon-start elapsed=%s ha_wait=independent\n", time.Since(begin))
+		cmd := newBGPDaemonCommand(ctx, command)
 		err := cmd.Run()
 		if err != nil {
 			fmt.Println(err)
 		}
-		time.Sleep(3000 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
 	}
 }
 
 func (gbh *GoBgpH) goBgpConnect(host string) {
-	for {
+	lifetime := bgpOperationContext()
+	begin := time.Now()
+	for lifetime.Err() == nil {
 		gbh.mtx.Lock()
-		conn, err := grpc.DialContext(context.TODO(), host, grpc.WithInsecure())
+		conn, err := grpc.DialContext(lifetime, host, grpc.WithInsecure())
 		if err != nil {
 			tk.LogIt(tk.LogNotice, "BGP session %s not alive. Will Retry!\n", gbh.host)
 			gbh.mtx.Unlock()
-			time.Sleep(2000 * time.Millisecond)
+			waitBGPDelay(lifetime, 2*time.Second)
 		} else {
 			gbh.client = api.NewGobgpApiClient(conn)
 			gbh.mtx.Unlock()
-			for {
+			for lifetime.Err() == nil {
 				ctx, cancel := context.WithTimeout(bgpOperationContext(), time.Second*5)
 				gbh.mtx.Lock()
 				r, err := gbh.client.GetBgp(ctx, &api.GetBgpRequest{})
@@ -534,7 +553,7 @@ func (gbh *GoBgpH) goBgpConnect(host string) {
 					tk.LogIt(tk.LogInfo, "BGP session %s not ready. Will Retry!\n", gbh.host)
 					gbh.mtx.Unlock()
 					cancel()
-					time.Sleep(2000 * time.Millisecond)
+					waitBGPDelay(lifetime, 2*time.Second)
 					continue
 				}
 				cancel()
@@ -542,21 +561,39 @@ func (gbh *GoBgpH) goBgpConnect(host string) {
 				if r.Global.Asn == 0 {
 					tk.LogIt(tk.LogInfo, "BGP Global Config %s not done. Will wait!\n", gbh.host)
 					gbh.mtx.Unlock()
-					time.Sleep(2000 * time.Millisecond)
+					waitBGPDelay(lifetime, 2*time.Second)
 					continue
 				}
 				tk.LogIt(tk.LogNotice, "BGP session %s ready! Attributes[%v]\n", gbh.host, r)
+				tk.LogIt(tk.LogInfo, "BGP stage=config-ready elapsed=%s\n", time.Since(begin))
 
 				gbh.mtx.Unlock()
 				break
 			}
-			gbh.eventCh <- goBgpEvent{
+			if lifetime.Err() != nil {
+				conn.Close()
+				return
+			}
+			select {
+			case gbh.eventCh <- goBgpEvent{
 				EventType: bgpConnected,
 				Src:       host,
 				conn:      conn,
+			}:
+			case <-lifetime.Done():
+				conn.Close()
 			}
 			return
 		}
+	}
+}
+
+func waitBGPDelay(ctx context.Context, delay time.Duration) {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
 	}
 }
 
@@ -567,6 +604,37 @@ func bgpOperationContext() context.Context {
 		return mh.shutdownCtx
 	}
 	return context.Background()
+}
+
+// finishRoleInit publishes completion of CISpawn, including legacy BFD replay.
+// Snapshot replay can still be running; the periodic worker opens the gate only
+// once both loaders have settled. This never waits for the HA hello/BFD gate.
+func (gbh *GoBgpH) finishRoleInit() {
+	gbh.ciBootReady.Store(true)
+}
+
+// releaseBootRoleGate runs under mtx. A deferred LB must be replayed even when
+// an earlier connected-speaker replay already consumed reAdvertise.
+func (gbh *GoBgpH) releaseBootRoleGate(configSettled bool) {
+	if gbh.bootRolePending && gbh.ciBootReady.Load() && configSettled {
+		gbh.bootRolePending = false
+		gbh.reAdvertise = true
+		tk.LogIt(tk.LogInfo, "BGP stage=boot-role-ready role_managed=%v\n", gbh.requireRole.Load())
+	}
+}
+
+// roleAllowsAdvertisement is shared by new rules, connect replay and BGP
+// recovery. A standalone gateway has no HA election and keeps its old policy.
+// Configured HA never uses an undefined/conflicting role as an advertisement.
+func (gbh *GoBgpH) roleAllowsAdvertisement(ci *goCI) bool {
+	if gbh.bootRolePending {
+		return false
+	}
+	if ci.hastate == cmn.CIStateMaster || ci.hastate == cmn.CIStateBackup {
+		return true
+	}
+	ka := opts.Opts.Ka != "" && opts.Opts.Ka != "none"
+	return !gbh.requireRole.Load() && !ka && ci.hastate == cmn.CIStateNotDefined
 }
 
 // AddBGPRule - add a bgp rule in goBGP
@@ -590,7 +658,7 @@ func (gbh *GoBgpH) AddBGPRule(instance string, IP []string) {
 	for _, ip := range IP {
 		ci.rules[ip]++
 
-		if gbh.state == BGPConnected && ci.rules[ip] == 1 && !snapshot.BGPPending() {
+		if gbh.state == BGPConnected && ci.rules[ip] == 1 && !snapshot.BGPPending() && gbh.roleAllowsAdvertisement(ci) {
 			if ci.hastate == cmn.CIStateBackup {
 				pref = cmn.LowLocalPref
 				med = cmn.LowMed
@@ -743,6 +811,9 @@ func (gbh *GoBgpH) advertiseAllVIPs(instance string) {
 		tk.LogIt(tk.LogError, "[GoBGP] Instance %s is invalid\n", instance)
 		return
 	}
+	if !gbh.roleAllowsAdvertisement(ci) || gbh.state != BGPConnected {
+		return
+	}
 	if ci.hastate == cmn.CIStateBackup {
 		pref = cmn.LowLocalPref
 		med = cmn.LowMed
@@ -814,17 +885,21 @@ func (gbh *GoBgpH) processBgpEvent(e goBgpEvent) {
 
 	switch e.EventType {
 	case bgpDisconnected:
+		gbh.mtx.Lock()
 		tk.LogIt(tk.LogNotice, "******************* BGP %s disconnected *******************\n", gbh.host)
 		if gbh.conn != nil {
 			gbh.conn.Close()
 		}
 		gbh.conn = nil
 		gbh.state = BGPDisconnected
+		gbh.mtx.Unlock()
 		go gbh.goBgpConnect(gbh.host)
 	case bgpConnected:
+		gbh.mtx.Lock()
 		tk.LogIt(tk.LogNotice, "******************* BGP %s connected *******************\n", gbh.host)
 		gbh.conn = e.conn
 		gbh.state = BGPConnected
+		gbh.mtx.Unlock()
 		gbh.initBgpClient()
 	case bgpRtRecvd:
 		gbh.processRouteSingle(&e.Data, bgp.BGP_ADD_PATH_RECEIVE)
@@ -834,20 +909,19 @@ func (gbh *GoBgpH) processBgpEvent(e goBgpEvent) {
 func (gbh *GoBgpH) goBgpMonitor() {
 	tk.LogIt(tk.LogNotice, "******************* BGP Monitor start *******************\n")
 	for {
-		for n := 0; n < cmn.RuWorkQLen; n++ {
-			select {
-			case e := <-gbh.eventCh:
-				gbh.processBgpEvent(e)
-			default:
-				continue
-			}
+		select {
+		case <-bgpOperationContext().Done():
+			return
+		case e := <-gbh.eventCh:
+			gbh.processBgpEvent(e)
 		}
-		time.Sleep(1000 * time.Millisecond)
 	}
 }
 
 // UpdateCIState - Routine to update CI state for this module and re-advertise with appropriate priority
 func (gbh *GoBgpH) UpdateCIState(instance string, state int, vip net.IP) {
+	gbh.mtx.Lock()
+	defer gbh.mtx.Unlock()
 	update := false
 	ci := gbh.ciMap[instance]
 	if ci == nil {
@@ -2081,6 +2155,8 @@ func (gbh *GoBgpH) goBGPHouseKeeper() {
 	gbh.mtx.Lock()
 	defer gbh.mtx.Unlock()
 
+	gbh.releaseBootRoleGate(snapshot.BootConfigSettled())
+
 	rsync := false
 
 	if gbh.reAdvertise && gbh.state == BGPConnected && !snapshot.BGPPending() {
@@ -2111,8 +2187,12 @@ func (gbh *GoBgpH) goBGPHouseKeeper() {
 
 // goBGPTicker - Perform periodic operations related to gobgp
 func (gbh *GoBgpH) goBGPTicker() {
+	defer gbh.ticker.Stop()
+	defer gbh.fTicker.Stop()
 	for {
 		select {
+		case <-bgpOperationContext().Done():
+			return
 		case <-gbh.tDone:
 			return
 		case <-gbh.ticker.C:
@@ -2225,4 +2305,25 @@ func (gbh *GoBgpH) BGPGlobalConfigReplace(target cmn.GoBGPGlobalConfig) (int, er
 		}
 	}
 	return gbh.BGPGlobalConfigAdd(target)
+}
+
+// Terminate the actual daemon gracefully, then bound a non-cooperative daemon.
+// The shell uses exec, so the signalled process is gobgpd, not an orphaning shell.
+func newBGPDaemonCommand(ctx context.Context, command string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
+	return cmd
+}
+
+func shutdownBGPDaemon(ctx context.Context) error {
+	if mh.bgp == nil || mh.bgp.daemonDone == nil {
+		return nil
+	}
+	select {
+	case <-mh.bgp.daemonDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

@@ -107,24 +107,8 @@ func (xs *XSync) DpWorkOnCtAdd(cti DpCtInfo, ret *int) error {
 	}
 
 	if cti.Proto == "xsync" {
-		mh.dp.SyncMtx.Lock()
-		defer mh.dp.SyncMtx.Unlock()
-
-		for idx := range mh.dp.Remotes {
-			r := &mh.dp.Remotes[idx]
-			if r.RemoteID == int(cti.Sport) {
-				r.RPCState = true
-				*ret = 0
-				tk.LogIt(tk.LogDebug, "RPC - CT Xsync Remote-%v Already present\n", cti.Sport)
-				return nil
-			}
-		}
-
-		r := XSync{RemoteID: int(cti.Sport), RPCState: true}
-		mh.dp.Remotes = append(mh.dp.Remotes, r)
-
-		tk.LogIt(tk.LogDebug, "RPC - CT Xsync Remote-%v\n", cti.Sport)
-
+		// Identity comes from the connected transport, including legacy hello senders.
+		mh.dp.receivePeerHello(xs.peerIP, int(cti.Sport))
 		*ret = 0
 		return nil
 	}
@@ -153,8 +137,9 @@ func (xs *XSync) DpWorkOnCtGet(async int, ret *int) error {
 		return errors.New("Not-Ready")
 	}
 
-	// Most likely need to reset reverse rpc channel
-	mh.dp.DpXsyncRPCReset()
+	// Do not reset the reverse transport while a peer waits for this reply.
+	// Simultaneous gets otherwise wait on each other's outbound lock. The
+	// sender detects stale transports and retries through RPCConnect.
 
 	tk.LogIt(tk.LogDebug, "RPC -  CT Get %d\n", async)
 	mh.dp.DpHooks.DpCtGetAsync()
@@ -210,8 +195,12 @@ func (xs *XSync) DpWorkOnCtModGRPC(ctx context.Context, m *CtInfoMod) (*XSyncRep
 	ci := m.Ct
 	cti := ci.ConvertToDpCtInfo()
 
+	bound := *xs
+	if peer, ok := grpcpeer.FromContext(ctx); ok {
+		bound.peerIP, _, _ = net.SplitHostPort(peer.Addr.String())
+	}
 	if m.Add {
-		err = xs.DpWorkOnCtAdd(cti, &resp)
+		err = bound.DpWorkOnCtAdd(cti, &resp)
 	} else {
 		err = xs.DpWorkOnCtDelete(cti, &resp)
 	}
@@ -479,26 +468,43 @@ func LoxiXsyncMain(mode string) {
 		// so that the sockproxy consumerLoop can deliver session entries via gRPC/HTTP2
 		// even while CT-sync continues to use net/rpc on XSyncPort (22222).
 		go startSockproxyXSyncGRPCServer()
-		for {
-			rpcObj := new(XSync)
-			err := rpc.Register(rpcObj)
-			if err != nil {
-				panic("Failed to register rpc")
-			}
-
-			rpc.HandleHTTP()
-
-			http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
-				io.WriteString(res, "loxilb-xsync\n")
-			})
-
-			listener := fmt.Sprintf(":%d", XSyncPort)
-			err = http.ListenAndServe(listener, nil)
-			if err != nil {
-				panic("Failed to rpc-listen")
-			}
+		mux := http.NewServeMux()
+		mux.HandleFunc(rpc.DefaultRPCPath, serveXsyncHTTP)
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "loxilb-xsync\n") })
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", XSyncPort), mux); err != nil {
+			panic(err)
 		}
+
 	} else {
 		go startxSyncGRPCServer()
 	}
+}
+
+// Bind one RPC receiver to each CONNECT transport. The wire protocol and service
+// name stay unchanged; old clients need not send an address or a new hello field.
+func serveXsyncHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "CONNECT" {
+		http.Error(w, "CONNECT required", http.StatusMethodNotAllowed)
+		return
+	}
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "hijacking unavailable", 500)
+		return
+	}
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return
+	}
+	server := rpc.NewServer()
+	if err := server.RegisterName("XSync", &XSync{peerIP: host}); err != nil {
+		return
+	}
+	io.WriteString(conn, "HTTP/1.0 200 Connected to Go RPC\n\n")
+	server.ServeConn(conn)
 }

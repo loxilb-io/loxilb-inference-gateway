@@ -62,12 +62,14 @@ func dialHTTPPath(network, address, path string) (*rpc.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	conn.SetDeadline(time.Now().Add(timeOut))
 	io.WriteString(conn, "CONNECT "+path+" HTTP/1.0\n\n")
 
 	// Require successful HTTP response
 	// before switching to RPC protocol.
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
 	if err == nil && resp.Status == connected {
+		conn.SetDeadline(time.Time{})
 		return rpc.NewClient(conn), nil
 	}
 	if err == nil {
@@ -148,6 +150,10 @@ func (*netRPCClient) RPCSend(pe *DpPeer, rpcCallStr string, args any) (int, erro
 	timeout := 2 * time.Second
 	call := client.Go(rpcCallStr, args, &reply, make(chan *rpc.Call, 1))
 	select {
+	case <-bgpOperationContext().Done():
+		client.Close()
+		pe.Client = nil
+		return reply, bgpOperationContext().Err()
 	case <-time.After(timeout):
 		tk.LogIt(tk.LogError, "netRPC call timeout(%v)\n", timeout)
 		if pe.Client != nil {
@@ -247,7 +253,7 @@ func callGRPC(client XSyncClient, rpcCallStr string, args interface{}, reply *in
 	var ctis []*CtInfo
 	var ct *CtInfo
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(bgpOperationContext(), 10*time.Second)
 	defer cancel()
 
 	if (rpcCallStr == "XSync.DpWorkOnBlockCtAdd") ||
