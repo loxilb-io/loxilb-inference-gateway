@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-08T11:36:45+00:00",
-  "source_revision": "21f35bb447abb5e4e2689d5b693b4f5869e22dd4"
+  "generated_at": "2026-11-08T21:01:19+00:00",
+  "source_revision": "cef4c5e52181db1bcac712c0e2aa0f86aa4f8695"
  },
  "contract": {
   "total": 355,
@@ -1596,7 +1596,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -2572,7 +2572,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -2685,7 +2685,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -2809,7 +2809,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -2931,7 +2931,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -3026,7 +3026,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -3117,7 +3117,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -3180,7 +3180,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -5341,7 +5341,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8446,7 +8446,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8526,7 +8526,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8609,7 +8609,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8688,7 +8688,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8777,7 +8777,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8856,7 +8856,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -8938,7 +8938,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -10958,7 +10958,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
@@ -11114,7 +11114,7 @@
      "receiver": "NetAPIStruct",
      "file": "pkg/loxinet/apiclient.go",
      "def_line": 375,
-     "call_line": 382,
+     "call_line": 390,
      "calls": "AddLbRule",
      "entry_point": "http-handler",
      "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"

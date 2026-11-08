@@ -379,8 +379,18 @@ func (na *NetAPIStruct) NetLbRuleAdd(lm *cmn.LbRuleMod) (int, error) {
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 	var ips []string
+	previous := mh.zr.Rules.GetLBRuleByServArgs(lm.Serv)
+	if previous != nil && previous.bgp != lm.Serv.Bgp {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: errors.New("bgp flag cannot be changed on an existing rule; delete and re-create")}
+	}
+	previousBGP := previous != nil && previous.bgp
+	if previousBGP {
+		ips = append(mh.zr.Rules.GetLBRuleSecIPs(lm.Serv), lm.Serv.ServIP)
+	}
 	ret, err := mh.zr.Rules.AddLbRule(lm.Serv, lm.SecIPs[:], lm.SecVIPs[:], lm.SrcIPs[:], lm.Eps[:])
-	if err == nil && lm.Serv.Bgp {
+	// A successful endpoint/id update still owns just one advertisement.
+	// BGP is stored on creation; an update's request flag cannot add ownership.
+	if err == nil && previous == nil && lm.Serv.Bgp {
 		if mh.bgp != nil {
 			ips = append(ips, lm.Serv.ServIP)
 			for _, ip := range lm.SecIPs {
@@ -390,6 +400,11 @@ func (na *NetAPIStruct) NetLbRuleAdd(lm *cmn.LbRuleMod) (int, error) {
 		} else {
 			tk.LogIt(tk.LogDebug, "loxilb BGP mode is disabled \n")
 		}
+	}
+	// Removing the last endpoint through the add/reconcile hook deletes the
+	// stored rule too, so it must release that rule's advertisement reference.
+	if err == nil && previousBGP && mh.bgp != nil && mh.zr.Rules.GetLBRuleByServArgs(lm.Serv) == nil {
+		mh.bgp.DelBGPRule(cmn.CIDefault, ips)
 	}
 	return ret, err
 }
@@ -2394,9 +2409,13 @@ func liveBGPAdvertisements(rules []cmn.LbRuleMod) map[string]int {
 		if !rule.Serv.Bgp {
 			continue
 		}
-		refs[rule.Serv.ServIP]++
+		if ip := canonicalBGPIP(rule.Serv.ServIP); ip != "" {
+			refs[ip]++
+		}
 		for _, ip := range rule.SecIPs {
-			refs[ip.SecIP]++
+			if address := canonicalBGPIP(ip.SecIP); address != "" {
+				refs[address]++
+			}
 		}
 	}
 	return refs
