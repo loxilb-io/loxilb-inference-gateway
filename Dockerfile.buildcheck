@@ -116,7 +116,7 @@ RUN set -eux; \
 # prebuilt v3.29.0 binaries carry a vulnerable Go stdlib and grpc).
 RUN set -eux; \
     git clone --depth 1 --branch v3.29.0 https://github.com/osrg/gobgp.git /tmp/gobgp; \
-    cd /tmp/gobgp; go get google.golang.org/grpc@v1.82.1; go mod tidy; \
+    cd /tmp/gobgp; go get google.golang.org/grpc@v1.82.1 golang.org/x/net@v0.62.0; go mod tidy; \
     go build -o /usr/sbin/gobgp ./cmd/gobgp; \
     go build -o /usr/sbin/gobgpd ./cmd/gobgpd; \
     cd /; rm -rf /tmp/gobgp /root/go/pkg /root/.cache/go-build

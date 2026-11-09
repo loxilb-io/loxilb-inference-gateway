@@ -85,7 +85,7 @@ RUN --mount=type=secret,id=github_token mkdir -p /opt/loxilb && \
     # vulnerable Go stdlib and grpc; building with the toolchain above and a
     # patched grpc keeps the exact gobgp version while clearing both CVEs.
     git clone --depth 1 --branch v3.29.0 https://github.com/osrg/gobgp.git /tmp/gobgp && \
-    cd /tmp/gobgp && go get google.golang.org/grpc@v1.82.1 && go mod tidy && \
+    cd /tmp/gobgp && go get google.golang.org/grpc@v1.82.1 golang.org/x/net@v0.62.0 && go mod tidy && \
     go build -o /usr/sbin/gobgp ./cmd/gobgp && go build -o /usr/sbin/gobgpd ./cmd/gobgpd && \
     cd / && rm -rf /tmp/gobgp /root/go/pkg /root/.cache/go-build && \
     # Install libllvm14 runtime and mark as manually installed to prevent autoremove
