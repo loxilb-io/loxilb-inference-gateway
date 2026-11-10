@@ -16,6 +16,34 @@ permissions:
   contents: read
 
 jobs:
+  candidate-images:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    uses: ./.github/workflows/go-candidate-images.yml
+    secrets: inherit
+
+  model-regeneration:
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read toolchain pin
+        id: pins
+        run: echo "go=$(python3 scripts/update-go-pins.py --print-go-version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.pins.outputs.go }}
+      - name: Check tuple validation after clean generation
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go test ./api/cmd/sync-model-validators
+          go generate ./api/restapi
+          go run ./api/cmd/sync-model-validators -check
+          go test ./api/models -run '^TestEndPointHostStateTupleValidation$' -count=1
+
   govulncheck:
     name: govulncheck
     # Dependabot PRs don't receive repo secrets, so CI_SUBMODULE_TOKEN is empty
@@ -29,9 +57,16 @@ jobs:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
+      - name: Read and check centralized pins
+        id: pins
+        run: |
+          python3 scripts/update-go-pins.py --check
+          echo "go=$(python3 scripts/update-go-pins.py --print-go-version)" >> "$GITHUB_OUTPUT"
+          echo "govulncheck=$(python3 scripts/update-go-pins.py --print-govulncheck-version)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
         with:
-          go-version: 'stable'
+          go-version: ${{ steps.pins.outputs.go }}
 
       - name: Install cgo build dependencies
         run: |
@@ -41,7 +76,9 @@ jobs:
             libjson-c-dev libnghttp2-dev
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        env:
+          GOVULNCHECK_VERSION: ${{ steps.pins.outputs.govulncheck }}
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
 
       - name: Run govulncheck
         # Gate on FIXABLE reachable vulnerabilities only: run govulncheck in JSON

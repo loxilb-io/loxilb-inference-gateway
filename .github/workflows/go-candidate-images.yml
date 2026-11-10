@@ -1,0 +1,138 @@
+name: Candidate Go image binaries
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gateway:
+    # Private submodule credentials are available only on trusted repository refs.
+    if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: u22
+            dockerfile: Dockerfile
+          - variant: u24
+            dockerfile: Dockerfile.u24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+          persist-credentials: false
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - name: Read and check centralized pins
+        id: pins
+        run: |
+          python3 scripts/update-go-pins.py --check
+          echo "go=$(python3 scripts/update-go-pins.py --print-go-version)" >> "$GITHUB_OUTPUT"
+          echo "govulncheck=$(python3 scripts/update-go-pins.py --print-govulncheck-version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.pins.outputs.go }}
+      - name: Install binary scanner
+        env:
+          GOVULNCHECK_VERSION: ${{ steps.pins.outputs.govulncheck }}
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+      - uses: ./.github/actions/install-trivy
+      - name: Build the actual candidate Dockerfile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          mkdir -p security-results
+          revision=$(git rev-parse HEAD)
+          docker build --secret id=github_token,env=GH_TOKEN \
+            --metadata-file "security-results/${VARIANT}-build.json" \
+            --build-arg "VERSION=ci-${revision:0:12}" --build-arg OPENSSL_BUILD_CPUS=2 \
+            --label "org.opencontainers.image.revision=$revision" \
+            -f "$DOCKERFILE" -t "loxilb-candidate:${VARIANT}" .
+      - name: Inspect and scan all actual candidate Go binaries
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python3 scripts/scan-go-image-binaries.py --image "loxilb-candidate:${VARIANT}" \
+            --output "security-results/${VARIANT}-binaries"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-go-${{ matrix.variant }}
+          path: security-results/
+          if-no-files-found: warn
+
+  fixtures:
+    if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Read and check centralized pins
+        id: pins
+        run: |
+          python3 scripts/update-go-pins.py --check
+          echo "go=$(python3 scripts/update-go-pins.py --print-go-version)" >> "$GITHUB_OUTPUT"
+          echo "govulncheck=$(python3 scripts/update-go-pins.py --print-govulncheck-version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.pins.outputs.go }}
+      - name: Verify generated inputs and scanner policies
+        run: |
+          python3 scripts/update-go-pins.py --check --verify-vendor
+          python3 -m unittest discover -s scripts -p 'test_update_go_pins.py'
+          python3 -m unittest discover -s scripts -p 'test_scan_go_image_binaries.py'
+          python3 -m unittest discover -s .github/scripts -p 'test_govulncheck_gate.py'
+      - name: Install binary scanner
+        env:
+          GOVULNCHECK_VERSION: ${{ steps.pins.outputs.govulncheck }}
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+      - uses: ./.github/actions/install-trivy
+      - name: Build and scan every affected fixture image
+        run: |
+          mkdir -p security-results
+          docker build --network none -t loxilb-candidate:reflect-echo cicd/common/reflect-echo
+          python3 scripts/scan-go-image-binaries.py --profile reflect-echo \
+            --image loxilb-candidate:reflect-echo --output security-results/reflect-echo
+          for role in client server http-client http-server; do
+            case "$role" in client|server) profile="grpc-$role" ;; *) profile="$role" ;; esac
+            docker build -f "cicd/common/grpc/Dockerfile.$role" \
+              -t "loxilb-candidate:$profile" cicd/common/grpc
+            python3 scripts/scan-go-image-binaries.py --profile "$profile" \
+              --image "loxilb-candidate:$profile" --output "security-results/$profile"
+          done
+      - name: Build and scan the legacy GoBGP recipe's Go payload
+        run: |
+          legacy_src=$(mktemp -d)
+          legacy_tag=$(python3 -c 'import json; print(json.load(open("build/go-dependencies.json"))["gobgp"]["legacy"])')
+          grpc_pin=$(python3 -c 'import json; print(json.load(open("build/go-dependencies.json"))["grpc"])')
+          net_pin=$(python3 -c 'import json; print(json.load(open("build/go-dependencies.json"))["x_net"])')
+          git clone --depth 1 --branch "$legacy_tag" https://github.com/osrg/gobgp.git "$legacy_src"
+          git -C "$legacy_src" rev-parse HEAD > security-results/legacy-gobgp-revision.txt
+          (
+            cd "$legacy_src"
+            go get "google.golang.org/grpc@$grpc_pin" "golang.org/x/net@$net_pin"
+            go mod tidy
+            mkdir image
+            CGO_ENABLED=0 go build -o image/gobgp ./cmd/gobgp
+            CGO_ENABLED=0 go build -o image/gobgpd ./cmd/gobgpd
+          )
+          printf 'FROM scratch\nCOPY gobgp gobgpd /usr/sbin/\n' > "$legacy_src/image/Dockerfile"
+          docker build -t loxilb-candidate:gobgp-legacy "$legacy_src/image"
+          python3 scripts/scan-go-image-binaries.py --profile gobgp-legacy \
+            --image loxilb-candidate:gobgp-legacy --output security-results/gobgp-legacy
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-go-fixtures
+          path: security-results/
+          if-no-files-found: warn
