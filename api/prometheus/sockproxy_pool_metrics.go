@@ -91,5 +91,5 @@ func (poolCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(poolCollector{})
+	datapathRegisterer{}.MustRegister(poolCollector{})
 }

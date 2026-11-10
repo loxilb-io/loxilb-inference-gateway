@@ -72,7 +72,7 @@ func (policerAttachmentCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(policerAttachmentCollector{})
+	datapathRegisterer{}.MustRegister(policerAttachmentCollector{})
 }
 
 // PublishPolicerAttachment replaces the attachment store with the given

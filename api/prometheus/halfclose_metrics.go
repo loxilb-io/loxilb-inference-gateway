@@ -300,5 +300,5 @@ func (halfCloseCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(halfCloseCollector{})
+	datapathRegisterer{}.MustRegister(halfCloseCollector{})
 }

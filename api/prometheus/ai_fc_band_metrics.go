@@ -60,7 +60,7 @@ func (fcBandCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(fcBandCollector{})
+	datapathRegisterer{}.MustRegister(fcBandCollector{})
 }
 
 // fcBandService is one service's band outcomes, summed over its pools.

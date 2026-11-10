@@ -172,11 +172,11 @@ func (mh *loxiNetH) NodeWalker(b string) {
 	tk.LogIt(tk.LogDebug, "%s\n", b)
 }
 
+var prometheusInitFn = prometheus.Init
+
 // PrometheusInit - Initialize the Prometheus subsystem
 func (mh *loxiNetH) PrometheusInit() error {
-	prometheus.PrometheusRegister(NetAPIInit(opts.Opts.BgpPeerMode))
-	prometheus.Init()
-	return nil
+	return prometheusInitFn()
 }
 
 // ParamSet - Set Loxinet Params
@@ -716,7 +716,6 @@ func loxiNetInit() {
 		// If bgp peer mode is enabled then bgp flag has to be set by default
 		opts.Opts.Bgp = true
 		//opts.Opts.NoNlp = true
-		opts.Opts.Prometheus = false
 	}
 
 	// Initialize goBgp client
@@ -802,6 +801,8 @@ func loxiNetInit() {
 	mh.NetIdentity = NetIdentityInit()
 
 	// Initialize and spawn the api server subsystem
+	// Publish the native initialization contract before any API can enable metrics.
+	prometheus.PrometheusRegister(NetAPIInit(opts.Opts.BgpPeerMode), mh.dpEbpf != nil)
 	if !opts.Opts.NoAPI {
 		apiserver.RegisterAPIHooks(NetAPIInit(opts.Opts.BgpPeerMode))
 		go apiserver.RunAPIServer()
@@ -826,7 +827,9 @@ func loxiNetInit() {
 
 	// Initialize the Prometheus subsystem
 	if opts.Opts.Prometheus {
-		mh.PrometheusInit()
+		if err := mh.PrometheusInit(); err != nil {
+			tk.LogIt(tk.LogWarning, "[Metrics] Startup initialization failed; process continues: %v\n", err)
+		}
 	}
 
 	if !opts.Opts.BgpPeerMode {

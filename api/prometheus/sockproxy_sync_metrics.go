@@ -12,14 +12,13 @@
  *
  *
  * Naming convention: loxilb_<area>_<thing>_<unit>. All registered via
- * promauto.New* (auto-registration, no MustRegister needed).
+ * datapathMetrics.New* (auto-registration, no MustRegister needed).
  */
 
 package prometheus
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -31,7 +30,7 @@ import (
 //     conv.create|conv.update|conv.delete|session.unknown" — the inbound
 //     event channel overflowed and an event of that kind was dropped
 //     (drop-oldest semantics).
-var sockproxySyncOverflowTotal = promauto.NewCounterVec(
+var sockproxySyncOverflowTotal = datapathMetrics.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "loxilb_sockproxy_sync_overflow_total",
 		Help: "Events dropped due to ring/queue overflow (kind=outbound_batch or the dropped event kind, e.g. session.update, conv.create).",
@@ -45,7 +44,7 @@ var sockproxySyncOverflowTotal = promauto.NewCounterVec(
 // code that covers both a locally-unhealthy ep_idx and an out-of-bounds
 // ep_idx (the WARN log carries the distinction; the metric cannot until the
 // C side returns separate codes).
-var sockproxySyncHealthRejectTotal = promauto.NewCounterVec(
+var sockproxySyncHealthRejectTotal = datapathMetrics.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "loxilb_sockproxy_sync_health_reject_total",
 		Help: "Synced session entries dropped by receiver health gate (reason=local_unhealthy; includes out-of-bounds ep_idx).",
@@ -58,7 +57,7 @@ var sockproxySyncHealthRejectTotal = promauto.NewCounterVec(
 // Previously invisible in every sync metric (metrics audit): a peer could
 // stream entries that all failed to apply while the conflict/health counters
 // stayed flat.
-var sockproxySyncApplyErrorsTotal = promauto.NewCounter(
+var sockproxySyncApplyErrorsTotal = datapathMetrics.NewCounter(
 	prometheus.CounterOpts{
 		Name: "loxilb_sockproxy_sync_apply_errors_total",
 		Help: "Synced session entries whose receiver-side apply failed outright (negative C applier outcome).",
@@ -68,7 +67,7 @@ var sockproxySyncApplyErrorsTotal = promauto.NewCounter(
 // sockproxySyncConflictTotal counts Active-Active first-writer-wins
 // conflict-resolution outcomes (SPEC A6). Labels: outcome ∈ {"local_kept",
 // "remote_won", "tie_local_kept"}.
-var sockproxySyncConflictTotal = promauto.NewCounterVec(
+var sockproxySyncConflictTotal = datapathMetrics.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "loxilb_sockproxy_sync_conflict_total",
 		Help: "Active-Active conflict resolution outcomes (outcome=local_kept|remote_won|tie_local_kept).",
@@ -81,7 +80,7 @@ var sockproxySyncConflictTotal = promauto.NewCounterVec(
 // 0.1ms–13.1s (ExponentialBuckets(0.0001, 2, 18)): the RPC timeout is 10s,
 // so the histogram must resolve the slow tail — the previous ~205ms top
 // bucket lumped every degraded push into +Inf.
-var sockproxySyncPushLatencySeconds = promauto.NewHistogramVec(
+var sockproxySyncPushLatencySeconds = datapathMetrics.NewHistogramVec(
 	prometheus.HistogramOpts{
 		Name:    "loxilb_sockproxy_sync_push_latency_seconds",
 		Help:    "Per-RPC sockproxy sync push latency at sender (post-gRPC.Send).",
@@ -93,7 +92,7 @@ var sockproxySyncPushLatencySeconds = promauto.NewHistogramVec(
 // sockproxySyncInflightRpc is the number of in-flight unary RPCs per peer.
 // Used to detect coordinator backpressure (should be ≤ 1 per peer per
 // RPC-family — single in-flight invariant per CONTEXT D "Claude's Discretion").
-var sockproxySyncInflightRpc = promauto.NewGaugeVec(
+var sockproxySyncInflightRpc = datapathMetrics.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "loxilb_sockproxy_sync_inflight_rpc",
 		Help: "Currently in-flight sockproxy sync RPCs per peer.",
@@ -112,7 +111,7 @@ var sockproxySyncInflightRpc = promauto.NewGaugeVec(
 //	    degrade path and does NOT count as a drop).
 //	  - "shutdown" — the consumer received the shutdown signal while a batch
 //	    was still in flight or queued; reserved for future use.
-var sockproxySyncDropTotal = promauto.NewCounterVec(
+var sockproxySyncDropTotal = datapathMetrics.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "loxilb_sockproxy_sync_drop_total",
 		Help: "Per-peer sockproxy sync batches dropped after retries (reason=peer_unreachable|shutdown).",
@@ -126,7 +125,7 @@ var sockproxySyncDropTotal = promauto.NewCounterVec(
 // limiter push error). It is an event-driven outcome flag, not a probe —
 // on an idle cluster with no sync traffic it keeps its last value, so read
 // it together with the drop/overflow counters.
-var sockproxySyncPeerUp = promauto.NewGaugeVec(
+var sockproxySyncPeerUp = datapathMetrics.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "loxilb_sockproxy_sync_peer_up",
 		Help: "1 when the last sockproxy sync push to this peer succeeded; 0 after a failed or abandoned push. Event-driven (updated per push, holds last value while idle).",
@@ -141,7 +140,7 @@ var sockproxySyncPeerUp = promauto.NewGaugeVec(
 // goes 0 and drops count instead). Peer children persist for the process
 // lifetime, like every other per-peer sync series (the peer set is small
 // and static).
-var sockproxySyncPeerLagSeconds = promauto.NewGaugeVec(
+var sockproxySyncPeerLagSeconds = datapathMetrics.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "loxilb_sockproxy_sync_peer_lag_seconds",
 		Help: "Enqueue-to-sent delay of the last successfully replicated sockproxy session batch per peer (queue wait + retries + RPC). Frozen at last success while the peer is down.",
@@ -176,7 +175,7 @@ var sockproxySyncPeerLagSeconds = promauto.NewGaugeVec(
 // tracks an upgrade: a peer that comes back on the new vocabulary moves
 // from 1 to 2 on its first push. Like every other per-peer sync series the
 // children persist for the process lifetime.
-var sockproxySyncPeerScopeVersion = promauto.NewGaugeVec(
+var sockproxySyncPeerScopeVersion = datapathMetrics.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "loxilb_sockproxy_sync_peer_scope_version",
 		Help: "Rate-limiter sync-wire scope vocabulary last announced by this peer (2+ = sentinel version; 1 = no sentinel, a build predating the ladder scopes that silently drops them; 0 = sentinel present but unparseable). Updated on every received batch.",
