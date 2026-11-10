@@ -139,10 +139,16 @@ regenerates vendor, and updates all managed Dockerfiles. `--x-net`, `--grpc` and
 An update that needs a newer minimum Go version also needs a compatible compiler
 pin. On failure, inspect the working diff; the checker must pass before committing.
 New independently pinned recipes/modules must join the managed inventory.
+Dockerfiles that explicitly COPY/ADD the shared reflect-echo module or vendor
+from the repository also join it, even when they contain no direct module pin.
+The JSON parser mock and edge-cloud backend use this shared input; their compiler
+mirrors follow the same manifest. `--list-shared-vendor-builds` provides the
+profile/Dockerfile inventory used by CI so these consumers cannot be omitted.
 
 Pull requests changing build/dependency inputs run the candidate-image workflow
 through Trivy-Image. It builds the actual default/u24 Dockerfiles, the five
-gRPC/reflect-echo fixture images, and the legacy GoBGP recipe's Go payload.
+gRPC/reflect-echo fixture images, both shared-vendor consumers (JSON parser mock
+and edge-cloud backend), and the legacy GoBGP recipe's Go payload.
 It inspects every Go binary discovered by Trivy,
 checks its embedded compiler/module versions, and runs binary govulncheck. Manual
 Govulncheck dispatch can run the same reusable workflow. Scheduled/release Trivy
@@ -161,6 +167,7 @@ output directory and never starts the image container. It records the immutable
 image ID, build metadata, binary hashes and reports; only its exact temporary
 inspection container is removed. Fixture images use the corresponding `--profile`
 (`reflect-echo`, `grpc-client`, `grpc-server`, `http-client` or `http-server`);
+`json-parser-mock` and `edge-cloud-backend` check the shared-vendor consumers;
 `gobgp-legacy` checks the legacy GoBGP pair. This does not qualify the full legacy
 Ubuntu image or its native/runtime behavior. Both GoBGP recipe profiles now use
 v3.35.0, which removes the fixable advisories present in the previous v3.29.0

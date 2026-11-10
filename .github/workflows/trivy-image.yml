@@ -11,6 +11,7 @@ on:
     branches: [ "main" ]
     paths:
       - "Dockerfile*"
+      - "**/Dockerfile*"
       - "packaging/Dockerfile*"
       - "**/*.go"
       - "**/go.mod"

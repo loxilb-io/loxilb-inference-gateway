@@ -22,6 +22,8 @@ REQUIRED = {"root/loxilb-io/loxilb/loxilb", "usr/sbin/gobgp", "usr/sbin/gobgpd",
 NET_REQUIRED = {"root/loxilb-io/loxilb/loxilb", "usr/sbin/gobgp", "usr/sbin/gobgpd"}
 PROFILES = {"gateway": REQUIRED, "reflect-echo": {"reflect-echo"},
             "gobgp-legacy": {"usr/sbin/gobgp", "usr/sbin/gobgpd"},
+            "json-parser-mock": {"json-parser-mock"},
+            "edge-cloud-backend": {"uc7-backend"},
             **{name: {"root/" + name} for name in ["grpc-client", "grpc-server", "http-client", "http-server"]}}
 
 

@@ -47,6 +47,16 @@ class ImageScanChecks(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 scan.check_build_info(bad, "usr/sbin/gobgp", pins)
 
+    def test_shared_vendor_profiles_require_pinned_embedded_net(self):
+        pins = {"go": "1.26.10", "x_net": "v0.62.0", "grpc": "v1.83.2"}
+        for profile in ["json-parser-mock", "edge-cloud-backend"]:
+            path = next(iter(scan.PROFILES[profile]))
+            info = {"GoVersion": "go1.26.10", "Deps": [{"Path": "golang.org/x/net", "Version": "v0.62.0"}]}
+            with self.subTest(profile=profile):
+                scan.check_build_info(info, path, pins, profile)
+                with self.assertRaises(ValueError):
+                    scan.check_build_info({"GoVersion": "go1.26.10", "Deps": []}, path, pins, profile)
+
     def test_critical_fixable_policy_is_preserved(self):
         report = {"Results": [{"Target": "image", "Vulnerabilities": [
             {"VulnerabilityID": "a", "Severity": "HIGH", "FixedVersion": "1"},

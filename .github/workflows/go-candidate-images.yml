@@ -110,6 +110,14 @@ jobs:
             python3 scripts/scan-go-image-binaries.py --profile "$profile" \
               --image "loxilb-candidate:$profile" --output "security-results/$profile"
           done
+      - name: Build and scan shared-vendor consumers from the managed inventory
+        run: |
+          python3 scripts/update-go-pins.py --list-shared-vendor-builds > security-results/shared-vendor-builds.tsv
+          while IFS=$'\t' read -r profile recipe; do
+            docker build --network none -f "$recipe" -t "loxilb-candidate:$profile" .
+            python3 scripts/scan-go-image-binaries.py --profile "$profile" \
+              --image "loxilb-candidate:$profile" --output "security-results/$profile"
+          done < security-results/shared-vendor-builds.tsv
       - name: Build and scan the legacy GoBGP recipe's Go payload
         run: |
           legacy_src=$(mktemp -d)

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -21,8 +22,12 @@ GOBGP = {"Dockerfile": "default", "Dockerfile.u24": "default",
          "Dockerfile.u20": "legacy", "Dockerfile.buildcheck": "legacy"}
 GRPC = ["cicd/common/grpc/Dockerfile." + role
         for role in ("client", "server", "http-client", "http-server")]
+SHARED_VENDOR_BUILDS = {
+    "cicd/ai-json-parser/Dockerfile.mock": "json-parser-mock",
+    "cicd/edge-cloud-security/backend/Dockerfile": "edge-cloud-backend",
+}
 GO_ONLY = ["Dockerfile.aictrl", "Dockerfile.kv-agent", "packaging/Dockerfile.build",
-           "cicd/common/reflect-echo/Dockerfile"]
+           "cicd/common/reflect-echo/Dockerfile", *SHARED_VENDOR_BUILDS]
 RECIPES = list(GOBGP) + GRPC + GO_ONLY
 MODULES = ["go.mod", "cicd/common/reflect-echo/go.mod"]
 VERSION = re.compile(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\Z")
@@ -92,12 +97,42 @@ def requirement(text, module):
 
 
 def project_files(root):
-    result = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True)
+    result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root, capture_output=True)
     if result.returncode == 0:
         return [Path(p) for p in result.stdout.decode().split("\0") if p
                 and not any(x in Path(p).parts for x in [".git", ".review", "vendor", "node_modules"])]
     return [p.relative_to(root) for p in root.rglob("*") if p.is_file()
             and not any(x in p.relative_to(root).parts for x in [".git", ".review", "vendor", "node_modules"])]
+
+
+def copies_shared_vendor(text):
+    """Find root-context COPY/ADD consumers, including JSON and continued forms.
+
+    Stage copies do not consume repository module inputs. The fixture's own
+    small context is already managed separately; root-context consumers must
+    join SHARED_VENDOR_BUILDS so CI builds them from this same inventory.
+    """
+    logical = re.sub(r"\\\r?\n", " ", text)
+    for line in logical.splitlines():
+        match = re.match(r"^\s*(?:COPY|ADD)\s+(.+)$", line, re.I)
+        if not match:
+            continue
+        args = match[1].strip()
+        flags = []
+        while args.startswith("--"):
+            parts = args.split(None, 1)
+            flags.append(parts[0])
+            args = parts[1] if len(parts) == 2 else ""
+        if any(flag.lower().startswith("--from=") for flag in flags):
+            continue
+        values = json.loads(args) if args.startswith("[") else shlex.split(args, comments=True)
+        if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+            raise ValueError("invalid COPY/ADD source list")
+        for source in values[:-1]:
+            source = source.removeprefix("./").lstrip("/")
+            if source.rstrip("/") == "cicd/common/reflect-echo" or source.startswith("cicd/common/reflect-echo/"):
+                return True
+    return False
 
 
 def check(root, pins):
@@ -137,7 +172,10 @@ def check(root, pins):
     for path in project_files(root):
         name = path.as_posix()
         if path.name.startswith("Dockerfile") and name not in RECIPES:
-            if re.search(r"(?:golang.org/x/net|google.golang.org/grpc|osrg/gobgp.git)(?:@|\b)", (root / path).read_text()):
+            text = (root / path).read_text()
+            if copies_shared_vendor(text):
+                errors.append(f"unmanaged shared-vendor recipe: {name}")
+            if re.search(r"(?:golang.org/x/net|google.golang.org/grpc|osrg/gobgp.git)(?:@|\b)", text):
                 errors.append(f"unmanaged Go dependency recipe: {name}")
         if path.name == "go.mod" and name not in MODULES:
             if re.search(r"(?m)^\s*(?:require\s+)?golang\.org/x/net\s+v", (root / path).read_text()):
@@ -188,6 +226,8 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--write", action="store_true")
+    mode.add_argument("--list-shared-vendor-builds", action="store_true",
+                      help="print CI profile and root-context Dockerfile as TSV")
     mode.add_argument("--print-go-version", action="store_true")
     mode.add_argument("--print-govulncheck-version", action="store_true")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -217,6 +257,10 @@ def main():
             raise ValueError("\n".join(errors))
         if args.verify_vendor:
             verify_vendor(args.root)
+        if args.list_shared_vendor_builds:
+            for recipe, profile in SHARED_VENDOR_BUILDS.items():
+                print(profile + "\t" + recipe)
+            return 0
         print("PASS: Go module, vendor and Dockerfile pins match " + MANIFEST)
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
