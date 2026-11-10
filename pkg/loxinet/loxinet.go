@@ -308,7 +308,7 @@ func loxiNetTicker(bgpPeerMode bool) {
 
 				// Existing post-stage cleanup that is NOT in any stage
 				// (preserved verbatim from the pre- handler).
-				mh.zr.Rules.RuleDestructAll()
+				mh.shutdownDatapathRules()
 				if mh.cloudHook != nil {
 					// Cleanup any cloud resources
 					ciState, _ := mh.has.CIStateGetInst(cmn.CIDefault)
