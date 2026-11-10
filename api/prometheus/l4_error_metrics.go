@@ -26,11 +26,9 @@ package prometheus
 import (
 	"context"
 	"fmt"
-	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // l4ErrorEventsTotal counts L4 connection errors exactly once per occurrence,
@@ -40,7 +38,7 @@ import (
 //
 // Label cardinality is bounded and tiny: proto ∈ {tcp,sctp}, reason ∈
 // {rst,error,abort}.
-var l4ErrorEventsTotal = promauto.NewCounterVec(
+var l4ErrorEventsTotal = datapathMetrics.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "loxilb_l4_error_events_total",
 		Help: "L4 connection error events by protocol and reason (event-driven, unsampled; RST/abort/protocol-error). Source of truth for LoxilbL4ErrorBurst.",
@@ -81,7 +79,7 @@ func RunL4ErrorStats(ctx context.Context) {
 			// First cycle: baseline only, do not emit historical accumulation.
 			prevCtErrStats = stats
 			ctErrSeeded = true
-			time.Sleep(PrometheusDefaultPeriod)
+			waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 			return nil
 		}
 
@@ -93,7 +91,7 @@ func RunL4ErrorStats(ctx context.Context) {
 
 		prevCtErrStats = stats
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "l4_error_stats", ctx)
 }

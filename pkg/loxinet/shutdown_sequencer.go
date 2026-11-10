@@ -26,8 +26,11 @@ package loxinet
 
 import (
 	"context"
-	"github.com/loxilb-io/loxilb/pkg/snapshot"
+	"errors"
 	"time"
+
+	"github.com/loxilb-io/loxilb/api/prometheus"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -77,9 +80,12 @@ func runShutdownStage(name string, deadline time.Duration, fn func(context.Conte
 // in loxinet.go MUST call through these vars (not the underlying functions
 // directly) so the test substitution actually takes effect.
 var (
-	shutdownWorkersFn = shutdownWorkers
-	shutdownDocaFn    = shutdownDoca
-	shutdownEbpfFn    = shutdownEbpf
+	shutdownWorkersFn  = shutdownWorkers
+	shutdownDocaFn     = shutdownDoca
+	shutdownEbpfFn     = shutdownEbpf
+	metricsStopFn      = prometheus.Stop
+	bgpRecoveryStopFn  = snapshot.StopBGPRecovery
+	kvSubscriberStopFn = KvSubscriberStopAll
 )
 
 // shutdownWorkers cancels the long-lived workers-stage goroutines (KV
@@ -93,9 +99,21 @@ var (
 // `KvSubscriberStopAll` for each service so the per-EP `cancel` map is
 // fully drained.
 func shutdownWorkers(ctx context.Context) error {
-	if err := snapshot.StopBGPRecovery(ctx); err != nil {
-		return err
+	// Reserve the rest of the stage for BGP recovery and KV cancellation.
+	budget := prometheus.OperationTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if half := time.Until(deadline) / 2; half < budget {
+			budget = half
+		}
 	}
+	metricsCtx, cancelMetrics := context.WithTimeout(ctx, budget)
+	metricsErr := metricsStopFn(metricsCtx)
+	cancelMetrics()
+	if metricsErr != nil {
+		tk.LogIt(tk.LogWarning, "[shutdown] metrics workers did not drain before detach: %v; detach will proceed and a CGO call may still be in flight\n", metricsErr)
+	}
+	// A metrics failure must never skip the remaining cancellation requests.
+	bgpErr := bgpRecoveryStopFn(ctx)
 	// Snapshot service IDs under the registry lock; release before
 	// invoking KvSubscriberStopAll (which takes the lock again).
 	kvServicesMu.Lock()
@@ -105,17 +123,11 @@ func shutdownWorkers(ctx context.Context) error {
 	}
 	kvServicesMu.Unlock()
 	for _, sid := range ids {
-		// Bail early if the per-stage deadline has already expired —
-		// the helper above will log "timed out, proceeding" and the
-		// next stage will run.
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		KvSubscriberStopAll(sid)
+		// Cancellation still needs to be issued if an earlier drain timed out.
+		// The outer sequencer bounds this stage even if a subscriber lock blocks.
+		kvSubscriberStopFn(sid)
 	}
-	return nil
+	return errors.Join(metricsErr, bgpErr, ctx.Err())
 }
 
 // shutdownDoca closes the DOCA bridge worker and waits for it to drain.

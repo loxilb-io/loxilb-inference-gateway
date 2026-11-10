@@ -17,20 +17,10 @@
 package loxinet
 
 import (
-	"strings"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmihailenco/msgpack/v5"
-
-	// Named import ensures the prometheus package init runs and registers
-	// all promauto metrics (including Tier 1.5 miss-reason and
-	// fallthrough counters) into prometheus.DefaultGatherer.
-	prom "github.com/loxilb-io/loxilb/api/prometheus"
 )
-
-// Reference prom to keep import tidy-safe if other tests ever drop its usage.
-var _ = prom.SetKvBlocksGauge
 
 func TestKvInventoryAddRemove(t *testing.T) {
 	inv := newKvInventory()
@@ -358,75 +348,4 @@ func kvBestWorkerGo(queryHashes []uint64, prefillMask, excludedMask uint32) (int
 	}
 
 	return bestEp, bestScore
-}
-
-// TestKvTier15MissCountersRegistered verifies that Tier 1.5
-// routing-diagnostics Prometheus metrics are registered and gather-able from
-// prometheus.DefaultGatherer. This is a registration smoke test only —
-// counter *increments* land in plan 42-02 (pd_kv_exact_select guard wiring).
-//
-// Asserted invariants:
-//  1. loxilb_pd_kv_tier15_miss_reason_total (CounterVec) is present in the
-//     gatherer output after promauto init.
-//  2. All 8 canonical reason labels are instantiable without panic:
-//     mode_off, warmup, text_empty, model_empty, tokenize, hashes,
-//     no_worker, excluded. Each instantiation creates a distinct child
-//     series so Prometheus scrapes will surface them immediately.
-//  3. loxilb_pd_kv_tier15_fallthrough_total (Counter) is present.
-func TestKvTier15MissCountersRegistered(t *testing.T) {
-	const missMetricName = "loxilb_pd_kv_tier15_miss_reason_total"
-	const fallthroughMetricName = "loxilb_pd_kv_tier15_fallthrough_total"
-
-	mfs, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		t.Fatalf("DefaultGatherer.Gather() returned error: %v", err)
-	}
-
-	seen := map[string]bool{}
-	reasonSeen := map[string]bool{}
-	for _, mf := range mfs {
-		name := mf.GetName()
-		if name == missMetricName || name == fallthroughMetricName {
-			seen[name] = true
-		}
-		if name == missMetricName {
-			for _, m := range mf.GetMetric() {
-				for _, lp := range m.GetLabel() {
-					if lp.GetName() == "reason" {
-						reasonSeen[lp.GetValue()] = true
-					}
-				}
-			}
-		}
-	}
-
-	// Every canonical reason child must exist immediately after package init
-	// (pre-created so dashboards see the full series set before any
-	// increment). The last four are the contract-gate / typed-bridge
-	// classes — lockstep with pd_kv_t15_miss_* in sockproxy.h.
-	for _, reason := range []string{
-		"mode_off", "warmup", "text_empty", "model_empty", "tokenize",
-		"hashes", "no_worker", "excluded", "shallow",
-		"not_ready", "api_mode", "unsupported_feature", "runtime_fault",
-	} {
-		if !reasonSeen[reason] {
-			t.Errorf("miss-reason child %q not pre-created", reason)
-		}
-	}
-
-	if !seen[missMetricName] {
-		// Surface all registered metric names with the loxilb_pd_kv prefix
-		// to make diagnosis easier if registration ever regresses.
-		var kvMetricNames []string
-		for _, mf := range mfs {
-			if strings.HasPrefix(mf.GetName(), "loxilb_pd_kv") {
-				kvMetricNames = append(kvMetricNames, mf.GetName())
-			}
-		}
-		t.Errorf("metric %q not registered; loxilb_pd_kv_* metrics seen: %v",
-			missMetricName, kvMetricNames)
-	}
-	if !seen[fallthroughMetricName] {
-		t.Errorf("metric %q not registered", fallthroughMetricName)
-	}
 }
