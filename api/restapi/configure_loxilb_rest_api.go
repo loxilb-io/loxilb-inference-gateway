@@ -57,7 +57,7 @@ var dpuHwCountersHandler func(http.ResponseWriter, *http.Request)
 // kvInventoryHandler stores the AI KV inventory HTTP handler for /netlox/v1/config/ai/kv/inventory.
 var kvInventoryHandler func(http.ResponseWriter, *http.Request)
 
-//go:generate swagger generate server --target ../../api --name LoxilbRestAPI --spec ../swagger.yml --principal interface{}
+//go:generate bash ../build_api.sh
 
 func configureFlags(api *operations.LoxilbRestAPIAPI) {
 	api.CommandLineOptionsGroups = append(api.CommandLineOptionsGroups,
