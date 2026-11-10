@@ -134,6 +134,10 @@ quota errors: `502 backend_unreachable` / `503 no_healthy_backend` come from the
 connect-failover path, not from key enforcement — see the
 [troubleshooting guide](06-troubleshooting.md) §5.
 
+Every answer the gateway writes itself — status, `error` code, the stage that decided, whether it
+is safe to retry and when — is listed in one table in the
+[client refusal contract](27-ai-gateway-client-refusal-contract.md).
+
 ### 2.5 A backend's `X-Api-Key` and `X-Auth-*` response headers
 
 On a service that declares `api_key_auth`, `X-Api-Key` is the gateway's credential header.
