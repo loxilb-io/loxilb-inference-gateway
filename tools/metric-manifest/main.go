@@ -131,6 +131,7 @@ func collectDefs(rootDir string) ([]Def, error) {
 		for _, af := range parsed {
 			collectSliceBindings(af, consts, slices)
 		}
+		factories := collectFactoryBindings(parsed)
 		// A prometheus.NewDesc call cannot state the runtime type -- the type
 		// is chosen later, where the Desc is turned into a metric. Both halves
 		// are statically resolvable, so resolve them: which variable holds each
@@ -155,19 +156,13 @@ func collectDefs(rootDir string) ([]Def, error) {
 					return true
 				}
 				fn := sel.Sel.Name
-				if t, isCtor := ctorType[fn]; isCtor && callerIsPrometheus(sel.X) {
+				if t, isCtor := ctorType[fn]; isCtor && factoryMechanism(sel.X, factories) != "" {
 					d := extractOpts(call, t, fn, consts, slices)
 					if d != nil {
 						d.File = filepath.ToSlash(rel)
 						d.Line = fset.Position(call.Pos()).Line
 						d.pos = call.Pos()
-						if base, okX := sel.X.(*ast.Ident); okX && base.Name == "promauto" {
-							d.Mechanism = "promauto"
-						} else if _, isCall := sel.X.(*ast.CallExpr); isCall {
-							d.Mechanism = "promauto" // promauto.With(reg).NewX
-						} else {
-							d.Mechanism = "manual"
-						}
+						d.Mechanism = factoryMechanism(sel.X, factories)
 						pkgDefs = append(pkgDefs, *d)
 					}
 					return true
@@ -196,8 +191,8 @@ func collectDefs(rootDir string) ([]Def, error) {
 
 		// Expand registrations that a helper function parameterises, then drop
 		// the templates they came from. See expandWrapperDefs.
-		expanded, fromTemplate := expandWrapperDefs(parsed, fset, *root, consts, slices)
-		expandedRecv, fromRecvTemplate := expandReceiverFieldDefs(parsed, fset, *root, consts, slices)
+		expanded, fromTemplate := expandWrapperDefs(parsed, fset, *root, consts, slices, factories)
+		expandedRecv, fromRecvTemplate := expandReceiverFieldDefs(parsed, fset, *root, consts, slices, factories)
 		for _, d := range pkgDefs {
 			if fromTemplate[d.pos] || fromRecvTemplate[d.pos] {
 				continue
@@ -232,6 +227,72 @@ func callerIsPrometheus(x ast.Expr) bool {
 		}
 	}
 	return false
+}
+
+// factoryBinding is a package-level factory initializer. Keep its declaration
+// position so a same-named local variable cannot masquerade as the factory.
+type factoryBinding struct {
+	pos  token.Pos
+	expr ast.Expr
+}
+
+func collectFactoryBindings(parsed map[string]*ast.File) map[string]factoryBinding {
+	out := map[string]factoryBinding{}
+	for _, f := range parsed {
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						out[name.Name] = factoryBinding{name.Pos(), vs.Values[i]}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// factoryMechanism follows package factory aliases, including aliases declared
+// in another file. Cycles and unrelated constructors are not metric factories.
+func factoryMechanism(x ast.Expr, bindings map[string]factoryBinding) string {
+	seen := map[string]bool{}
+	for {
+		switch v := x.(type) {
+		case *ast.ParenExpr:
+			x = v.X
+		case *ast.Ident:
+			if binding, ok := bindings[v.Name]; ok {
+				if seen[v.Name] || (v.Obj != nil && v.Obj.Pos() != binding.pos) {
+					return ""
+				}
+				seen[v.Name] = true
+				x = binding.expr
+				continue
+			}
+			if v.Name == "promauto" {
+				return "promauto"
+			}
+			if v.Name == "prometheus" {
+				return "manual"
+			}
+			return ""
+		case *ast.CallExpr:
+			if callerIsPrometheus(v) {
+				return "promauto"
+			}
+			return ""
+		default:
+			return ""
+		}
+	}
 }
 
 // collectStringBindings records `const x = "..."` / `var x = "..."` (grouped
@@ -605,7 +666,7 @@ func collectDescRuntimeTypes(af *ast.File, out map[string]string) {
 // It returns the expanded definitions and the set of template constructor
 // positions to drop, so a template is never reported alongside its expansions.
 func expandWrapperDefs(parsed map[string]*ast.File, fset *token.FileSet, root string,
-	consts map[string]string, slices map[string][]string) ([]Def, map[token.Pos]bool) {
+	consts map[string]string, slices map[string][]string, factories map[string]factoryBinding) ([]Def, map[token.Pos]bool) {
 
 	type template struct {
 		call    *ast.CallExpr
@@ -646,18 +707,13 @@ func expandWrapperDefs(parsed map[string]*ast.File, fset *token.FileSet, root st
 					return true
 				}
 				typ, isCtor := ctorType[sel.Sel.Name]
-				if !isCtor || !callerIsPrometheus(sel.X) {
+				if !isCtor || factoryMechanism(sel.X, factories) == "" {
 					return true
 				}
 				if !nameIsParam(call, paramSet) {
 					return true
 				}
-				mech := "manual"
-				if base, ok := sel.X.(*ast.Ident); ok && base.Name == "promauto" {
-					mech = "promauto"
-				} else if _, isCall := sel.X.(*ast.CallExpr); isCall {
-					mech = "promauto"
-				}
+				mech := factoryMechanism(sel.X, factories)
 				templates = append(templates, template{
 					call: call, typ: typ, fn: sel.Sel.Name, mech: mech,
 					params: params, fnName: fd.Name.Name, callPos: call.Pos(),
@@ -827,7 +883,7 @@ func nameIsParam(call *ast.CallExpr, params map[string]bool) bool {
 // selector expression by its field name, so `Name: l.name` resolves once "name"
 // is bound. One hop, one package, literal fields only.
 func expandReceiverFieldDefs(parsed map[string]*ast.File, fset *token.FileSet, root string,
-	consts map[string]string, slices map[string][]string) ([]Def, map[token.Pos]bool) {
+	consts map[string]string, slices map[string][]string, factories map[string]factoryBinding) ([]Def, map[token.Pos]bool) {
 
 	type template struct {
 		call     *ast.CallExpr
@@ -867,18 +923,13 @@ func expandReceiverFieldDefs(parsed map[string]*ast.File, fset *token.FileSet, r
 					return true
 				}
 				typ, isCtor := ctorType[sel.Sel.Name]
-				if !isCtor || !callerIsPrometheus(sel.X) {
+				if !isCtor || factoryMechanism(sel.X, factories) == "" {
 					return true
 				}
 				if !nameIsRecvField(call, recvName) {
 					return true
 				}
-				mech := "manual"
-				if base, ok := sel.X.(*ast.Ident); ok && base.Name == "promauto" {
-					mech = "promauto"
-				} else if _, isCall := sel.X.(*ast.CallExpr); isCall {
-					mech = "promauto"
-				}
+				mech := factoryMechanism(sel.X, factories)
 				templates = append(templates, template{
 					call: call, typ: typ, fn: sel.Sel.Name, mech: mech,
 					recvType: recvType, callPos: call.Pos(),

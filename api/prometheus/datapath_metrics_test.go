@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -140,17 +141,31 @@ func TestMetricsFailClosedBeforeRegistration(t *testing.T) {
 
 func TestDatapathExpositionRecoversWithCapability(t *testing.T) {
 	saveMetricsRuntime(t)
-	PrometheusRegister(&peerMetricsHook{}, false)
-	if metricFamilies(t)["loxilb_proxy_active_connections"] {
-		t.Fatal("unavailable series emitted")
-	}
-	PrometheusRegister(&peerMetricsHook{}, true)
-	if !metricFamilies(t)["loxilb_proxy_active_connections"] {
-		t.Fatal("ready datapath series absent")
-	}
-	PrometheusRegister(&peerMetricsHook{}, false)
-	if metricFamilies(t)["loxilb_proxy_active_connections"] {
-		t.Fatal("stale datapath series emitted")
+	for _, available := range []bool{false, true, false} {
+		PrometheusRegister(&peerMetricsHook{}, available)
+		families, err := prom.DefaultGatherer.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seenNative, seenCapability := false, false
+		for _, family := range families {
+			switch family.GetName() {
+			case "loxilb_proxy_active_connections":
+				seenNative = true
+			case "loxilb_datapath_metrics_available":
+				seenCapability = true
+				want := float64(0)
+				if available {
+					want = 1
+				}
+				if got := family.GetMetric()[0].GetGauge().GetValue(); got != want {
+					t.Errorf("capability gauge = %v, want %v", got, want)
+				}
+			}
+		}
+		if !seenCapability || seenNative != available {
+			t.Fatalf("available=%v: native=%v capability=%v", available, seenNative, seenCapability)
+		}
 	}
 }
 
@@ -239,5 +254,75 @@ func TestMetricsStopAllowsReentrantHealthQueries(t *testing.T) {
 	}
 	if err := CheckInit(); err == nil || errors.Is(err, ErrMetricsStopping) {
 		t.Fatalf("joined generation is not off: %v", err)
+	}
+}
+
+// Canonical Tier 1.5 children are pre-created and gatherable when the owner
+// declares a datapath available; unavailable mode must hide the same families.
+func TestKvTier15MissCountersRegistered(t *testing.T) {
+	saveMetricsRuntime(t)
+	const missMetricName = "loxilb_pd_kv_tier15_miss_reason_total"
+	const fallthroughMetricName = "loxilb_pd_kv_tier15_fallthrough_total"
+
+	PrometheusRegister(&peerMetricsHook{}, false)
+	names := metricFamilies(t)
+	for _, name := range []string{missMetricName, fallthroughMetricName} {
+		if names[name] {
+			t.Errorf("unavailable native family emitted: %s", name)
+		}
+	}
+	PrometheusRegister(&peerMetricsHook{}, true)
+
+	mfs, err := prom.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("DefaultGatherer.Gather() returned error: %v", err)
+	}
+
+	seen := map[string]bool{}
+	reasonSeen := map[string]bool{}
+	for _, mf := range mfs {
+		name := mf.GetName()
+		if name == missMetricName || name == fallthroughMetricName {
+			seen[name] = true
+		}
+		if name == missMetricName {
+			for _, m := range mf.GetMetric() {
+				for _, lp := range m.GetLabel() {
+					if lp.GetName() == "reason" {
+						reasonSeen[lp.GetValue()] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Every canonical reason child must exist immediately after package init
+	// (pre-created so dashboards see the full series set before any
+	// increment). The last four are the contract-gate / typed-bridge
+	// classes — lockstep with pd_kv_t15_miss_* in sockproxy.h.
+	for _, reason := range []string{
+		"mode_off", "warmup", "text_empty", "model_empty", "tokenize",
+		"hashes", "no_worker", "excluded", "shallow",
+		"not_ready", "api_mode", "unsupported_feature", "runtime_fault",
+	} {
+		if !reasonSeen[reason] {
+			t.Errorf("miss-reason child %q not pre-created", reason)
+		}
+	}
+
+	if !seen[missMetricName] {
+		// Surface all registered metric names with the loxilb_pd_kv prefix
+		// to make diagnosis easier if registration ever regresses.
+		var kvMetricNames []string
+		for _, mf := range mfs {
+			if strings.HasPrefix(mf.GetName(), "loxilb_pd_kv") {
+				kvMetricNames = append(kvMetricNames, mf.GetName())
+			}
+		}
+		t.Errorf("metric %q not registered; loxilb_pd_kv_* metrics seen: %v",
+			missMetricName, kvMetricNames)
+	}
+	if !seen[fallthroughMetricName] {
+		t.Errorf("metric %q not registered", fallthroughMetricName)
 	}
 }
