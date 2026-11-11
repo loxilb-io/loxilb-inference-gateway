@@ -4,6 +4,7 @@
 package snapshot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -21,33 +22,36 @@ func EnableBGPIntentRecovery() {
 	bgpRecovery.mu.Unlock()
 }
 
-// BGPIntentOwnsSpeaker distinguishes YAML-only installations from an adopted
-// API/snapshot group. Do not load obsolete YAML peers into a replacement even
-// briefly: that would establish deleted adjacencies before reconciliation.
-func BGPIntentOwnsSpeaker(dir string) bool {
+// Retention is not adoption: auto-persist and old boot snapshots may retain
+// the supported projection of YAML without taking ownership of that speaker.
+func BGPIntentAdopted() bool {
 	bgpRecovery.mu.RLock()
-	d := bgpRecovery.intent
-	if bgpRecovery.pending != nil {
-		d = bgpRecovery.pending.doc
-	}
-	owned := d != nil
-	bgpRecovery.mu.RUnlock()
-	if owned {
+	defer bgpRecovery.mu.RUnlock()
+	return bgpRecovery.adopted
+}
+
+func AdoptBGPIntent() {
+	bgpRecovery.mu.Lock()
+	bgpRecovery.adopted = true
+	bgpRecovery.mu.Unlock()
+}
+
+func BGPIntentOwnsSpeaker(dir string, staticFile bool) bool {
+	if !staticFile || BGPIntentAdopted() {
 		return true
 	}
 	raw, err := LoadPersisted(dir)
 	if err != nil || raw == nil {
 		return false
 	}
-	d, err = stageParse(raw)
+	d, err := stageParse(raw)
 	if err != nil {
 		return false
 	}
 	if _, errs := stageValidate(d); len(errs) != 0 {
 		return false
 	}
-	return slices.Contains(d.IncludedDomains, DomainBGP) &&
-		(countDomain(DomainBGP, &d.Domains) != 0 || countDomain(DomainBGPPolicyAssignment, &d.Domains) != 0)
+	return d.BGPAPIAdopted && slices.Contains(d.IncludedDomains, DomainBGP)
 }
 
 func cloneBGPDocument(d *Document) *Document {
@@ -73,6 +77,7 @@ func RememberBGPIntent(d *Document) {
 	copy.Domains = Domains{BGP: copy.Domains.BGP, BGPPolicyAssignment: copy.Domains.BGPPolicyAssignment}
 	copy.IncludedDomains = append([]string(nil), bgpComponents...)
 	copy.RecoveryDependencies = nil
+	copy.BGPAPIAdopted = BGPIntentAdopted()
 	bgpRecovery.mu.Lock()
 	if !bgpRecovery.tracking {
 		bgpRecovery.mu.Unlock()
@@ -82,7 +87,7 @@ func RememberBGPIntent(d *Document) {
 	bgpRecovery.mu.Unlock()
 }
 
-func (e *Engine) rememberBGPSelection(d *Document, selected []DomainEntry) {
+func (e *Engine) rememberBGPSelection(d *Document, selected []DomainEntry, interactive bool) {
 	bgp, assignments := false, false
 	for _, entry := range selected {
 		bgp = bgp || entry.Name == DomainBGP
@@ -90,6 +95,9 @@ func (e *Engine) rememberBGPSelection(d *Document, selected []DomainEntry) {
 	}
 	if !bgp && !assignments {
 		return
+	}
+	if interactive || d.BGPAPIAdopted {
+		AdoptBGPIntent()
 	}
 	bgpRecovery.mu.RLock()
 	tracking := bgpRecovery.tracking
@@ -132,7 +140,7 @@ func (e *Engine) rememberBGPSelection(d *Document, selected []DomainEntry) {
 // success. In particular, it does not depend on a post-delete read of a daemon
 // which may already have died. Recovery and interactive replacement use the
 // same operation lock, so a queued retry cannot replay an earlier generation.
-// The REST write gate must already be held (lock order: config writes, op).
+// The REST write gate must already be held; see the lock order in bgp_pending.go.
 func ChangeBGPIntent(h Hooks, value any, add bool, apply func() (int, error)) (int, error) {
 	defer LockBGPRecovery()()
 	EnableBGPIntentRecovery()
@@ -145,7 +153,7 @@ func ChangeBGPIntent(h Hooks, value any, add bool, apply func() (int, error)) (i
 	}
 	if d == nil {
 		var err error
-		d, err = Capture(h, cmn.Version, "", TriggerManual, bgpComponents)
+		d, err = captureBGPGroup(h)
 		if err != nil {
 			return 0, err
 		}
@@ -155,6 +163,7 @@ func ChangeBGPIntent(h Hooks, value any, add bool, apply func() (int, error)) (i
 	}
 	n, err := apply()
 	if err == nil {
+		AdoptBGPIntent()
 		RememberBGPIntent(d)
 		// Preserve the acknowledgement first, then enrich it with GoBGP's
 		// effective representation (defaults, canonical prefix ranges, etc.).
@@ -170,6 +179,56 @@ func ChangeBGPIntent(h Hooks, value any, add bool, apply func() (int, error)) (i
 		}
 	}
 	return n, err
+}
+
+// captureBGPGroup uses a stable healthy live read, retaining the last complete
+// projection if the daemon fails or changes generation during capture.
+func captureBGPGroup(h Hooks) (*Document, error) {
+	if p := pendingBGPDocument(); p != nil {
+		return p, nil
+	}
+	bgpRecovery.mu.RLock()
+	fallback := cloneBGPDocument(bgpRecovery.intent)
+	bgpRecovery.mu.RUnlock()
+	health, hasHealth := h.(interface {
+		NetBGPRecoveryHealthy() bool
+		NetBGPRecoveryGeneration() uint64
+	})
+	var generation uint64
+	healthyAtStart := !hasHealth || health.NetBGPRecoveryHealthy()
+	if hasHealth {
+		generation = health.NetBGPRecoveryGeneration()
+		if fallback != nil && !health.NetBGPRecoveryHealthy() {
+			return fallback, nil
+		}
+	}
+	live := NewDocument(cmn.Version, "", TriggerManual)
+	live.IncludedDomains = append([]string(nil), bgpComponents...)
+	err := getBGP(h, live)
+	if err == nil {
+		err = getBGPPolicyAssignment(h, live)
+	}
+	if err == nil && fallback != nil && fallback.Domains.BGP.GlobalConfig != nil && live.Domains.BGP.GlobalConfig == nil {
+		err = fmt.Errorf("BGP speaker became unconfigured during capture")
+	}
+	if err == nil && hasHealth && fallback != nil && (!health.NetBGPRecoveryHealthy() || generation != health.NetBGPRecoveryGeneration()) {
+		err = fmt.Errorf("BGP speaker changed during capture")
+	}
+	if err != nil {
+		if fallback != nil {
+			return fallback, nil
+		}
+		return nil, err
+	}
+	if err = NormalizeDomains(&live.Domains); err != nil {
+		return nil, err
+	}
+	// A first capture during startup may be useful to its caller, but cannot
+	// seed recovery intent from a partial/unconfigured speaker.
+	if live.Domains.BGP.GlobalConfig != nil && (!hasHealth || (healthyAtStart && health.NetBGPRecoveryHealthy() && generation == health.NetBGPRecoveryGeneration())) {
+		RememberBGPIntent(live)
+	}
+	return live, nil
 }
 
 func canonicalBGPSetType(s string) string {
@@ -243,12 +302,23 @@ func editBGPIntent(d *Document, value any, add bool) error {
 	case *cmn.GoBGPPolicyApply:
 		copy := *v
 		copy.PolicyType = strings.ToLower(copy.PolicyType)
+		unique := make([]string, 0, len(copy.Polices))
+		for _, name := range copy.Polices {
+			if !slices.Contains(unique, name) {
+				unique = append(unique, name)
+			}
+		}
+		copy.Polices = unique
 		for i, existing := range d.Domains.BGPPolicyAssignment {
 			if existing.NeighIPAddress != copy.NeighIPAddress || existing.PolicyType != copy.PolicyType {
 				continue
 			}
 			if add {
-				existing.Polices = append(existing.Polices, copy.Polices...)
+				for _, name := range copy.Polices {
+					if !slices.Contains(existing.Polices, name) {
+						existing.Polices = append(existing.Polices, name)
+					}
+				}
 				if copy.RouteAction == "accept" || copy.RouteAction == "reject" {
 					existing.RouteAction = copy.RouteAction
 				}
@@ -277,8 +347,15 @@ func editBGPIntent(d *Document, value any, add bool) error {
 // mutex, BEFORE launching the replacement or waiting for its ASN. A pending
 // boot retry already owns its target; a completed group starts a fresh retry
 // from the latest acknowledged intent. Pointer identity invalidates stale work.
-func (e *Engine) RecoverBGPAfterRestart() (bool, error) {
+func (e *Engine) RecoverBGPAfterRestart(ctx context.Context, staticFile bool) (bool, error) {
 	defer LockBGPRecovery()()
+	if err := ctx.Err(); err != nil {
+		return true, err
+	}
+	if !BGPIntentOwnsSpeaker(e.PreRestoreDir, staticFile) {
+		e.skipPendingBGPForYAML()
+		return false, nil
+	}
 	bgpRecovery.mu.Lock()
 	pending := bgpRecovery.pending != nil
 	d := cloneBGPDocument(bgpRecovery.intent)
@@ -302,4 +379,18 @@ func (e *Engine) RecoverBGPAfterRestart() (bool, error) {
 	bgpRecovery.mu.Unlock()
 	start()
 	return true, nil
+}
+
+// ResultSelectsBGP reports successful selection, not whether boot happened to
+// have an active retry. Interactive recovery also clears prepare-error gates.
+func ResultSelectsBGP(r *Result) bool {
+	if r == nil || r.Result != ResultOK {
+		return false
+	}
+	for _, p := range r.Plan {
+		if isBGPDomain(p.Domain) {
+			return true
+		}
+	}
+	return false
 }

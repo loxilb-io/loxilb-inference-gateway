@@ -518,24 +518,13 @@ func (gbh *GoBgpH) goBgpSpawn(bgpPeerMode bool) {
 	begin := time.Now()
 	ctx := bgpOperationContext()
 	for ctx.Err() == nil {
+		staticFile := bgpStaticConfigFile()
 		cfgOpts := ""
-		confFile := fmt.Sprintf("%s%s.conf", "/etc/gobgp/gobgp", os.Getenv("HOSTNAME"))
-		if _, err := os.Stat(confFile); errors.Is(err, os.ErrNotExist) {
-			if _, err := os.Stat("/etc/gobgp/gobgp.conf"); errors.Is(err, os.ErrNotExist) {
-				if _, err := os.Stat("/etc/gobgp/gobgp_loxilb.yaml"); errors.Is(err, os.ErrNotExist) {
-					tk.LogIt(tk.LogError, "No BGP conf file found. Run without it\n")
-				} else {
-					cfgOpts = "-t yaml -f /etc/gobgp/gobgp_loxilb.yaml"
-				}
-			} else {
-				cfgOpts = "-f /etc/gobgp/gobgp.conf"
+		if staticFile != "" && !snapshot.BGPIntentOwnsSpeaker(opts.Opts.ConfigPath, true) {
+			cfgOpts = "-f " + staticFile
+			if strings.HasSuffix(staticFile, ".yaml") {
+				cfgOpts = "-t yaml " + cfgOpts
 			}
-		} else {
-			cfgOpts = "-f " + confFile
-		}
-
-		if snapshot.BGPIntentOwnsSpeaker(opts.Opts.ConfigPath) {
-			cfgOpts = ""
 		}
 		command := fmt.Sprintf("exec gobgpd %s --api-hosts=127.0.0.1:50052", cfgOpts)
 		tk.LogIt(tk.LogInfo, "BGP stage=daemon-start elapsed=%s ha_wait=independent\n", time.Since(begin))
@@ -554,7 +543,7 @@ func (gbh *GoBgpH) goBgpSpawn(bgpPeerMode bool) {
 				return
 			}
 			engine := snapshot.NewEngine(&NetAPIStruct{}, cmn.Version, os.Getenv("HOSTNAME"), opts.Opts.ConfigPath)
-			pending, recoverErr := engine.RecoverBGPAfterRestart()
+			pending, recoverErr := engine.RecoverBGPAfterRestart(ctx, bgpStaticConfigFile() != "")
 			if recoverErr != nil {
 				tk.LogIt(tk.LogError, "BGP stage=daemon-recovery error=%v\n", recoverErr)
 			} else if !pending {
@@ -2346,4 +2335,13 @@ func shutdownBGPDaemon(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func bgpStaticConfigFile() string {
+	for _, path := range []string{"/etc/gobgp/gobgp" + os.Getenv("HOSTNAME") + ".conf", "/etc/gobgp/gobgp.conf", "/etc/gobgp/gobgp_loxilb.yaml"} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			return path
+		}
+	}
+	return ""
 }

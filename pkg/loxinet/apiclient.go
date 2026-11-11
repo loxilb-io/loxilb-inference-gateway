@@ -25,6 +25,7 @@ import (
 
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -2424,3 +2425,21 @@ func liveBGPAdvertisements(rules []cmn.LbRuleMod) map[string]int {
 	}
 	return refs
 }
+
+// NetBGPRecoveryHealthy is the snapshot layer's boundary for live captures.
+func (na *NetAPIStruct) NetBGPRecoveryHealthy() bool {
+	if mh.bgp == nil {
+		return true
+	}
+	mh.bgp.mtx.RLock()
+	defer mh.bgp.mtx.RUnlock()
+	return mh.bgp.state == BGPConnected && !mh.bgp.daemonConfigPending.Load() && !snapshot.BGPPending()
+}
+func (na *NetAPIStruct) NetBGPRecoveryGeneration() uint64 {
+	if mh.bgp == nil {
+		return 0
+	}
+	return mh.bgp.session.Load()
+}
+
+func (na *NetAPIStruct) NetBGPStaticConfigPresent() bool { return bgpStaticConfigFile() != "" }

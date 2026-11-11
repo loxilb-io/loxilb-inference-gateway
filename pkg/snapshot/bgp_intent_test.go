@@ -17,6 +17,9 @@ import (
 func intentFixture(t *testing.T) (*mockHooks, *Document, *Engine) {
 	t.Helper()
 	h, d, e := pendingFixture(t)
+	bgpRecovery.mu.Lock()
+	bgpRecovery.adopted = false
+	bgpRecovery.mu.Unlock()
 	EnableBGPIntentRecovery()
 	SetBGPRecoveryContext(context.Background())
 	t.Cleanup(func() {
@@ -28,6 +31,7 @@ func intentFixture(t *testing.T) (*mockHooks, *Document, *Engine) {
 		bgpRecovery.mu.Lock()
 		bgpRecovery.intent = nil
 		bgpRecovery.tracking = false
+		bgpRecovery.adopted = false
 		bgpRecovery.parent = nil
 		bgpRecovery.mu.Unlock()
 		RecordBootRestoreState(BootRestoreState{})
@@ -43,7 +47,7 @@ func TestBGPCompletedIntentRepeatedDaemonRecovery(t *testing.T) {
 		// All real daemon state is gone. Recovery must use completed intent.
 		h.bgpNeighbors = nil
 		h.bgpGC = nil
-		ok, err := e.RecoverBGPAfterRestart()
+		ok, err := e.RecoverBGPAfterRestart(context.Background(), false)
 		if err != nil || !ok {
 			t.Fatalf("restart %d: %v %v", i, ok, err)
 		}
@@ -72,7 +76,7 @@ func TestBGPDeleteAcknowledgedBeforeSpeakerReadFailure(t *testing.T) {
 		t.Fatalf("stale deletion persisted: %+v %v", saved, err)
 	}
 	delete(h.failOn, "NetGoBGPGCGet")
-	ok, err := e.RecoverBGPAfterRestart()
+	ok, err := e.RecoverBGPAfterRestart(context.Background(), false)
 	if err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -129,7 +133,7 @@ func TestBGPMutationSerializesWithDaemonRecovery(t *testing.T) {
 	<-entered
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() { defer wg.Done(); _, _ = e.RecoverBGPAfterRestart() }()
+	go func() { defer wg.Done(); _, _ = e.RecoverBGPAfterRestart(context.Background(), false) }()
 	close(release)
 	<-done
 	wg.Wait()
@@ -190,20 +194,21 @@ func waitIntentRecovery(t *testing.T) {
 
 func TestBGPPersistedIntentSuppressesObsoleteYAML(t *testing.T) {
 	_, d, e := intentFixture(t)
-	if BGPIntentOwnsSpeaker(e.PreRestoreDir) {
+	if BGPIntentOwnsSpeaker(e.PreRestoreDir, true) {
 		t.Fatal("fresh speaker incorrectly owned by API")
 	}
+	d.BGPAPIAdopted = true
 	if _, _, _, err := Persist(d, e.PreRestoreDir); err != nil {
 		t.Fatal(err)
 	}
-	if !BGPIntentOwnsSpeaker(e.PreRestoreDir) {
+	if !BGPIntentOwnsSpeaker(e.PreRestoreDir, true) {
 		t.Fatal("durable BGP did not own replacement")
 	}
 	path := filepath.Join(e.PreRestoreDir, PersistFileName)
 	if err := os.WriteFile(path, []byte(`{"broken":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if BGPIntentOwnsSpeaker(e.PreRestoreDir) {
+	if BGPIntentOwnsSpeaker(e.PreRestoreDir, true) {
 		t.Fatal("corrupt snapshot took ownership")
 	}
 }
@@ -215,7 +220,7 @@ func TestBGPPartialReplacementPreservesUnselectedIntent(t *testing.T) {
 	replacement.Domains.BGP.GlobalConfig.LocalAs = 64513 // deliberately unselected
 	replacement.Domains.BGPPolicyAssignment = []cmn.GoBGPPolicyApply{{NeighIPAddress: "global", PolicyType: "export", Polices: []string{"new"}, RouteAction: "reject"}}
 	selected, _ := Select([]string{DomainBGPPolicyAssignment})
-	e.rememberBGPSelection(replacement, selected)
+	e.rememberBGPSelection(replacement, selected, true)
 	bgpRecovery.mu.RLock()
 	got := cloneBGPDocument(bgpRecovery.intent)
 	bgpRecovery.mu.RUnlock()
@@ -236,7 +241,7 @@ func TestBGPPendingCrashRetainsActiveTarget(t *testing.T) {
 	bgpRecovery.mu.RLock()
 	before := bgpRecovery.pending
 	bgpRecovery.mu.RUnlock()
-	if active, err := e.RecoverBGPAfterRestart(); err != nil || !active {
+	if active, err := e.RecoverBGPAfterRestart(context.Background(), false); err != nil || !active {
 		t.Fatal(active, err)
 	}
 	bgpRecovery.mu.RLock()

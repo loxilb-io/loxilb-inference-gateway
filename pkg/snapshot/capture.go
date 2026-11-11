@@ -43,11 +43,16 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 	// derived from included_domains, so a components-filtered capture must
 	// not claim (and a later restore must not wipe) domains it never read.
 	doc.IncludedDomains = entryNames(selected)
-	pending := pendingBGPDocument()
-	if pending == nil {
-		bgpRecovery.mu.RLock()
-		pending = cloneBGPDocument(bgpRecovery.intent)
-		bgpRecovery.mu.RUnlock()
+	doc.BGPAPIAdopted = BGPIntentAdopted()
+	var pending *Document
+	for _, entry := range selected {
+		if isBGPDomain(entry.Name) {
+			pending, err = captureBGPGroup(hooks)
+			if err != nil {
+				return nil, fmt.Errorf("capture BGP group: %w", err)
+			}
+			break
+		}
 	}
 	for _, entry := range selected {
 		if err := faultCaptureError(entry.Name); err != nil {

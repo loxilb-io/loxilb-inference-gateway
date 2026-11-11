@@ -3,7 +3,7 @@
 This document states exactly which configuration a loxilb-inference-gateway
 snapshot captures, which configuration it deliberately does not, and the
 rules that make snapshot documents verifiable and byte-stable. It describes
-snapshot schema **1.12**, the version current builds emit.
+snapshot schema **1.13**, the version current builds emit.
 
 The authoritative source for everything below is code, not prose:
 
@@ -193,6 +193,7 @@ forward on read.
 | 1.10 | a `loadbalancer` rule gains `ai_default_reservation` and `ai_default_max_tokens` |
 | 1.11 | `netidentity` domain; a `jwtauthprofile` gains `priority_class` and a `loadbalancer` rule `ai_objective_strict` (both absent when unset) |
 | 1.12 | `bgppolicyassignment` domain; a `loadbalancer` rule gains the priority-band knobs (`fc_wake_policy`, `fc_band_weights`, `fc_band_min_share_pct`, `fc_critical_reserve_pct`, `fc_band_wait_ms`, `fc_band_queue_pct`, `fc_shed_queue`, `fc_tenant_wake`, `fc_llmd_headers`), all absent when unset |
+| 1.13 | Optional `bgp_api_adopted` marker; absent means static YAML owns the BGP group, which is not applied from snapshots until explicit adoption |
 
 The resulting compatibility matrix, enforced by the version-gate and
 golden-document test suites (a golden document of every prior schema must

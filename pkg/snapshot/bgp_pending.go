@@ -22,6 +22,7 @@ var bgpRecovery struct {
 	parent   context.Context
 	intent   *Document
 	tracking bool
+	adopted  bool
 }
 
 type pendingBGP struct {
@@ -39,8 +40,9 @@ func isBGPDomain(name string) bool {
 }
 
 // LockBGPRecovery excludes the boot retry from an interactive transaction,
-// including its write-through. Lock order: REST snapshot gate, config writes,
-// recovery, then the subsystem locks. Crash retries never take the REST gates.
+// including its write-through. The single lock order for captures, REST writes
+// and replacement is snapshotGate -> configWrites -> recovery op -> subsystem
+// locks. Background retries start at recovery op and never take REST gates.
 func LockBGPRecovery() func() {
 	bgpRecovery.op.Lock()
 	return bgpRecovery.op.Unlock
@@ -124,9 +126,13 @@ func (e *Engine) BootDomainGroups(raw []byte) (independent, bgp []string, result
 	if _, errs := stageValidate(doc); len(errs) != 0 {
 		return nil, nil, result, fmt.Errorf("validate boot domains: %v", errs)
 	}
+	staticYAML := e.unadoptedStaticBGP(doc)
 	// Empty BGP domains on a non-BGP node need no deferred recovery.
 	needsBGP := countDomain(DomainBGP, &doc.Domains) != 0 || countDomain(DomainBGPPolicyAssignment, &doc.Domains) != 0
 	for _, name := range doc.IncludedDomains {
+		if staticYAML && isBGPDomain(name) {
+			continue
+		}
 		if needsBGP && isBGPDomain(name) {
 			bgp = append(bgp, name)
 		} else {
@@ -157,6 +163,13 @@ func (e *Engine) PreparePendingBGP(raw []byte, components []string) (func(), err
 	}
 	if _, errs := stageValidate(doc); len(errs) != 0 {
 		return nil, fmt.Errorf("validate pending BGP: %v", errs)
+	}
+	if e.unadoptedStaticBGP(doc) {
+		// BootDomainGroups excludes these domains. Keep direct callers safe too.
+		return func() {}, nil
+	}
+	if doc.BGPAPIAdopted {
+		AdoptBGPIntent()
 	}
 	doc.pendingBGPRaw, err = extractBGPRaw(raw)
 	if err != nil {
@@ -211,6 +224,11 @@ func (e *Engine) retryPendingBGP(ctx context.Context, p *pendingBGP) {
 		current := bgpRecovery.pending == p
 		bgpRecovery.mu.RUnlock()
 		if !current || ctx.Err() != nil {
+			bgpRecovery.op.Unlock()
+			return
+		}
+		if e.unadoptedStaticBGP(p.doc) {
+			e.skipPendingBGPForYAML()
 			bgpRecovery.op.Unlock()
 			return
 		}
@@ -288,5 +306,29 @@ func StopBGPRecovery(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// unadoptedStaticBGP is an ownership decision, independent of retained intent.
+// Marked boot documents restore adoption; interactive restores adopt on commit.
+func (e *Engine) unadoptedStaticBGP(doc *Document) bool {
+	static, ok := e.Hooks.(interface{ NetBGPStaticConfigPresent() bool })
+	return ok && static.NetBGPStaticConfigPresent() && !BGPIntentAdopted() && !doc.BGPAPIAdopted
+}
+
+// Called with recovery op held. Cancelling a skipped boot group must never
+// reach restore/rollback: YAML owns all BGP configuration in this process.
+func (e *Engine) skipPendingBGPForYAML() {
+	hadPending := BGPPending()
+	ResolvePendingBGP()
+	if notifier, ok := e.Hooks.(interface{ NetBGPRecoveryComplete() }); ok {
+		notifier.NetBGPRecoveryComplete()
+	}
+	if hadPending {
+		// A skipped BGP retry no longer degrades boot. With no pending group,
+		// preserve independent boot failures rather than declaring them recovered.
+		state := BootRestoreStateGet()
+		state.Degraded, state.Succeeded, state.Reasons = false, true, nil
+		RecordBootRestoreState(state)
 	}
 }

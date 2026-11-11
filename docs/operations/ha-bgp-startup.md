@@ -86,23 +86,75 @@ Recovery rebuilds VIP references from current LB rules.
 BGP API writes, interactive replacements and the retry are serialized. While
 the group is pending, ordinary BGP writes return 409; a full committed snapshot
 restore can replace that target. Cancelled workers cannot subsequently apply
-their old target. Persist/capture uses retained intent during an outage rather
-than recording an empty or partially configured speaker. Process/container
+their old target. Healthy persist/capture reads live operator configuration, including changes
+made with the GoBGP CLI, and refreshes retained intent. During pending recovery,
+a disconnected speaker, a failed read or a session change, it uses the last
+complete intent rather than recording an empty or partially configured speaker. Process/container
 restart survival continues to require a successful explicit, automatic or
 restore write-through persist to `snapshot.json`; disabling auto-persist retains
 the existing explicit-persist requirement. There is no second intent file.
 
-Static GoBGP files own YAML-only installations. The first successful BGP API
-mutation adopts the current snapshot-supported operator configuration, including
-existing static neighbors and policies. A persisted BGP snapshot also owns that group. Once
-adopted, replacement daemons start without the static file and replay the
-current API/snapshot intent. Consequently, a peer deleted through the API is
-not briefly recreated from old YAML during recovery or a persisted container
-restart. Change an adopted configuration through the API or snapshot restore;
-editing the old YAML does not override it. YAML settings outside the snapshot
-model (for example, additional peer timers or authentication attributes) are
-not retained by this adoption. Keep those deployments YAML-only unless their
-required settings are represented in the snapshot model. Generated gateway
-export policies remain speaker-owned.
+Without a static GoBGP file, API/snapshot intent owns the speaker. When a
+static file exists, YAML owns it until an explicit adoption: a successful BGP
+REST mutation, or a committed interactive restore/import selecting a BGP domain.
+An unrelated mutation, auto-persist, live capture and an unmarked boot snapshot
+do not adopt YAML. Before adoption, replacement daemons reload the static file.
+The snapshot BGP group is excluded entirely at boot and after daemon crashes,
+even when its supported fields differ from YAML. A pending unadopted boot BGP
+group is cancelled without apply, wipe or rollback; its recovery gates are
+released while the existing HA/boot barriers still apply. Capture and retention
+continue to observe healthy live state.
+
+When upgrading a mixed YAML+API installation with an unmarked snapshot, YAML
+owns the entire BGP group until an explicit BGP REST change or committed
+interactive BGP restore/import adopts it. Snapshot-only peers from that old
+snapshot are not overlaid onto YAML automatically. Returning an already
+adopted installation to YAML ownership is currently unsupported: no REST flow
+clears adoption, and hand-editing the checksummed snapshot marker is not a
+supported ownership transition.
+
+Adoption is recorded in the optional `bgp_api_adopted` field of `snapshot.json`
+(schema 1.13); an absent field means false. Later persists carry it forward.
+There is no second intent file. Once adopted, replacement daemons start without
+the static file and replay the current API/snapshot intent, including deletions.
+Editing old YAML no longer overrides that state. Adoption retains only fields
+represented in the snapshot model; additional neighbor timers, authentication,
+AFI/SAFI and other YAML-only settings are not preserved after adoption. Keep
+YAML ownership when those settings are required. Generated gateway export
+policies remain speaker-owned.
+
+A recovery preparation failure keeps advertisements blocked and logs its reason
+at error level. The supervisor retries preparation with a cancellable 2-to-30
+second backoff. `loxilb_bgp_daemon_config_pending` is 1 while this gate is closed,
+even before a pending snapshot group exists; readiness also reports it. A
+successful committed restore/import selecting BGP cancels obsolete preparation
+and completes this gate even when no pending group was created. The existing
+HA role and boot gates still apply.
+
+During initial speaker startup, BGP REST mutations wait for transport readiness
+with bounded backoff for up to 30 seconds before taking the recovery operation
+lock. An unconfigured but reachable speaker is ready for the first global POST.
+No GoBGP mutex is held while waiting. Once transport readiness has been reached
+in this process, later crash-window REST calls fail fast. Advertisement and
+withdrawal RPCs always fail fast; the explicit connection probe and recovery
+worker retain their own retry. A reachable but unresponsive daemon still has
+bounded RPC deadlines. Each session owns one cancellable watch stream.
+
+When explicitly adopting a static-file installation, live GoBGP peer
+configuration is inspected before the mutation/replacement. API-only
+installations skip this inspection and leave its WARN/gauge unchanged. Non-default timers, unsupported AFI/SAFI configuration,
+graceful restart and exposed authentication presence that the snapshot model
+cannot retain produce a WARN with peer IP and attribute names only. Secret
+values are never logged. Adoption is not blocked. The scalar
+`loxilb_bgp_adoption_dropped_attributes` counts detected peer/attribute categories
+at the last successful adoption in this process; -1 means inspection failed,
+0 means none detected. It resets on process restart, so 0 does not establish
+that an earlier adoption preserved all attributes. Inspection failure logs a
+fixed warning without raw peer/RPC payloads.
+
+Schema 1.13 snapshots are rejected by older binaries as a newer minor version.
+As with the 1.11 -> 1.12 boundary, additive fields do not permit an older build
+to silently drop unsupported state; retain a compatible pre-upgrade snapshot
+for a planned downgrade.
 
 See `cicd/bgp-recovery/README.md` for the independent peer and traffic regression.

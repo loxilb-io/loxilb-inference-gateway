@@ -33,6 +33,13 @@ Changing a running speaker's ASN, router ID or listen port requires snapshot
 replacement; ordinary BGP global POST rejects it. When live load balancers
 advertise BGP routes, core replacement also requires `loadbalancer` coverage.
 
+Schema 1.13 adds optional `bgp_api_adopted`. With a static GoBGP file and no
+adoption marker, the snapshot BGP group is skipped at boot and after daemon
+crashes. A successful BGP REST change or committed interactive BGP restore/import
+adopts the supported projection. As with the 1.12 newer-minor boundary, older
+binaries refuse 1.13 snapshots; keep a compatible pre-upgrade snapshot for a
+planned downgrade. See [BGP ownership](ha-bgp-startup.md#bgp-configuration-after-a-daemon-crash).
+
 A snapshot is not a complete system backup. Keep failed snapshots and original
 resources when investigating a failure. Teardown only scenario-owned objects.
 

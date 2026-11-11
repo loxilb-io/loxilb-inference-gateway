@@ -305,6 +305,18 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		return result, nil
 	}
 
+	// Static YAML owns the entire BGP group until explicit adoption. Exclude
+	// it before planning, applying or rollback, even if the snapshot differs.
+	if opts.Boot && e.unadoptedStaticBGP(doc) {
+		kept := selected[:0]
+		for _, entry := range selected {
+			if !isBGPDomain(entry.Name) {
+				kept = append(kept, entry)
+			}
+		}
+		selected = kept
+	}
+
 	// BGP teardown also removes neighbors/definitions referenced by bindings.
 	// A legacy or component-scoped document that never selected the binding
 	// domain must not destroy those live bindings as a side effect.
@@ -416,7 +428,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		// 7. COMMIT.
 		// Retain a successful BGP replacement before releasing the write
 		// freeze, including when its subsequent disk persist fails.
-		e.rememberBGPSelection(doc, selected)
+		e.rememberBGPSelection(doc, selected, !opts.Boot)
 		result.Result = ResultOK
 		recordRestoreSuccess(doc.Generation, doc.Checksum, opts.modeString())
 		return result, nil
