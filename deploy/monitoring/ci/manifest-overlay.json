@@ -1504,7 +1504,7 @@
    "loxilb_snapshot_quarantine_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "QuarantinePersisted", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 231, "writes": "snapshotQuarantineTotal" },
+     { "symbol": "QuarantinePersisted", "kind": "func", "file": "pkg/snapshot/persist.go", "def_line": 232, "writes": "snapshotQuarantineTotal" },
      { "symbol": "quarantineBootSnapshot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1976, "call_line": 1977, "calls": "QuarantinePersisted" },
      { "symbol": "applySnapshotBoot", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 1847, "call_line": 1855, "calls": "quarantineBootSnapshot", "note": "one of three quarantine sites: unreadable snapshot (:1805), restore-engine construction failure (:1826), and a restore that reported errors (:1854)" },
      { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2067, "call_line": 2124, "calls": "applySnapshotBoot" },
@@ -4531,14 +4531,14 @@
    },
    "loxilb_boot_bgp_pending": {
     "status": "verified-runtime",
-    "activation_precondition": "A validated boot snapshot with nonempty BGP intent. 1 while the BGP group is pending; 0 after complete recovery or full interactive replacement.",
+    "activation_precondition": "A validated boot BGP group or retained API/snapshot intent rearmed after a daemon restart. 1 while the BGP group is pending; 0 after complete recovery or full interactive replacement.",
     "writer_sources": [
      {
       "symbol": "PreparePendingBGP",
       "kind": "method",
       "receiver": "Engine",
       "file": "pkg/snapshot/bgp_pending.go",
-      "def_line": 148,
+      "def_line": 153,
       "writes": "bgpPendingGauge"
      },
      {

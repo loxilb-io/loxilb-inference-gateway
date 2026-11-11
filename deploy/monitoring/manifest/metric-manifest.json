@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-10T20:37:00+00:00",
-  "source_revision": "dac5bc40ae99ea8a200b7ba15f7df27e52a6fe23"
+  "generated_at": "2026-11-11T02:55:23+00:00",
+  "source_revision": "656def8c7f5978208a338f0d8ea1e7dc6b51ba86"
  },
  "contract": {
   "total": 356,
@@ -6830,14 +6830,14 @@
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
-   "activation_precondition": "A validated boot snapshot with nonempty BGP intent. 1 while the BGP group is pending; 0 after complete recovery or full interactive replacement.",
+   "activation_precondition": "A validated boot BGP group or retained API/snapshot intent rearmed after a daemon restart. 1 while the BGP group is pending; 0 after complete recovery or full interactive replacement.",
    "writer_sources": [
     {
      "symbol": "PreparePendingBGP",
      "kind": "method",
      "receiver": "Engine",
      "file": "pkg/snapshot/bgp_pending.go",
-     "def_line": 148,
+     "def_line": 153,
      "writes": "bgpPendingGauge"
     },
     {
@@ -18066,7 +18066,7 @@
      "symbol": "QuarantinePersisted",
      "kind": "func",
      "file": "pkg/snapshot/persist.go",
-     "def_line": 231,
+     "def_line": 232,
      "writes": "snapshotQuarantineTotal"
     },
     {
