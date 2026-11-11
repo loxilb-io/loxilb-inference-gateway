@@ -2385,6 +2385,10 @@ func (na *NetAPIStruct) NetBGPRecoveryComplete() {
 	if mh.bgp == nil {
 		return
 	}
+	if mh.bgp.pMode {
+		mh.bgp.daemonConfigPending.Store(false)
+		return
+	}
 	rules, err := mh.zr.Rules.GetLBRule()
 	if err != nil {
 		return
@@ -2399,6 +2403,7 @@ func (na *NetAPIStruct) NetBGPRecoveryComplete() {
 		mh.bgp.ciMap[cmn.CIDefault] = ci
 	}
 	ci.rules = liveBGPAdvertisements(rules)
+	mh.bgp.daemonConfigPending.Store(false)
 	mh.bgp.reAdvertise = true
 }
 

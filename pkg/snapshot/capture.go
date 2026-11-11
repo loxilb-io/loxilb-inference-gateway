@@ -44,6 +44,11 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 	// not claim (and a later restore must not wipe) domains it never read.
 	doc.IncludedDomains = entryNames(selected)
 	pending := pendingBGPDocument()
+	if pending == nil {
+		bgpRecovery.mu.RLock()
+		pending = cloneBGPDocument(bgpRecovery.intent)
+		bgpRecovery.mu.RUnlock()
+	}
 	for _, entry := range selected {
 		if err := faultCaptureError(entry.Name); err != nil {
 			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)

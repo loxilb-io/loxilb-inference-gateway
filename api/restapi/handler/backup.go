@@ -222,6 +222,12 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 	}
 	defer snapshotGate.Store(false)
 	defer beginRestoreFreeze()()
+	defer snapshot.LockBGPRecovery()()
+	// A daemon may fail after the middleware's pending check. Import does
+	// not replace a pending group; the full restore endpoint owns that flow.
+	if snapshot.BGPPending() {
+		return &ErrorResponse{Payload: &models.Error{Code: 409, Message: "Resource conflict", Result: "bgp_domain_pending: use a full POST /config/restore?mode=commit"}}
+	}
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	result, err := engine.Restore(raw, snapshot.RestoreOptions{Mode: snapshot.ModeCommit, Components: components})

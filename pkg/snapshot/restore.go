@@ -414,6 +414,9 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 
 	if len(applyErrs) == 0 {
 		// 7. COMMIT.
+		// Retain a successful BGP replacement before releasing the write
+		// freeze, including when its subsequent disk persist fails.
+		e.rememberBGPSelection(doc, selected)
 		result.Result = ResultOK
 		recordRestoreSuccess(doc.Generation, doc.Checksum, opts.modeString())
 		return result, nil

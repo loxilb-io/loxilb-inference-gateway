@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	cmn "github.com/loxilb-io/loxilb/common"
 	"sync"
 	"time"
 )
@@ -15,10 +16,12 @@ import (
 // snapshot is the sole durable intent; this cache is discarded at process exit.
 // There is no second intent file, persisted epoch, or independent lineage.
 var bgpRecovery struct {
-	op      sync.Mutex
-	mu      sync.RWMutex
-	pending *pendingBGP
-	parent  context.Context
+	op       sync.Mutex
+	mu       sync.RWMutex
+	pending  *pendingBGP
+	parent   context.Context
+	intent   *Document
+	tracking bool
 }
 
 type pendingBGP struct {
@@ -28,6 +31,7 @@ type pendingBGP struct {
 	cancel     context.CancelFunc
 	done       chan struct{}
 	begin      chan struct{}
+	replace    bool
 }
 
 func isBGPDomain(name string) bool {
@@ -35,7 +39,8 @@ func isBGPDomain(name string) bool {
 }
 
 // LockBGPRecovery excludes the boot retry from an interactive transaction,
-// including its write-through. Lock order: REST snapshot gate, recovery, config.
+// including its write-through. Lock order: REST snapshot gate, config writes,
+// recovery, then the subsystem locks. Crash retries never take the REST gates.
 func LockBGPRecovery() func() {
 	bgpRecovery.op.Lock()
 	return bgpRecovery.op.Unlock
@@ -209,7 +214,21 @@ func (e *Engine) retryPendingBGP(ctx context.Context, p *pendingBGP) {
 			bgpRecovery.op.Unlock()
 			return
 		}
-		result, err := e.Restore(p.raw, RestoreOptions{Boot: true, Components: p.components})
+		// A YAML-backed replacement may contain settings deleted through the
+		// API. Once API/snapshot intent owns the group, remove that static
+		// baseline before replay, rather than merely tolerating duplicates.
+		var result *Result
+		var err error
+		if p.replace {
+			var global cmn.GoBGPGlobalConfig
+			global, err = e.Hooks.NetGoBGPGCGet()
+			if err == nil && global.LocalAs != 0 {
+				_, err = Wipe(e.Hooks, p.components)
+			}
+		}
+		if err == nil {
+			result, err = e.Restore(p.raw, RestoreOptions{Boot: true, Components: p.components})
+		}
 		if ctx.Err() != nil {
 			bgpRecovery.op.Unlock()
 			return
@@ -223,6 +242,7 @@ func (e *Engine) retryPendingBGP(ctx context.Context, p *pendingBGP) {
 			state.Reasons = append(state.Reasons, result.Errors...)
 		}
 		if err == nil && result.Result == ResultOK {
+			RememberBGPIntent(p.doc)
 			if notifier, ok := e.Hooks.(interface{ NetBGPRecoveryComplete() }); ok {
 				notifier.NetBGPRecoveryComplete()
 			}

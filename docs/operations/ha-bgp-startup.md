@@ -70,3 +70,39 @@ snapshot BGP recovery, not HA election or complete CT transfer. Verify routes
 in an independent peer RIB and traffic at the backend when testing recovery.
 A RIB observation does not establish kernel FIB programming or interoperability
 with other BGP implementations.
+
+## BGP configuration after a daemon crash
+
+The gateway retains completed BGP intent, including global settings, neighbors,
+defined sets, policy definitions and operator policy assignments. A successful
+BGP API mutation updates this intent before returning, including deletions in
+the auto-persist quiet period. The supervisor schedules the existing BGP group
+coordinator before launching a replacement gobgpd; it does not wait for an
+unconfigured replacement to acquire an ASN by itself. The retry applies only
+the BGP group and verifies the daemon's actual configuration. New VIP
+advertisements wait for the complete group and the existing HA role barriers.
+Recovery rebuilds VIP references from current LB rules.
+
+BGP API writes, interactive replacements and the retry are serialized. While
+the group is pending, ordinary BGP writes return 409; a full committed snapshot
+restore can replace that target. Cancelled workers cannot subsequently apply
+their old target. Persist/capture uses retained intent during an outage rather
+than recording an empty or partially configured speaker. Process/container
+restart survival continues to require a successful explicit, automatic or
+restore write-through persist to `snapshot.json`; disabling auto-persist retains
+the existing explicit-persist requirement. There is no second intent file.
+
+Static GoBGP files own YAML-only installations. The first successful BGP API
+mutation adopts the current snapshot-supported operator configuration, including
+existing static neighbors and policies. A persisted BGP snapshot also owns that group. Once
+adopted, replacement daemons start without the static file and replay the
+current API/snapshot intent. Consequently, a peer deleted through the API is
+not briefly recreated from old YAML during recovery or a persisted container
+restart. Change an adopted configuration through the API or snapshot restore;
+editing the old YAML does not override it. YAML settings outside the snapshot
+model (for example, additional peer timers or authentication attributes) are
+not retained by this adoption. Keep those deployments YAML-only unless their
+required settings are represented in the snapshot model. Generated gateway
+export policies remain speaker-owned.
+
+See `cicd/bgp-recovery/README.md` for the independent peer and traffic regression.
