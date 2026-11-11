@@ -7,6 +7,7 @@ import (
 	cmn "github.com/loxilb-io/loxilb/common"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBGPOwnershipMatrix(t *testing.T) {
@@ -150,6 +151,7 @@ type staticBGPReviewHook struct {
 func (h *staticBGPReviewHook) NetBGPStaticConfigPresent() bool { return h.static }
 func (h *staticBGPReviewHook) NetBGPRecoveryComplete() {
 	h.completed = true
+	SetBGPDaemonConfigPending(false)
 }
 func TestBGPUnadoptedDifferingYAMLBootSkipsEntireGroup(t *testing.T) {
 	h, d, e := intentFixture(t)
@@ -190,8 +192,9 @@ func TestBGPUnadoptedPendingCrashCancelsOverlayAndReleasesGate(t *testing.T) {
 	live := &staticBGPReviewHook{mockHooks: h, static: true}
 	e.Hooks = live
 	holdPendingForTest(t, d)
+	SetBGPDaemonConfigPending(true)
 	active, err := e.RecoverBGPAfterRestart(context.Background(), true)
-	if err != nil || active || BGPPending() || !live.completed || len(h.Calls) != 0 {
+	if err != nil || active || BGPPending() || BGPDaemonConfigPending() || !live.completed || len(h.Calls) != 0 {
 		t.Fatalf("pending YAML overlay survived: %t %v %v", active, err, h.Calls)
 	}
 }
@@ -208,6 +211,32 @@ func TestBGPUnhealthyFirstCaptureDoesNotRetainPartialIntent(t *testing.T) {
 	bgpRecovery.mu.RUnlock()
 	if retained != nil {
 		t.Fatal("unhealthy first read seeded recovery")
+	}
+}
+
+type waitingIntentHook struct {
+	*mockHooks
+	checked bool
+}
+
+func (h *waitingIntentHook) NetBGPWaitForStartup() error {
+	acquired := make(chan struct{})
+	go func() { unlock := LockBGPRecovery(); unlock(); close(acquired) }()
+	select {
+	case <-acquired:
+		h.checked = true
+		return nil
+	case <-time.After(time.Second):
+		return errors.New("startup wait held recovery op")
+	}
+}
+func TestBGPStartupWaitPrecedesIntentOperationLock(t *testing.T) {
+	h, d, _ := intentFixture(t)
+	h.bgpGC = d.Domains.BGP.GlobalConfig
+	startup := &waitingIntentHook{mockHooks: h}
+	_, err := ChangeBGPIntent(startup, d.Domains.BGP.GlobalConfig, true, func() (int, error) { return 0, nil })
+	if err != nil || !startup.checked {
+		t.Fatal("wait/op order", err)
 	}
 }
 

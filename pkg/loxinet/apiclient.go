@@ -2386,8 +2386,9 @@ func (na *NetAPIStruct) NetBGPRecoveryComplete() {
 	if mh.bgp == nil {
 		return
 	}
+	mh.bgp.cancelDaemonRecovery()
 	if mh.bgp.pMode {
-		mh.bgp.daemonConfigPending.Store(false)
+		mh.bgp.setDaemonConfigPending(false)
 		return
 	}
 	rules, err := mh.zr.Rules.GetLBRule()
@@ -2404,7 +2405,7 @@ func (na *NetAPIStruct) NetBGPRecoveryComplete() {
 		mh.bgp.ciMap[cmn.CIDefault] = ci
 	}
 	ci.rules = liveBGPAdvertisements(rules)
-	mh.bgp.daemonConfigPending.Store(false)
+	mh.bgp.setDaemonConfigPending(false)
 	mh.bgp.reAdvertise = true
 }
 
@@ -2443,3 +2444,9 @@ func (na *NetAPIStruct) NetBGPRecoveryGeneration() uint64 {
 }
 
 func (na *NetAPIStruct) NetBGPStaticConfigPresent() bool { return bgpStaticConfigFile() != "" }
+func (na *NetAPIStruct) NetBGPWaitForStartup() error {
+	if mh.bgp == nil {
+		return nil
+	}
+	return mh.bgp.waitForStartup(bgpOperationContext(), time.Now, waitBGPStartupDelay)
+}

@@ -142,6 +142,13 @@ func (e *Engine) rememberBGPSelection(d *Document, selected []DomainEntry, inter
 // same operation lock, so a queued retry cannot replay an earlier generation.
 // The REST write gate must already be held; see the lock order in bgp_pending.go.
 func ChangeBGPIntent(h Hooks, value any, add bool, apply func() (int, error)) (int, error) {
+	// Startup waiting belongs before the recovery op lock. After the first
+	// transport readiness in this process, the hook is a no-op, including crashes.
+	if startup, ok := h.(interface{ NetBGPWaitForStartup() error }); ok {
+		if err := startup.NetBGPWaitForStartup(); err != nil {
+			return 0, err
+		}
+	}
 	defer LockBGPRecovery()()
 	EnableBGPIntentRecovery()
 	bgpRecovery.mu.RLock()

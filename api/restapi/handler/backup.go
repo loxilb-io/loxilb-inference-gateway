@@ -242,6 +242,11 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 	// §6 write-through, same as POST /config/restore: an explicit
 	// persisted marker, never a bare "ok" over a failed persist.
 	if result.Result == snapshot.ResultOK {
+		if snapshot.ResultSelectsBGP(result) {
+			if notifier, ok := any(ApiHooks).(interface{ NetBGPRecoveryComplete() }); ok {
+				notifier.NetBGPRecoveryComplete()
+			}
+		}
 		persisted := false
 		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "config/import: write-through persist failed after commit: %v\n", werr)

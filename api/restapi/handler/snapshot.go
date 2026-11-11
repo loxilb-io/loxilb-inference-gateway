@@ -335,7 +335,6 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 		return &ErrorResponse{Payload: &models.Error{Code: 409, Message: "Resource conflict",
 			Result: "bgp_domain_pending: only a full interactive snapshot restore may replace pending BGP"}}
 	}
-	wasBGPPending := snapshot.BGPPending()
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	restoreOpts := snapshot.RestoreOptions{
@@ -389,7 +388,7 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 		// The recovery lock prevents a late boot retry from overwriting this
 		// transaction. Clear old intent before its new live-state capture.
 		snapshot.ResolvePendingBGP()
-		if wasBGPPending {
+		if snapshot.ResultSelectsBGP(result) {
 			if notifier, ok := any(ApiHooks).(interface{ NetBGPRecoveryComplete() }); ok {
 				notifier.NetBGPRecoveryComplete()
 			}

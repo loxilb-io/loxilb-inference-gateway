@@ -17,6 +17,7 @@ package snapshot
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,7 +28,9 @@ import (
 // default registry, served by GET /metrics (promhttp).
 
 var (
-	bgpPendingGauge = promauto.NewGauge(prometheus.GaugeOpts{
+	bgpDaemonPending       atomic.Bool
+	bgpDaemonConfigPending = promauto.NewGauge(prometheus.GaugeOpts{Name: "loxilb_bgp_daemon_config_pending", Help: "1 while daemon configuration recovery blocks advertisements, including recovery preparation errors."})
+	bgpPendingGauge        = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "loxilb_boot_bgp_pending",
 		Help: "1 while the boot snapshot BGP group remains pending; independent domains may already serve traffic. 0 after recovery or full interactive replacement.",
 	})
@@ -209,3 +212,16 @@ func observeRestore(mode string, result *Result, err error, elapsed time.Duratio
 // boot loader (api/loxinlp) when both snapshot.json and legacy *.txt
 // configuration files exist and newest-wins arbitration ran.
 func BootConfigConflictInc() { bootConfigConflict.Inc() }
+
+// SetBGPDaemonConfigPending exposes the fail-closed daemon gate, including
+// preparation errors before a BGP retry worker has been created.
+func SetBGPDaemonConfigPending(pending bool) {
+	bgpDaemonPending.Store(pending)
+	if pending {
+		bgpDaemonConfigPending.Set(1)
+	} else {
+		bgpDaemonConfigPending.Set(0)
+	}
+}
+
+func BGPDaemonConfigPending() bool { return bgpDaemonPending.Load() }
