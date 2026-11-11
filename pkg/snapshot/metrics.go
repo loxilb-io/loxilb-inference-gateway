@@ -27,6 +27,13 @@ import (
 // §7 observability: these join the existing loxilb_ namespace on the
 // default registry, served by GET /metrics (promhttp).
 
+// Number of peer/attribute categories dropped by the most recent successful
+// adoption in this process. -1 means inspection failed, 0 means none detected.
+var bgpAdoptionDroppedAttributes = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "loxilb_bgp_adoption_dropped_attributes",
+	Help: "Non-default peer attribute categories outside the snapshot model at last adoption; -1 if inspection failed.",
+})
+
 var (
 	bgpDaemonPending       atomic.Bool
 	bgpDaemonConfigPending = promauto.NewGauge(prometheus.GaugeOpts{Name: "loxilb_bgp_daemon_config_pending", Help: "1 while daemon configuration recovery blocks advertisements, including recovery preparation errors."})

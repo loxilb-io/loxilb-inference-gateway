@@ -382,6 +382,18 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		return result, nil
 	}
 
+	// Inspect before an interactive replacement wipes live YAML attributes.
+	// Emit only after a successful commit; dry-run/boot never adopts here.
+	var adoption bgpAdoptionCheck
+	if !opts.Boot {
+		for _, entry := range selected {
+			if isBGPDomain(entry.Name) {
+				adoption = checkBGPAdoption(e.Hooks)
+				break
+			}
+		}
+	}
+
 	// 4. PRESERVE -- capture + persist live config before touching
 	// anything, UNLESS this is the Boot variant (§6.2: datapath is empty at
 	// boot, nothing to preserve).
@@ -428,6 +440,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		// 7. COMMIT.
 		// Retain a successful BGP replacement before releasing the write
 		// freeze, including when its subsequent disk persist fails.
+		adoption.record()
 		e.rememberBGPSelection(doc, selected, !opts.Boot)
 		result.Result = ResultOK
 		recordRestoreSuccess(doc.Generation, doc.Checksum, opts.modeString())

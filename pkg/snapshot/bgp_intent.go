@@ -168,8 +168,10 @@ func ChangeBGPIntent(h Hooks, value any, add bool, apply func() (int, error)) (i
 	if err := editBGPIntent(d, value, add); err != nil {
 		return 0, err
 	}
+	adoption := checkBGPAdoption(h)
 	n, err := apply()
 	if err == nil {
+		adoption.record()
 		AdoptBGPIntent()
 		RememberBGPIntent(d)
 		// Preserve the acknowledgement first, then enrich it with GoBGP's
