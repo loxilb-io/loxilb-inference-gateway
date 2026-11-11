@@ -34,6 +34,17 @@ Endpoints:
   GET  /__waiting/<n>         report <n> requests waiting from now on (every port)
   GET  /__metrics/off|on      stop answering /metrics (503) or answer again,
                               so the gateway's view of the engine goes stale
+  GET  /admin/answer-429-object
+                              the NEXT inference request (any port) is answered
+                              429 the way an OpenAI-compatible engine refuses:
+                              an {"error": {...}} object body and a Retry-After
+                              of its own (7). One request, then back to normal
+  GET  /admin/echo-spoof-headers
+                              the NEXT inference answer (any port) carries
+                              X-Loxilb-Refusal-Stage: capacity and
+                              X-Loxilb-Admission-Inflight: 999 of the backend's
+                              own: the gateway's families, which a backend may
+                              not hand a client. One answer, then back to normal
 
 Request headers that shape the answer:
   X-Test-Nonce: <n>       counted as a receipt and tracked for its peak
@@ -100,6 +111,14 @@ RELEASE_ALL = 0      # generation: bumped by /__release_all
 COND = threading.Condition(LOCK)
 WAITING = 0          # vllm:num_requests_waiting reported by /metrics
 METRICS_ON = True    # /metrics answers; off: 503, the scrape fails
+ARM_429_OBJECT = False   # /admin/answer-429-object: the next inference request
+ARM_SPOOF_HEADERS = False  # /admin/echo-spoof-headers: the next inference answer
+
+# What an OpenAI-compatible engine answers when it refuses on its own.
+BACKEND_429_BODY = {"error": {"message": "the engine is overloaded",
+                              "type": "rate_limit_error",
+                              "code": "rate_limit_exceeded"}}
+BACKEND_429_RETRY_AFTER = "7"
 
 
 class Server(ThreadingMixIn, HTTPServer):
@@ -126,11 +145,13 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             return {}
 
-    def _send_json(self, obj, status=200):
+    def _send_json(self, obj, status=200, extra=()):
         payload = json.dumps(obj).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
+        for k, v in extra:
+            self.send_header(k, v)
         self._spoof_header()
         self.end_headers()
         self.wfile.write(payload)
@@ -138,6 +159,8 @@ class Handler(BaseHTTPRequestHandler):
     def _spoof_header(self):
         if getattr(self, "spoof", False):
             self.send_header("X-Loxilb-Admission-Inflight", "999")
+        if getattr(self, "spoof_stage", False):
+            self.send_header("X-Loxilb-Refusal-Stage", "capacity")
 
     def _enter(self, nonce, body=None):
         global INFLIGHT
@@ -199,7 +222,8 @@ class Handler(BaseHTTPRequestHandler):
     # ── routes ─────────────────────────────────────────────────────────────
     def do_GET(self):
         self.spoof = False
-        global WAITING, METRICS_ON
+        self.spoof_stage = False
+        global WAITING, METRICS_ON, ARM_429_OBJECT, ARM_SPOOF_HEADERS
         path = urlparse(self.path).path
         nonce = self.headers.get("X-Test-Nonce", "")
         if path == "/health":
@@ -229,6 +253,16 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 METRICS_ON = path.endswith("/on")
             self._send_json({"metrics": METRICS_ON})
+            return
+        if path == "/admin/answer-429-object":
+            with LOCK:
+                ARM_429_OBJECT = True
+            self._send_json({"armed": "answer-429-object"})
+            return
+        if path == "/admin/echo-spoof-headers":
+            with LOCK:
+                ARM_SPOOF_HEADERS = True
+            self._send_json({"armed": "echo-spoof-headers"})
             return
         if path == "/v1/models":
             # A non-inference request: counted like any other arrival so a
@@ -301,6 +335,15 @@ class Handler(BaseHTTPRequestHandler):
         forever = self.headers.get("X-Test-Forever", "") == "1"
         self.spoof = self.headers.get("X-Test-Spoof-Admission", "") == "1"
         engine = self.headers.get("X-Test-Engine", "")
+        # The two admin arms are taken by the next inference request, whichever
+        # port it arrives on, and by that one only.
+        global ARM_429_OBJECT, ARM_SPOOF_HEADERS
+        with LOCK:
+            answer_429, ARM_429_OBJECT = ARM_429_OBJECT, False
+            spoof_next, ARM_SPOOF_HEADERS = ARM_SPOOF_HEADERS, False
+        self.spoof_stage = spoof_next
+        if spoof_next:
+            self.spoof = True
 
         body = self._body()          # read before anything else: a held
         self._enter(nonce, body)     # request has fully arrived
@@ -326,6 +369,10 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(delay_ms / 1000.0)
             if reset:
                 self._reset()
+                return
+            if answer_429:
+                self._send_json(BACKEND_429_BODY, 429,
+                                extra=(("Retry-After", BACKEND_429_RETRY_AFTER),))
                 return
             if fail:
                 self._send_json({"error": {"message": "injected", "type": "test"}}, fail)

@@ -10,7 +10,10 @@
       ONE keep-alive connection: a full request, then a wait until <file>
       exists (the caller fills the pool meanwhile), then a SECOND request on
       the SAME socket. Reports both statuses and the second's headers, so
-      the caller can see whether the kept backend leg was re-gated.
+      the caller can see whether the kept backend leg was re-gated. With
+      --second-no-rid the second request carries no X-Request-Id of its own:
+      whatever ID its answer names is then the gateway's, and must not be the
+      first request's.
 
   shed_keepalive <host> <port> --signal <file> [--nonce-prefix P] [--timeout S]
       ONE connection whose FIRST request is sent against a full pool: the
@@ -30,7 +33,15 @@ import sys
 import time
 
 
-def request(host, nonce, model, hold=False, rid=None):
+# What a caller reads of an answer's head: the admission family, the refusal
+# mark (the stage and the request ID the gateway echoes) and Retry-After.
+def gw_headers(h):
+    return {k: v for k, v in h.items()
+            if k.startswith("x-loxilb-admission-") or k.startswith("x-loxilb-refusal-")
+            or k in ("retry-after", "x-request-id")}
+
+
+def request(host, nonce, model, hold=False, rid=None, send_rid=True):
     # The rules match on the VIP as the host, so the header names it the way
     # curl does (host:port).
     body = json.dumps({"model": model,
@@ -39,8 +50,9 @@ def request(host, nonce, model, hold=False, rid=None):
            "Host: %s\r\n"
            "Content-Type: application/json\r\n"
            "Content-Length: %d\r\n"
-           "X-Test-Nonce: %s\r\n"
-           "X-Request-Id: %s\r\n" % (host, len(body), nonce, rid or nonce))
+           "X-Test-Nonce: %s\r\n" % (host, len(body), nonce))
+    if send_rid:
+        hdr += "X-Request-Id: %s\r\n" % (rid or nonce)
     if hold:
         hdr += "X-Test-Hold: 1\r\n"
     return hdr.encode() + b"\r\n" + body
@@ -121,11 +133,10 @@ def mode_kept(args):
             return 1
         time.sleep(0.2)
     n2 = args.nonce_prefix + "-second"
-    s.sendall(request(host, n2, args.model))
+    s.sendall(request(host, n2, args.model, send_rid=not args.second_no_rid))
     st2, h2, b2, closed2 = read_response(s, 30)
     print(json.dumps({"nonce": n2, "status": st2, "closed": closed2,
-                      "headers": {k: v for k, v in h2.items()
-                                  if k.startswith("x-loxilb-admission-") or k == "retry-after"},
+                      "headers": gw_headers(h2),
                       "body": b2.decode("utf8", "replace")[:200]}), flush=True)
     print(json.dumps({"summary": "kept", "first": st1, "second": st2, "reused": True}),
           flush=True)
@@ -140,8 +151,7 @@ def mode_shed_keepalive(args):
     st1, h1, b1, closed1 = read_response(s, 30)
     print(json.dumps({"nonce": n1, "status": st1, "closed": closed1,
                       "connection": h1.get("connection", ""),
-                      "headers": {k: v for k, v in h1.items()
-                                  if k.startswith("x-loxilb-admission-") or k == "retry-after"}}),
+                      "headers": gw_headers(h1)}),
           flush=True)
     if closed1:
         print(json.dumps({"summary": "shed_keepalive", "first": st1, "first_closed": True,
@@ -174,6 +184,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=60.0)
     ap.add_argument("--nonce-prefix", default="h1c")
     ap.add_argument("--model", default="cap-model")
+    ap.add_argument("--second-no-rid", action="store_true")
     args = ap.parse_args()
     if args.mode == "disconnect":
         return mode_disconnect(args)

@@ -84,6 +84,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_backend_failure_audit
 
+      - name: "test_refusal_mark (X-Loxilb-Refusal-Stage and X-Request-Id on a gateway-written answer, whole or absent; a backend's X-Loxilb-Refusal-* removed from a relayed head; source invariants)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_refmark
+
+      - name: "test_h2_resp_mark (a backend's X-Loxilb-Refusal-* removed from every HTTP/2 response head, on the real relay)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_h2rmark
+
+      - name: "test_h2_deny_leak (gateway-written HTTP/2 answers and the X-Loxilb-Refusal-* strip hold nothing per stream: 33000 streams on one connection, past stream ID 65535, LeakSanitizer and the live heap)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_h2dleak
+
       - name: "OpenAI JSON regression oracle and fixture identities"
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s cicd/ai-json-parser -p 'test_*.py'

@@ -114,7 +114,9 @@ def main():
                     value = value.decode() if isinstance(value, bytes) else value
                     if name == ":status":
                         st["status"] = value
-                    elif name.startswith("x-loxilb-admission-") or name == "retry-after":
+                    elif (name.startswith("x-loxilb-admission-") or
+                          name.startswith("x-loxilb-refusal-") or
+                          name in ("retry-after", "x-request-id")):
                         st["headers"][name] = value
             elif isinstance(event, h2.events.DataReceived) and st is not None:
                 st["body"] += event.data
