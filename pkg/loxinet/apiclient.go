@@ -1607,8 +1607,7 @@ func (na *NetAPIStruct) NetOauthDeleteToken(token string) error {
 }
 
 func (na *NetAPIStruct) NetPrometheusEnable() error {
-	mh.PrometheusInit()
-	return nil
+	return mh.PrometheusInit()
 }
 
 // ============================================================================

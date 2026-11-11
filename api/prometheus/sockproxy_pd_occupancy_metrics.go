@@ -94,5 +94,5 @@ func (pdOccupancyCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(pdOccupancyCollector{})
+	datapathRegisterer{}.MustRegister(pdOccupancyCollector{})
 }

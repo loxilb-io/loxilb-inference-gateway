@@ -16,6 +16,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"sync/atomic"
 
@@ -29,6 +30,11 @@ import (
 	tk "github.com/loxilb-io/loxilib"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// Indirection keeps lifecycle-state handler regressions independent of native
+// initialization and arbitrary blocked collectors.
+var metricsCheckInit = prometheus.CheckInit
+var metricsTurnOff = prometheus.PrometheusTurnOff
 
 // promHandler is constructed once: promhttp.Handler() instruments itself on
 // every call, so building it per scrape would leak allocations
@@ -94,7 +100,9 @@ func ConfigGetPrometheusOption(params operations.GetConfigMetricsParams, princip
 func ConfigPostPrometheus(params operations.PostConfigMetricsParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogDebug, "[API] Prometheus %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 	// Prometheus Init status check
-	if err := prometheus.CheckInit(); err == nil {
+	if err := metricsCheckInit(); errors.Is(err, prometheus.ErrMetricsStopping) {
+		return errorResponseWithCode(http.StatusServiceUnavailable, err.Error())
+	} else if err == nil {
 		return &ResultResponse{Result: "Prometheus is already enabled."}
 	}
 
@@ -102,6 +110,9 @@ func ConfigPostPrometheus(params operations.PostConfigMetricsParams, principal i
 	err := ApiHooks.NetPrometheusEnable()
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "[API] Error occur : %v\n", err)
+		if errors.Is(err, prometheus.ErrMetricsStopping) {
+			return errorResponseWithCode(http.StatusServiceUnavailable, err.Error())
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 	// Prometheus Option state change
@@ -112,16 +123,19 @@ func ConfigPostPrometheus(params operations.PostConfigMetricsParams, principal i
 func ConfigDeletePrometheus(params operations.DeleteConfigMetricsParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "[API] Prometheus %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 	// Prometheus Init status check
-	if err := prometheus.CheckInit(); err != nil {
+	if err := metricsCheckInit(); err != nil && !errors.Is(err, prometheus.ErrMetricsStopping) {
 		return &ResultResponse{Result: "Prometheus is already disabled."}
 	}
 	// Prometheus off
-	err := prometheus.PrometheusTurnOff()
+	// Export is off even if an in-flight collector outlives the stop deadline.
+	prometheus.OptionStateChange(false)
+	err := metricsTurnOff()
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "[API] Error occur : %v\n", err)
+		if errors.Is(err, prometheus.ErrMetricsStopping) {
+			return errorResponseWithCode(http.StatusServiceUnavailable, err.Error())
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
-	// Prometheus Option state change
-	prometheus.OptionStateChange(false)
 	return &ResultResponse{Result: "Success"}
 }

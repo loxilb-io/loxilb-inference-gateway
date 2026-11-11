@@ -218,5 +218,5 @@ func (kvExactCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(kvExactCollector{})
+	datapathRegisterer{}.MustRegister(kvExactCollector{})
 }

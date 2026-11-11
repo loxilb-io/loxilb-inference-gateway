@@ -183,7 +183,7 @@ func (qosShaperCollector) Collect(ch chan<- prometheus.Metric) {
 // init registers the shaper collector once with the default registry (the same
 // registry the promauto metrics use).
 func init() {
-	prometheus.MustRegister(qosShaperCollector{})
+	datapathRegisterer{}.MustRegister(qosShaperCollector{})
 }
 
 // qosVipString renders a proxy_ent xip (network byte order: least significant

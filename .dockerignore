@@ -1,5 +1,6 @@
 .git
 **/.git
+.review
 
 # Build artifacts must never enter the image build context.
 #

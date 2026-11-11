@@ -213,106 +213,108 @@ var (
 	PrometheusPartialPeriod = (PrometheusDefaultPeriod / 6)
 	prometheusCtx           context.Context
 	prometheusCancel        context.CancelFunc
+	prometheusDone          <-chan struct{}
+	prometheusGeneration    uint64
 	initMutex               sync.Mutex // Guards Init/PrometheusTurnOff lifecycle state (prometheusCtx/prometheusCancel)
 	MaxPoolStatsServiceSize = 16       // Maximum size of the conntrack info slice pool
 
-	activeConntrackCount = promauto.NewGauge(
+	activeConntrackCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricActiveConntrackCount,
 			Help: "Number of active established connections from clients to targets.",
 		},
 	)
-	activeFlowCountTcp = promauto.NewGauge(
+	activeFlowCountTcp = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricActiveFlowCountTCP,
 			Help: "Number of concurrent TCP flows (or connections) from clients to targets.",
 		},
 	)
-	activeFlowCountUdp = promauto.NewGauge(
+	activeFlowCountUdp = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricActiveFlowCountUDP,
 			Help: "Number of concurrent UDP flows (or connections) from clients to targets.",
 		},
 	)
-	activeFlowCountSctp = promauto.NewGauge(
+	activeFlowCountSctp = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricActiveFlowCountSCTP,
 			Help: "Number of concurrent SCTP flows (or connections) from clients to targets.",
 		},
 	)
-	healthyHostCount = promauto.NewGauge(
+	healthyHostCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricHealthyEndpointsCount,
 			Help: "Distinct endpoint hosts known to the health prober (deduplicated across LB rules) in state ok. Hosts without an activated probe report ok unless forced down.",
 		},
 	)
-	unHealthyHostCount = promauto.NewGauge(
+	unHealthyHostCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricUnhealthyEndpointsCount,
 			Help: "Distinct endpoint hosts known to the health prober (deduplicated across LB rules) in any state other than ok (probe-inactive or forced down).",
 		},
 	)
-	ruleCount = promauto.NewGauge(
+	ruleCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricLBRuleCount,
 			Help: "Total number of load balancing rules.",
 		},
 	)
-	keyedServiceCount = promauto.NewGauge(
+	keyedServiceCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_ai_keyed_services",
 			Help: "Number of LB services declaring api_key_auth=required. 0 means no service expects X-Api-Key enforcement — unmetered AI traffic is then the deployment's designed posture, not an anomaly (the unmetered-traffic alert guards on this gauge).",
 		},
 	)
-	newFlowCount = promauto.NewGauge(
+	newFlowCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricNewFlowCount,
 			Help: "The number of new TCP connections from clients to targets.",
 		},
 	)
-	processedBytes = promauto.NewCounter(
+	processedBytes = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedBytesTotal,
 			Help: "The total number of bytes processed by the load balancer, including protocol and IP headers. Fed from the cumulative data-plane rule counters (exact, includes flows of any lifetime).",
 		},
 	)
-	processedTCPBytes = promauto.NewCounter(
+	processedTCPBytes = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedTCPBytes,
 			Help: "The total number of TCP bytes processed by the load balancer, including TCP/IP headers.",
 		},
 	)
-	processedUDPBytes = promauto.NewCounter(
+	processedUDPBytes = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedUDPBytes,
 			Help: "The total number of UDP bytes processed by the load balancer, including UDP/IP headers.",
 		},
 	)
-	processedSCTPBytes = promauto.NewCounter(
+	processedSCTPBytes = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedSCTPBytes,
 			Help: "The total number of SCTP bytes processed by the load balancer, including SCTP/IP headers.",
 		},
 	)
-	processedTCPPackets = promauto.NewCounter(
+	processedTCPPackets = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedTCPPackets,
 			Help: "The total number of TCP packets processed by the load balancer.",
 		},
 	)
-	processedUDPPackets = promauto.NewCounter(
+	processedUDPPackets = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedUDPPackets,
 			Help: "The total number of UDP packets processed by the load balancer.",
 		},
 	)
-	processedSCTPPackets = promauto.NewCounter(
+	processedSCTPPackets = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedSCTPPackets,
 			Help: "The total number of SCTP packets processed by the load balancer.",
 		},
 	)
-	processedPackets = promauto.NewCounter(
+	processedPackets = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedPacketsTotal,
 			Help: "The total number of packets processed by the load balancer. Fed from the cumulative data-plane rule counters (exact, includes flows of any lifetime).",
@@ -320,14 +322,14 @@ var (
 	)
 	// Processed bytes per LB rule PromQL : sum(rate(loxilb_lb_rule_interaction_bytes_total[1m])) by (service)
 	// Processed bytes per endpoint PromQL: sum(rate(loxilb_lb_rule_interaction_bytes_total[1m])) by (dip)
-	lbRuleInteractionBytes = promauto.NewCounterVec(
+	lbRuleInteractionBytes = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricLBRuleInteractionBytes,
 			Help: "Total bytes exchanged between load balancer and IPs",
 		},
 		[]string{"service", "sip", "dip"},
 	)
-	lbRuleInteractionPackets = promauto.NewCounterVec(
+	lbRuleInteractionPackets = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricLBRuleInteractionPackets,
 			Help: "Total packets exchanged between load balancer and IPs",
@@ -336,28 +338,28 @@ var (
 	)
 
 	// Traffic distribution metrics for monitoring
-	serviceTrafficBytes = promauto.NewCounterVec(
+	serviceTrafficBytes = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricServiceTrafficBytes,
 			Help: "Total bytes per NAMED service, from the exact data-plane rule counters. Unnamed LB rules have no per-service series.",
 		},
 		[]string{"service"},
 	)
-	serviceTrafficPackets = promauto.NewCounterVec(
+	serviceTrafficPackets = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricServiceTrafficPackets,
 			Help: "Total packets per NAMED service, from the exact data-plane rule counters. Unnamed LB rules have no per-service series.",
 		},
 		[]string{"service"},
 	)
-	endpointTrafficBytes = promauto.NewCounterVec(
+	endpointTrafficBytes = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricEndpointTrafficBytes,
 			Help: "Total bytes per endpoint per service. PERSISTENT-FLOW VIEW: conntrack-sweep derived; flows shorter than one 10s sweep are not counted.",
 		},
 		[]string{"service", "dip"},
 	)
-	clientTrafficPackets = promauto.NewCounterVec(
+	clientTrafficPackets = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricClientTrafficPackets,
 			Help: "Total packets per client per service. PERSISTENT-FLOW VIEW: conntrack-sweep derived; flows shorter than one 10s sweep are not counted.",
@@ -377,21 +379,21 @@ var (
 	// in-flight Add for a draining flow (the ghost-series class fixed under
 	// kvSeriesMu for the KV subscriber gauges) — a frozen counter child is
 	// harmless, a resurrected one is not.
-	backendTrafficBytes = promauto.NewCounterVec(
+	backendTrafficBytes = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricBackendTrafficBytes,
 			Help: "Total bytes per endpoint per NAMED service, from the exact cumulative data-plane rule counters (flows of any lifetime). endpoint is \"ip:port\".",
 		},
 		[]string{"service", "endpoint"},
 	)
-	backendTrafficPackets = promauto.NewCounterVec(
+	backendTrafficPackets = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricBackendTrafficPackets,
 			Help: "Total packets per endpoint per NAMED service, from the exact cumulative data-plane rule counters (flows of any lifetime). endpoint is \"ip:port\".",
 		},
 		[]string{"service", "endpoint"},
 	)
-	backendTrafficConnections = promauto.NewCounterVec(
+	backendTrafficConnections = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricBackendTrafficConnections,
 			Help: "Sampled new sessions per endpoint per NAMED service. PERSISTENT-FLOW VIEW: conntrack-sweep derived; sessions born and closed within one 10s sweep are not counted. endpoint is \"ip:port\".",
@@ -401,14 +403,14 @@ var (
 
 	// Request counters; requests-per-second is derived in PromQL:
 	// rate(loxilb_requests_total[1m])
-	totalRequests = promauto.NewCounter(
+	totalRequests = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricTotalRequests,
 			Help: "Sampled new sessions observed by the 10s conntrack sweep. Sessions born and closed within one sweep are not counted - treat as a trend indicator, not an exact request count.",
 		},
 	)
 
-	totalRequestsPerService = promauto.NewCounterVec(
+	totalRequestsPerService = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricTotalRequestsPerService,
 			Help: "Sampled new sessions per service observed by the 10s conntrack sweep. Sessions born and closed within one sweep are not counted.",
@@ -416,14 +418,14 @@ var (
 		[]string{"service"},
 	)
 
-	totalErrors = promauto.NewCounter(
+	totalErrors = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricTotalErrors,
 			Help: "Total number of errors",
 		},
 	)
 
-	totalErrorsPerService = promauto.NewCounterVec(
+	totalErrorsPerService = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricTotalErrorsPerService,
 			Help: "Total number of errors per service",
@@ -433,14 +435,14 @@ var (
 
 	// Firewall drop counters: the data plane exposes cumulative per-rule drop
 	// counters; RunGetFwRule adds per-cycle deltas so rate() works as expected.
-	totalDropsByFw = promauto.NewCounter(
+	totalDropsByFw = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricTotalFwDrops,
 			Help: "Total number of packets dropped by firewall rules",
 		},
 	)
 
-	totalDropsByFwPerRule = promauto.NewCounterVec(
+	totalDropsByFwPerRule = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricTotalFwDropsPerRule,
 			Help: "Total number of packets dropped by firewall, per rule preference",
@@ -448,7 +450,7 @@ var (
 		[]string{"fw_rule"},
 	)
 
-	fwRuleCount = promauto.NewGauge(
+	fwRuleCount = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricFirewallRulesCount,
 			Help: "Number of active firewall rules",
@@ -505,13 +507,13 @@ var (
 	}
 
 	// Collection-pipeline self-diagnostics
-	counterResetEvents = promauto.NewCounter(
+	counterResetEvents = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_conntrack_stat_resets_total",
 			Help: "Total number of conntrack statistics reset events detected",
 		},
 	)
-	closedConnectionsProcessed = promauto.NewCounter(
+	closedConnectionsProcessed = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_closed_connections_processed_total",
 			Help: "Total number of closed connections with final metrics captured",
@@ -554,95 +556,95 @@ var (
 	)
 
 	// Security rate limiting metrics
-	securitySYNBlocked = promauto.NewCounter(
+	securitySYNBlocked = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecuritySYNBlocked,
 			Help: "Total number of SYN packets blocked by SYN flood protection",
 		},
 	)
 
-	securitySYNPassed = promauto.NewCounter(
+	securitySYNPassed = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecuritySYNPassed,
 			Help: "Total number of SYN packets passed by SYN flood protection",
 		},
 	)
 
-	securitySYNCookies = promauto.NewCounter(
+	securitySYNCookies = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecuritySYNCookies,
 			Help: "SYN threshold events only; not generated kernel cookies or successful cookie handshakes",
 		},
 	)
 
-	securityConnBlocked = promauto.NewCounter(
+	securityConnBlocked = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityConnBlocked,
 			Help: "SYN packets blocked by connection-rate limiting; not completed connections",
 		},
 	)
 
-	securityConnPassed = promauto.NewCounter(
+	securityConnPassed = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityConnPassed,
 			Help: "SYN packets passed by connection-rate limiting; not completed connections",
 		},
 	)
 
-	securityUniqueIPs = promauto.NewGauge(
+	securityUniqueIPs = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricSecurityUniqueIPs,
 			Help: "Number of unique IPs being tracked for security rate limiting",
 		},
 	)
 
-	securityUDPBlocked = promauto.NewCounter(
+	securityUDPBlocked = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityUDPBlocked,
 			Help: "Total number of UDP packets blocked by UDP flood protection",
 		},
 	)
 
-	securityUDPPassed = promauto.NewCounter(
+	securityUDPPassed = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityUDPPassed,
 			Help: "Total number of UDP packets passed by UDP flood protection",
 		},
 	)
 
-	securityUDPBytesBlocked = promauto.NewCounter(
+	securityUDPBytesBlocked = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityUDPBytesBlocked,
 			Help: "Total number of UDP bytes blocked by UDP flood protection",
 		},
 	)
 
-	securityUDPBytesPassed = promauto.NewCounter(
+	securityUDPBytesPassed = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricSecurityUDPBytesPassed,
 			Help: "Total number of UDP bytes passed by UDP flood protection",
 		},
 	)
 
-	securityAggregateSYNBlocked = promauto.NewCounter(prometheus.CounterOpts{
+	securityAggregateSYNBlocked = datapathMetrics.NewCounter(prometheus.CounterOpts{
 		Name: MetricSecurityAggregateSYNBlocked, Help: "Gateway-wide SYN budget drops; also included in SYN blocked totals",
 	})
-	securityAggregateConnBlocked = promauto.NewCounter(prometheus.CounterOpts{
+	securityAggregateConnBlocked = datapathMetrics.NewCounter(prometheus.CounterOpts{
 		Name: MetricSecurityAggregateConnBlocked, Help: "Gateway-wide connection-SYN budget drops; also included in connection blocked totals",
 	})
-	securityAggregateUDPBlocked = promauto.NewCounter(prometheus.CounterOpts{
+	securityAggregateUDPBlocked = datapathMetrics.NewCounter(prometheus.CounterOpts{
 		Name: MetricSecurityAggregateUDPBlocked, Help: "Gateway-wide UDP packet or byte budget drops; also included in UDP blocked totals",
 	})
-	securityTrackingFailures = promauto.NewCounter(prometheus.CounterOpts{
+	securityTrackingFailures = datapathMetrics.NewCounter(prometheus.CounterOpts{
 		Name: MetricSecurityTrackingFailures, Help: "Source tracking-map insertion failures; protected SYN and UDP packets fail closed",
 	})
 
-	securityUnsupportedPacketBlocked = promauto.NewCounter(prometheus.CounterOpts{
+	securityUnsupportedPacketBlocked = datapathMetrics.NewCounter(prometheus.CounterOpts{
 		Name: MetricSecurityUnsupportedPacketBlocked, Help: "IPv6 protected fragments and uninspectable header-chain drops",
 	})
 
 	// IP filter metrics
-	ipFilterBlacklistPackets = promauto.NewCounterVec(
+	ipFilterBlacklistPackets = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricIPFilterBlacklistPackets,
 			Help: "Total number of packets blocked by IP blacklist rules",
@@ -650,7 +652,7 @@ var (
 		[]string{"cidr", "priority", "zone"},
 	)
 
-	ipFilterBlacklistBytes = promauto.NewCounterVec(
+	ipFilterBlacklistBytes = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricIPFilterBlacklistBytes,
 			Help: "Total number of bytes blocked by IP blacklist rules",
@@ -658,7 +660,7 @@ var (
 		[]string{"cidr", "priority", "zone"},
 	)
 
-	ipFilterWhitelistPackets = promauto.NewCounterVec(
+	ipFilterWhitelistPackets = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricIPFilterWhitelistPackets,
 			Help: "Total number of packets allowed by IP whitelist rules",
@@ -666,7 +668,7 @@ var (
 		[]string{"cidr", "priority", "zone"},
 	)
 
-	ipFilterWhitelistBytes = promauto.NewCounterVec(
+	ipFilterWhitelistBytes = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricIPFilterWhitelistBytes,
 			Help: "Total number of bytes allowed by IP whitelist rules",
@@ -674,7 +676,7 @@ var (
 		[]string{"cidr", "priority", "zone"},
 	)
 
-	ipFilterTotalRules = promauto.NewGaugeVec(
+	ipFilterTotalRules = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: MetricIPFilterTotalRules,
 			Help: "Total number of active IP filter rules",
@@ -703,19 +705,27 @@ var (
 	OperationTimeout = 5 * time.Second // Max operation duration
 )
 
-func PrometheusRegister(hook common.NetHookInterface) {
+func PrometheusRegister(hook common.NetHookInterface, haveDatapath bool) {
+	initMutex.Lock()
+	defer initMutex.Unlock()
+	if prometheusCtx != nil {
+		return
+	}
 	hooks = hook
+	datapathAvailable.Store(haveDatapath)
 }
 
 // CheckInit reports whether the Prometheus subsystem is registered and running
 func CheckInit() error {
+	initMutex.Lock()
+	defer initMutex.Unlock()
+	if prometheusCtx != nil && prometheusCtx.Err() != nil {
+		return fmt.Errorf("%w (generation %d)", ErrMetricsStopping, prometheusGeneration)
+	}
 	if hooks == nil {
 		return errors.New(http.StatusBadRequest, "Prometheus API hooks are not registered")
 	}
-	initMutex.Lock()
-	running := prometheusCtx != nil
-	initMutex.Unlock()
-	if !running {
+	if prometheusCtx == nil {
 		return errors.New(http.StatusBadRequest, "Prometheus is not running")
 	}
 	return nil
@@ -729,28 +739,40 @@ func OptionStateChange(state bool) {
 // PrometheusTurnOff turns off the Prometheus metrics collection
 // NOTE: eBPF hooks are preserved to maintain load balancing functionality
 func PrometheusTurnOff() error {
+	ctx, cancel := context.WithTimeout(context.Background(), OperationTimeout)
+	defer cancel()
+	return Stop(ctx)
+}
+
+// Stop requests cancellation and joins the captured generation without holding
+// initMutex. A deadline keeps that generation in stopping state; it does not
+// cancel an arbitrary in-flight native call. Shutdown may detach after warning.
+func Stop(ctx context.Context) error {
 	initMutex.Lock()
-	defer initMutex.Unlock()
-
 	if prometheusCancel == nil {
-		return nil // already off
+		initMutex.Unlock()
+		return nil
 	}
-
-	tk.LogIt(tk.LogInfo, "[Metrics] Shutting down metrics collection...\n")
-
-	// Signal all goroutines to stop
+	done, generation := prometheusDone, prometheusGeneration
 	prometheusCancel()
-
-	// Disable metrics processing immediately
 	metricsHealthy.Store(false)
+	initMutex.Unlock()
 
-	// Clear prometheus-specific resources (but preserve eBPF hooks for load balancing)
-	prometheusCancel = nil
-	prometheusCtx = nil
-	// hooks preserved intentionally - load balancing continues
-
-	tk.LogIt(tk.LogInfo, "[Metrics] Stopped - Load balancing continues with preserved eBPF hooks\n")
-	return nil
+	select {
+	case <-done:
+		initMutex.Lock()
+		// A different Stop may already have reaped this generation and Init may
+		// have started another. Never clear the replacement's state.
+		if prometheusGeneration == generation && prometheusDone == done {
+			prometheusCancel = nil
+			prometheusCtx = nil
+			prometheusDone = nil
+		}
+		initMutex.Unlock()
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("%w (generation %d): %w", ErrMetricsStopping, generation, ctx.Err())
+	}
 }
 
 func generateLabelsKey(name string, labels map[string]string) string {
@@ -770,15 +792,20 @@ func generateLabelsKey(name string, labels map[string]string) string {
 	return builder.String()
 }
 
-func Init() {
+func Init() error {
 	initMutex.Lock()
 	defer initMutex.Unlock()
 
 	// Idempotent: a second Init while collection is running would leak a full
 	// set of collector goroutines and orphan the previous cancel func
 	if prometheusCtx != nil {
-		tk.LogIt(tk.LogInfo, "[Metrics] Already running - skipping duplicate init\n")
-		return
+		if prometheusCtx.Err() != nil {
+			return fmt.Errorf("%w (generation %d)", ErrMetricsStopping, prometheusGeneration)
+		}
+		return nil
+	}
+	if hooks == nil {
+		return fmt.Errorf("Prometheus API hooks are not registered")
 	}
 
 	// Initialize health state - MUST be first
@@ -787,6 +814,7 @@ func Init() {
 	resetAllBreakers()         // Per-collector breakers start healthy
 
 	prometheusCtx, prometheusCancel = context.WithCancel(context.Background())
+	prometheusGeneration++
 
 	// Reset collection state so a re-enable starts from fresh baselines
 	mutex.Lock()
@@ -807,35 +835,15 @@ func Init() {
 	firstCollectionCycle = true
 	conntrackRWMutex.Unlock()
 
-	go RunGetConntrack(prometheusCtx)
-	go RunGetEndpoint(prometheusCtx)
-	go RunGetFwRule(prometheusCtx)
-	go RunGetLBRule(prometheusCtx)
-	// Start system utilization sampler
-	go RunSystemUtilization(prometheusCtx)
-
-	go RunActiveConntrackCount(prometheusCtx)
-
-	// Start sockproxy metrics collection (TIER 1-3 metrics for AI/LLM workloads)
-	// TIER 1: 10s interval - Critical cache backpressure and session affinity metrics
-	// TIER 2: 30s interval - Important observability (connections, HTTP/2 sessions)
-	// TIER 3: 2m interval - Operational debugging (drain events, graceful closes, TTL expirations)
-	go RunSockproxyMetrics(prometheusCtx)
-
-	// Listen-backlog pressure from the kernel's own counters, so a connect
-	// burst that overflowed a backlog is an operator's number, not only a
-	// load generator's.
-	go RunListenBacklogMetrics(prometheusCtx)
-
-	// Start security metrics collection
-	go RunSecurityRateStats(prometheusCtx)
-	go RunIPFilterStats(prometheusCtx)
-
-	// Start always-on L4 connection-error metrics (event-driven, trace-independent).
-	// Feeds loxilb_l4_error_events_total — the source of truth for LoxilbL4ErrorBurst.
-	go RunL4ErrorStats(prometheusCtx)
-
-	tk.LogIt(tk.LogInfo, "[Metrics] System initialized with isolation protection\n")
+	workers := []func(context.Context){RunSystemUtilization, RunListenBacklogMetrics}
+	if datapathAvailable.Load() {
+		workers = append(workers, RunGetConntrack, RunGetEndpoint, RunGetFwRule,
+			RunGetLBRule, RunActiveConntrackCount, RunSockproxyMetrics,
+			RunSecurityRateStats, RunIPFilterStats, RunL4ErrorStats)
+	}
+	prometheusDone = startMetricWorkers(prometheusCtx, workers...)
+	tk.LogIt(tk.LogInfo, "[Metrics] Initialized (datapath available: %v)\n", datapathAvailable.Load())
+	return nil
 }
 
 func toJSON(v interface{}) string {
@@ -877,7 +885,7 @@ func RunGetConntrack(ctx context.Context) {
 
 		if hooks == nil {
 			tk.LogIt(tk.LogError, "[Metrics] eBPF hooks not available for conntrack collection\n")
-			time.Sleep(PrometheusDefaultPeriod)
+			waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 			return nil
 		}
 
@@ -885,7 +893,7 @@ func RunGetConntrack(ctx context.Context) {
 		if err != nil {
 			// Log but don't treat as fatal error - eBPF hooks may be temporarily unavailable
 			tk.LogIt(tk.LogWarning, "[Metrics] Conntrack collection temporarily unavailable: %v\n", err)
-			time.Sleep(PrometheusDefaultPeriod)
+			waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 			return nil // Return success to prevent circuit breaker
 		}
 
@@ -914,7 +922,7 @@ func RunGetConntrack(ctx context.Context) {
 		tk.LogIt(tk.LogDebug, "[Metrics] Updated global ConntrackInfo with %d entries and ConntrackStats with %d entries\n", len(ConntrackInfo), len(localStats))
 		mutex.Unlock()
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "conntrack_collection", ctx)
 }
@@ -922,7 +930,7 @@ func RunGetConntrack(ctx context.Context) {
 func RunGetEndpoint(ctx context.Context) {
 	safeGoroutineOperation(func(ctx context.Context) error {
 		if hooks == nil {
-			time.Sleep(PrometheusDefaultPeriod)
+			waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 			return nil
 		}
 		info, err := hooks.NetEpHostGet()
@@ -952,7 +960,7 @@ func RunGetEndpoint(ctx context.Context) {
 			SetSharedMetric("unhealthy_host_count", float64(unhealthyCount))
 		}
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "endpoint_collection", ctx)
 }
@@ -973,7 +981,7 @@ func countKeyedServices(info []cmn.LbRuleMod) int {
 func RunGetLBRule(ctx context.Context) {
 	safeGoroutineOperation(func(ctx context.Context) error {
 		if hooks == nil {
-			time.Sleep(PrometheusDefaultPeriod)
+			waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 			return nil
 		}
 		info, err := hooks.NetLbRuleGet()
@@ -994,7 +1002,7 @@ func RunGetLBRule(ctx context.Context) {
 
 		collectLbRuleTraffic(info)
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "lbrule_collection", ctx)
 }
@@ -1779,7 +1787,7 @@ func counterDelta(cur, prev uint64, seen bool) uint64 {
 func RunGetFwRule(ctx context.Context) {
 	safeGoroutineOperation(func(ctx context.Context) error {
 		if hooks == nil {
-			time.Sleep(PrometheusDefaultPeriod)
+			waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 			return nil
 		}
 		info, err := hooks.NetFwRuleGet()
@@ -1837,7 +1845,7 @@ func RunGetFwRule(ctx context.Context) {
 			SetSharedMetric("firewall_rules_count", float64(len(info)))
 		}
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "firewall_collection", ctx)
 }
@@ -1905,7 +1913,7 @@ func RunSecurityRateStats(ctx context.Context) {
 		// Store current stats for next cycle
 		prevSecurityStats = stats
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "security_rate_stats", ctx)
 }
@@ -1989,7 +1997,7 @@ func RunIPFilterStats(ctx context.Context) {
 		ipFilterTotalRules.WithLabelValues("blacklist").Set(float64(blacklistCount))
 		ipFilterTotalRules.WithLabelValues("whitelist").Set(float64(whitelistCount))
 
-		time.Sleep(PrometheusDefaultPeriod)
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod)
 		return nil
 	}, "ip_filter_stats", ctx)
 }
@@ -2082,13 +2090,13 @@ func safeGoroutineOperation(operation func(context.Context) error, operationName
 			return
 		default:
 			if !isMetricsSafe(operationName) {
-				time.Sleep(10 * time.Second) // Wait during unhealthy state
+				waitMetricPeriod(ctx, 10*time.Second) // Wait during unhealthy state
 				continue
 			}
 
 			if err := runOnce(); err != nil {
 				recordMetricsError(operationName, err)
-				time.Sleep(5 * time.Second) // Brief pause on error
+				waitMetricPeriod(ctx, 5*time.Second) // Brief pause on error
 			} else {
 				recordMetricsSuccess(operationName)
 			}
@@ -2243,6 +2251,13 @@ func recordMetricsSuccess(component string) {
 // consecutive_errors reports the WORST per-collector breaker;
 // unhealthy_collectors lists breakers currently tripped.
 func GetMetricsHealth() map[string]interface{} {
+	initMutex.Lock()
+	haveHooks := hooks != nil
+	initMutex.Unlock()
+	core := "UNAVAILABLE"
+	if datapathAvailable.Load() {
+		core = "RUNNING"
+	}
 	var maxErrors int64
 	unhealthy := []string{}
 	breakerMu.Lock()
@@ -2256,25 +2271,28 @@ func GetMetricsHealth() map[string]interface{} {
 	}
 	breakerMu.Unlock()
 	return map[string]interface{}{
-		"load_balancer_core":        "RUNNING", // Assume core is always running
-		"ebpf_hooks_available":      hooks != nil,
-		"metrics_enabled":           metricsHealthy.Load(),
-		"consecutive_errors":        maxErrors,
-		"unhealthy_collectors":      unhealthy,
-		"last_error_seconds_ago":    time.Now().Unix() - lastMetricError.Load(),
-		"retry_interval_seconds":    RetryInterval,
-		"max_allowed_errors":        MaxMetricErrors,
-		"operation_timeout_seconds": int(OperationTimeout.Seconds()),
+		"load_balancer_core":         core,
+		"datapath_metrics_available": datapathAvailable.Load(),
+		"ebpf_hooks_available":       haveHooks && datapathAvailable.Load(),
+		"metrics_enabled":            metricsHealthy.Load(),
+		"consecutive_errors":         maxErrors,
+		"unhealthy_collectors":       unhealthy,
+		"last_error_seconds_ago":     time.Now().Unix() - lastMetricError.Load(),
+		"retry_interval_seconds":     RetryInterval,
+		"max_allowed_errors":         MaxMetricErrors,
+		"operation_timeout_seconds":  int(OperationTimeout.Seconds()),
 	}
 }
 
 // GetMetricsHealthSimple returns basic health check for external monitoring
 func GetMetricsHealthSimple() bool {
-	return hooks != nil // Only care if core eBPF hooks are available
+	return datapathAvailable.Load()
 }
 
 // IsHooksAvailable checks if eBPF hooks are available for load balancing
 func IsHooksAvailable() bool {
+	initMutex.Lock()
+	defer initMutex.Unlock()
 	return hooks != nil
 }
 
@@ -2293,7 +2311,7 @@ func SetConntrackMaxEntries(n int) {
 		return
 	}
 	conntrackMaxOnce.Do(func() {
-		conntrackMaxGauge = promauto.NewGauge(
+		conntrackMaxGauge = datapathMetrics.NewGauge(
 			prometheus.GaugeOpts{
 				Name: MetricConntrackMaxEntries,
 				Help: "Capacity of the datapath conntrack table (maximum concurrently tracked sessions).",
