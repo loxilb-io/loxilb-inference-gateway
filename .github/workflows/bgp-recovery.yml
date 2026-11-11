@@ -1,0 +1,28 @@
+name: BGP recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pkg/snapshot/**'
+      - 'pkg/loxinet/gobgp*.go'
+      - 'pkg/loxinet/apiclient.go'
+      - 'api/restapi/handler/gobgp.go'
+      - 'api/restapi/handler/snapshot.go'
+      - 'api/restapi/handler/backup.go'
+      - 'cicd/bgp-recovery/**'
+      - '.github/workflows/bgp-recovery.yml'
+      - '.github/workflows/go-candidate-images.yml'
+  schedule:
+    - cron: '30 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-images:
+    if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    uses: ./.github/workflows/go-candidate-images.yml
+    with:
+      bgp-recovery: true
+    secrets: inherit
