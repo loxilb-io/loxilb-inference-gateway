@@ -372,6 +372,29 @@ A request that asks for what it may not use is admitted on its default objective
 `ai_objective_strict: true`, whichever channel it asked by. An objective name of 64 bytes or
 more is such a request, never a 400 or a 5xx.
 
+**The client can see it on the response.** On a rule with `fc_expose_headers` on, the response
+to a request that was admitted on its default *because the objective it asked for was denied*
+carries `X-Loxilb-Admission-Objective-Requested` beside `X-Loxilb-Admission-Objective` (the
+objective applied, absent when the default is none) and `X-Loxilb-Admission-Class`:
+
+```
+X-Loxilb-Admission-Objective: batch
+X-Loxilb-Admission-Class: sheddable
+X-Loxilb-Admission-Objective-Requested: realtime-chat
+```
+
+- The value is what the request asked for: the header's objective name as it was sent, or
+  `tier:<value>` when the body's `service_tier` was the hint. A name of 64 bytes or more reads
+  `(oversize)`; a name with a space or a control character in it is not written.
+- **The header is absent on every other response**: the request named no objective, or the one
+  it named was applied. So "asked and was defaulted" and "asked nothing" are no longer the same
+  response. It is also absent when the class stage did not run (no identity that resolves a
+  tenant), on rules without `fc_expose_headers`, and, on HTTP/1.1, on a response whose head the
+  backend sent in more than one piece, like the other two class headers.
+- A header of that name sent by a backend is removed wherever the gateway writes the class
+  headers. On a strict rule the request is refused instead (403, stage `objective`), and a
+  refusal does not carry it.
+
 A `service_tier` the gateway read is the gateway's: it is overwritten with `null`, in place and
 at the same length, before the body is forwarded, whether or not it was allowed and whichever
 hint decided. With the key more than once at the top level, the last one is the one read (as
@@ -417,8 +440,9 @@ curl -sk -X POST https://<LB>:11111/netlox/v1/config/ai/tenant/ratelimit -H "Aut
 
 On a rule, `ai_objective_strict: true` refuses a request that names an objective it may not
 use (unknown, not for this service, or a raise it was not granted) with 403
-`objective_not_allowed`; by default such a request falls to its default objective. A
-lowering hint is never refused.
+`objective_not_allowed`; by default such a request falls to its default objective, and its
+response says so with `X-Loxilb-Admission-Objective-Requested` when the rule exposes the
+admission headers (above). A lowering hint is never refused.
 
 **When the key store is away.** Every write above answers 503 (`ai_key_store_unavailable`,
 or `ai_key_store_unconfigured` with no store) and changes nothing. A write the store was
