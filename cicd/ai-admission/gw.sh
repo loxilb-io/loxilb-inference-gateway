@@ -25,6 +25,11 @@ PORT_XH=2035          # the same two backends, ceiling 4, admission headers on a
 PORT_XH2=2036         # the two h2c backends, ceiling 4, admission headers on admitted streams
 PORT_DEAD=2037        # one endpoint nothing listens on (l3ep1:8099): the outage a failed connect is answered with
 DEAD_TARGET=8099
+# Row OBJ creates these three itself and deletes them when it is done: keyed,
+# admission headers on, the first two differing only in ai_objective_strict.
+PORT_OBJ=2038         # the same two backends: a denied objective is served at the default
+PORT_OBJS=2039        # the same, strict: a denied objective is refused 403
+PORT_OBJ2=2040        # the two h2c backends, not strict
 FC_P_MAX=4
 FC_P_STALE_MS=45000
 FC_U_MAX=2
@@ -192,6 +197,9 @@ gw_ts_json() { echo ", \"api_key_auth\": \"required\", \"fc_max_outstanding\": $
 gw_xh_json() { echo ", \"fc_max_outstanding\": $FC_XH_MAX, \"fc_expose_headers\": \"$1\""; }
 # gw_tq_json: the :PORT_TQ rule, the same with a queue
 gw_tq_json() { echo ", \"api_key_auth\": \"required\", \"fc_max_outstanding\": $FC_TQ_MAX, \"fc_tenant_max_share_pct\": $FC_TS_PCT$(gw_queue_json $FC_Q_DEPTH $FC_Q_WAIT_MS)"; }
+
+# gw_obj_json <true|false>: the row OBJ rules, keyed, the class headers exposed
+gw_obj_json() { echo ", \"api_key_auth\": \"required\", \"fc_max_outstanding\": $FC_XH_MAX, \"fc_expose_headers\": \"on\", \"ai_objective_strict\": $1"; }
 
 gw_add_rules() {
   gw_add_rule $PORT_H1  ""                                                       8080 8081 || return 1
