@@ -131,5 +131,5 @@ func (streamAbandonCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func init() {
-	prometheus.MustRegister(streamAbandonCollector{})
+	datapathRegisterer{}.MustRegister(streamAbandonCollector{})
 }

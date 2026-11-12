@@ -2,13 +2,14 @@
 
 This repository builds differently from upstream loxilb in three ways: the
 [`loxilb-ebpf`](../loxilb-ebpf) dataplane is a **git submodule** (clone with
-`--recurse-submodules`), the first clean build **regenerates the swagger API models via
-Docker**, and the repo ships extra Dockerfiles for the optional AI components.
+`--recurse-submodules`), missing swagger API models are regenerated via Docker,
+and the repo ships extra Dockerfiles for the optional AI components.
 
 ## Prerequisites
 
-Linux only (macOS cannot build the eBPF/CGO parts). Go ≥ 1.25, Docker (needed once for the
-swagger-model regeneration), and the eBPF toolchain:
+Linux only (macOS cannot build the eBPF/CGO parts). Use the Go compiler pinned in
+[`build/go-dependencies.json`](../build/go-dependencies.json), Docker with access
+for the invoking user, and the eBPF toolchain:
 
 ```bash
 sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \
@@ -119,6 +120,86 @@ built binary into it:
 make docker-rp      # docker-run + build + docker cp ./loxilb, then docker-commit back to
                     # $(IMAGE):$(TAG) — the scratch container is stopped and removed
 ```
+
+## Dependency updates and candidate security checks
+
+[`build/go-dependencies.json`](../build/go-dependencies.json) owns the compiler,
+x/net, gRPC, GoBGP and Go scanner/plugin pins. Dockerfile literals are generated
+mirrors so the existing small fixture build contexts and offline reflect-echo
+build remain usable. Change the manifest, then run this single update command:
+
+```bash
+python3 scripts/update-go-pins.py --write
+python3 scripts/update-go-pins.py --check --verify-vendor
+```
+
+The updater uses Go tooling to refresh the root and reflect-echo modules,
+regenerates vendor, and updates all managed Dockerfiles. `--x-net`, `--grpc` and
+`--go-version` can set those manifest values in the same `--write` invocation.
+An update that needs a newer minimum Go version also needs a compatible compiler
+pin. On failure, inspect the working diff; the checker must pass before committing.
+New independently pinned recipes/modules must join the managed inventory.
+Dockerfiles that explicitly COPY/ADD the shared reflect-echo module or vendor
+from the repository also join it, even when they contain no direct module pin.
+The JSON parser mock and edge-cloud backend use this shared input; their compiler
+mirrors follow the same manifest. `--list-shared-vendor-builds` provides the
+profile/Dockerfile inventory used by CI so these consumers cannot be omitted.
+
+Pull requests changing build/dependency inputs run the candidate-image workflow
+through Trivy-Image. It builds the actual default/u24 Dockerfiles, the five
+gRPC/reflect-echo fixture images, both shared-vendor consumers (JSON parser mock
+and edge-cloud backend), and the legacy GoBGP recipe's Go payload.
+It inspects every Go binary discovered by Trivy,
+checks its embedded compiler/module versions, and runs binary govulncheck. Manual
+Govulncheck dispatch can run the same reusable workflow. Scheduled/release Trivy
+scans of published tags remain separate; a published tag is not evidence for a
+changed Dockerfile candidate.
+
+For an already-built local gateway image:
+
+```bash
+go install "golang.org/x/vuln/cmd/govulncheck@$(python3 scripts/update-go-pins.py --print-govulncheck-version)"
+python3 scripts/scan-go-image-binaries.py --image YOUR_LOCAL_IMAGE --output /tmp/candidate-go-report
+```
+
+Use the repository's pinned Trivy installer in CI. The scanner requires a new
+output directory and never starts the image container. It records the immutable
+image ID, build metadata, binary hashes and reports; only its exact temporary
+inspection container is removed. Fixture images use the corresponding `--profile`
+(`reflect-echo`, `grpc-client`, `grpc-server`, `http-client` or `http-server`);
+`json-parser-mock` and `edge-cloud-backend` check the shared-vendor consumers;
+`gobgp-legacy` checks the legacy GoBGP pair. This does not qualify the full legacy
+Ubuntu image or its native/runtime behavior. Both GoBGP recipe profiles now use
+v3.35.0, which removes the fixable advisories present in the previous v3.29.0
+legacy payload.
+
+The source govulncheck gate blocks reachable findings with a fix. The binary gate
+blocks vulnerable symbols present in a binary when a fix exists, including
+symbols in GoBGP/CLI dependencies; binary analysis does not provide source call
+stacks. No-fix and module-only findings remain visible. Trivy retains the existing
+fixable-CRITICAL gate and reports other severities. Missing binaries, stale pins,
+unreadable metadata and scanner failures fail the candidate check.
+
+The u24 build and runtime stages upgrade installed Ubuntu packages before
+installing their dependencies. This picks up the apt/libapt fix for
+CVE-2026-109518 (2.8.4ubuntu0.1 or newer). Rebuild images to apply repository
+security updates; existing containers are not modified by a source change.
+
+## Regenerate API models
+
+Run generation in a clean working copy because it refreshes generated API files:
+
+```bash
+CGO_ENABLED=0 go generate ./api/restapi
+go run ./api/cmd/sync-model-validators -check
+go test ./api/models -run '^TestEndPointHostStateTupleValidation$' -count=1
+```
+
+Both `go generate` and `api/build_api.sh` use the pinned Swagger generator and the
+same post-generation hooks. Endpoint tuple validation lives in the non-generated
+`api/models/end_point_host_state_validation.go`. The model hook calls it before
+generated field checks, including for nil payloads, and preserves those generated
+checks. Do not restore manual validation edits inside generated model files.
 
 ## Tests
 

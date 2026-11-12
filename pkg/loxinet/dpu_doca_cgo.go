@@ -22,7 +22,7 @@ package loxinet
 #include <stdlib.h>
 #include "../../loxilb-ebpf/doca/loxilb_doca_flow.h"
 #cgo CFLAGS: -I./../../loxilb-ebpf/doca/
-#cgo LDFLAGS: -L./../../loxilb-ebpf/doca/ -l:libloxilb_doca_flow.a
+#cgo LDFLAGS: -L./../../loxilb-ebpf/doca/ -Wl,-Bstatic -lloxilb_doca_flow -Wl,-Bdynamic
 */
 import "C"
 

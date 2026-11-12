@@ -388,7 +388,7 @@ func (admissionCollector) Collect(ch chan<- prometheus.Metric) {
 // init registers the gate collector once with the default registry (the
 // same registry the promauto metrics use).
 func init() {
-	prometheus.MustRegister(admissionCollector{})
+	datapathRegisterer{}.MustRegister(admissionCollector{})
 }
 
 // admissionServiceTenantSlots is one service's tenant-table reading.

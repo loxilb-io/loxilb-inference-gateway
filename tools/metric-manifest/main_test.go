@@ -265,3 +265,49 @@ var only = newDual(LegacyOnly, "", "h")
 		t.Errorf("expected exactly the legacy family, got %+v", defs)
 	}
 }
+
+func TestPackageFactoryAliases(t *testing.T) {
+	root := writeFixture(t, `package prometheus
+var chained = (factory)
+var direct = chained.NewGauge(prometheus.GaugeOpts{Name: "direct"})
+func counter(name string) prometheus.Counter {
+    return chained.NewCounter(prometheus.CounterOpts{Name: name})
+}
+var c = counter("wrapped")
+type lazy struct { name string }
+func (l *lazy) init() { chained.NewGauge(prometheus.GaugeOpts{Name: l.name}) }
+var l = &lazy{name: "receiver"}
+func unrelated(chained Other) {
+    chained.NewGauge(prometheus.GaugeOpts{Name: "shadowed"})
+}
+var cycleA = cycleB
+var cycleB = cycleA
+var invalid = cycleA.NewGauge(prometheus.GaugeOpts{Name: "cycle"})
+var other = somethingElse.With(reg)
+var nonmetric = other.NewGauge(prometheus.GaugeOpts{Name: "unrelated"})
+`)
+	// Factory declarations and use sites need not share a file or declaration
+	// order. Nothing here requires a compilable/runtime-loaded fixture.
+	if err := os.WriteFile(filepath.Join(root, "api", "prometheus", "factory.go"), []byte(`package prometheus
+var factory = promauto.With(reg)
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defs, err := collectDefs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Def{}
+	for _, d := range defs {
+		got[d.Name] = d
+	}
+	if len(got) != 3 {
+		t.Fatalf("factory aliases resolved to %v, want direct/wrapped/receiver only", keys(got))
+	}
+	for _, name := range []string{"direct", "wrapped", "receiver"} {
+		d, ok := got[name]
+		if !ok || d.Mechanism != "promauto" || d.Unresolved {
+			t.Errorf("%s: incorrect factory definition: %+v (present=%v)", name, d, ok)
+		}
+	}
+}

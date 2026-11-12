@@ -211,17 +211,15 @@ import (
 	"context"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	dto "github.com/prometheus/client_model/go"
 )
 
 // ============================================================================
 // SOCKPROXY METRICS - Following LoxiLB promauto Pattern
 // ============================================================================
-// Pattern: promauto.NewGauge/Counter (auto-registers, no manual registration)
+// Pattern: datapathMetrics.NewGauge/Counter (auto-registers, no manual registration)
 // Collection: Periodic updates via RunSockproxyMetrics goroutine
 // Delta Calculation: For cumulative C atomics (same as security metrics)
 // ============================================================================
@@ -232,7 +230,7 @@ var (
 	// ========================================================================
 
 	// Metric #1: Cache Backpressure Ratio
-	proxyCacheBackpressureRatio = promauto.NewGauge(
+	proxyCacheBackpressureRatio = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_cache_backpressure_ratio",
 			Help: "Ratio of connections with active cache backpressure (0.0-1.0). High values indicate sustained cache pressure.",
@@ -244,13 +242,13 @@ var (
 	// derivable in PromQL, e.g.
 	// rate(loxilb_proxy_conversation_hits_total[5m]) /
 	//   (rate(loxilb_proxy_conversation_hits_total[5m]) + rate(loxilb_proxy_conversation_misses_total[5m]))
-	proxyConversationHitsTotal = promauto.NewCounter(
+	proxyConversationHitsTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_conversation_hits_total",
 			Help: "Total conversation mapping lookups that hit an existing session affinity entry.",
 		},
 	)
-	proxyConversationMissesTotal = promauto.NewCounter(
+	proxyConversationMissesTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_conversation_misses_total",
 			Help: "Total conversation mapping lookups that missed (no session affinity entry).",
@@ -258,7 +256,7 @@ var (
 	)
 
 	// Metric #5: Cache High Water Events (Counter)
-	proxyCacheHighWaterEventsTotal = promauto.NewCounter(
+	proxyCacheHighWaterEventsTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_cache_high_water_events_total",
 			Help: "Total cache backpressure activations. Monotonic counter tracking adaptive backpressure triggers.",
@@ -270,19 +268,19 @@ var (
 	// anything and the proxy holds it whole while a slow backend drains. What
 	// the process holds in AGGREGATE is these three; the high-water counter
 	// above only says the per-connection limit fired somewhere.
-	proxyCacheBytes = promauto.NewGauge(
+	proxyCacheBytes = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_cache_bytes",
 			Help: "Relay payload currently cached across all proxy connections, in bytes. Scales with concurrent in-flight body volume against slow backends; bounded per connection but not in aggregate.",
 		},
 	)
-	proxyCacheBytesMaxConn = promauto.NewGauge(
+	proxyCacheBytesMaxConn = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_cache_bytes_max_conn",
 			Help: "Largest relay cache held by any single connection, in bytes. Approaching the 12MB watermark (768KB chunked) means backpressure is about to engage on that connection.",
 		},
 	)
-	proxyCacheConnsQueued = promauto.NewGauge(
+	proxyCacheConnsQueued = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_cache_conns_queued",
 			Help: "Connections currently holding cached relay payload. Denominator for mean bytes per queued connection.",
@@ -294,7 +292,7 @@ var (
 	// ========================================================================
 
 	// Metric #6: Active Connections
-	proxyActiveConnections = promauto.NewGauge(
+	proxyActiveConnections = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_active_connections",
 			Help: "Current number of active proxy connections (all types).",
@@ -302,7 +300,7 @@ var (
 	)
 
 	// Metric #7: Active SSL Connections
-	proxyActiveSslConnections = promauto.NewGauge(
+	proxyActiveSslConnections = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_active_ssl_connections",
 			Help: "Current number of active SSL/TLS connections.",
@@ -310,7 +308,7 @@ var (
 	)
 
 	// Metric #8: Conversation Sessions
-	proxyConversationSessions = promauto.NewGauge(
+	proxyConversationSessions = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_conversation_sessions",
 			Help: "Current number of active conversation mappings (session affinity state).",
@@ -318,7 +316,7 @@ var (
 	)
 
 	// Metric #9: Chunked Responses Total (Counter - cumulative)
-	proxyChunkedResponsesTotal = promauto.NewCounter(
+	proxyChunkedResponsesTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_chunked_responses_total",
 			Help: "Total number of chunked transfer encoding responses detected. Indicates streaming AI workloads.",
@@ -330,7 +328,7 @@ var (
 	// are never decremented on teardown — so the value is lifetime sessions
 	// created, not currently-active sessions. Declared as a counter until the
 	// C side gains teardown accounting (metrics audit D4, deferred).
-	proxyHttp2SessionsTotal = promauto.NewCounter(
+	proxyHttp2SessionsTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_http2_sessions_total",
 			Help: "Total HTTP/2 sessions created.",
@@ -342,7 +340,7 @@ var (
 	// ========================================================================
 
 	// Metric #11: Cache Drain Partial Events (Counter)
-	proxyCacheDrainPartialTotal = promauto.NewCounter(
+	proxyCacheDrainPartialTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_cache_drain_partial_total",
 			Help: "Total partial cache drain events (EAGAIN/EWOULDBLOCK during flush). Indicates socket flow control.",
@@ -350,7 +348,7 @@ var (
 	)
 
 	// Metric #12: Graceful Close with Cache Drain (Counter)
-	proxyGracefulCloseTotal = promauto.NewCounter(
+	proxyGracefulCloseTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_graceful_close_total",
 			Help: "Total graceful connection closes with pending cache drain. Tracks proper shutdown preventing data loss.",
@@ -358,7 +356,7 @@ var (
 	)
 
 	// Metric #13: Conversation TTL Expirations (Counter)
-	proxyConversationTtlExpiredTotal = promauto.NewCounter(
+	proxyConversationTtlExpiredTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_conversation_ttl_expired_total",
 			Help: "Total conversation mappings expired due to TTL timeout. Helps tune session affinity TTL settings.",
@@ -370,7 +368,7 @@ var (
 	// ========================================================================
 
 	// Metric #14: HTTP Responses Total (Counter - for RPS via rate)
-	proxyHttpResponsesTotal = promauto.NewCounter(
+	proxyHttpResponsesTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_http_responses_total",
 			Help: "Total HTTP responses clients received, HTTP/1.1 and HTTP/2 alike: backend replies and the gateway's own answers (refusals, outages). Use rate() for RPS calculation.",
@@ -378,7 +376,7 @@ var (
 	)
 
 	// Metric #15: HTTP Responses by Status Class (CounterVec)
-	proxyHttpResponsesByStatus = promauto.NewCounterVec(
+	proxyHttpResponsesByStatus = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_http_responses_by_status_total",
 			Help: "Total HTTP responses clients received by status code class (2xx, 3xx, 4xx, 5xx), HTTP/1.1 and HTTP/2 alike: backend replies and the gateway's own answers (refusals, outages).",
@@ -398,7 +396,7 @@ var (
 	// ========================================================================
 
 	// Metric #17: P/D KV Params Buffer Overflow (Counter)
-	proxyPdKvParamsOverflowTotal = promauto.NewCounter(
+	proxyPdKvParamsOverflowTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_pd_kv_params_overflow_total",
 			Help: "Total kv_transfer_params extraction buffer overflow events. Alert on sustained non-zero rate.",
@@ -410,7 +408,7 @@ var (
 	// ========================================================================
 
 	// Metric #18: P/D Sessions Active (Gauge)
-	pdSessionsActive = promauto.NewGauge(
+	pdSessionsActive = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_sessions_active",
 			Help: "Number of active P/D disaggregation sessions.",
@@ -418,7 +416,7 @@ var (
 	)
 
 	// Metric #19: P/D Trie Nodes (Gauge)
-	pdTrieNodes = promauto.NewGauge(
+	pdTrieNodes = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_trie_nodes",
 			Help: "Number of prefix trie nodes for P/D routing.",
@@ -426,7 +424,7 @@ var (
 	)
 
 	// Metric #20: P/D Circuit Breaker Flips (Counter)
-	pdCbFlipsTotal = promauto.NewCounter(
+	pdCbFlipsTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_cb_flips_total",
 			Help: "Total circuit breaker state transitions (CLOSED->OPEN, HALF_OPEN->OPEN, HALF_OPEN->CLOSED, OPEN->HALF_OPEN).",
@@ -434,7 +432,7 @@ var (
 	)
 
 	// Metric #21: P/D Fallback to Normal (Counter)
-	pdFallbackToNormalTotal = promauto.NewCounter(
+	pdFallbackToNormalTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_fallback_to_normal_total",
 			Help: "Total requests that fell back from P/D to normal inference mode due to unhealthy prefill/decode EPs.",
@@ -444,7 +442,7 @@ var (
 	// Metric #22: KV Blocks per Endpoint (Gauge)
 	// Populated by ai_kv_subscriber.go when KV routing is active. Joinable to
 	// an endpoint address via loxilb_pd_ep_info on (service, ep_idx).
-	pdKvBlocks = promauto.NewGaugeVec(
+	pdKvBlocks = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_kv_blocks",
 			Help: "KV cache blocks currently stored per endpoint.",
@@ -456,7 +454,7 @@ var (
 	// Incremented by ai_kv_subscriber.go llb_ai_kv_best_worker when a prefill
 	// EP with matching KV blocks is selected (Tier 1.5 cache-hit routing fires).
 	// This is the primary proof-of-correctness observable for TK17/TK21.
-	pdKvTier15HitsTotal = promauto.NewCounterVec(
+	pdKvTier15HitsTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_kv_tier15_hits_total",
 			Help: "Total Tier-1.5 KV cache-hit routing decisions (prompt routed to EP with matching KV blocks).",
@@ -472,7 +470,7 @@ var (
 	//   loxilb_pd_kv_tier15_hits_total * on(ep_idx) group_left(ep) loxilb_pd_ep_info
 	// Set at KvSubscriberStart for EVERY prefill EP — so an ep_idx that has not yet
 	// emitted a (lazy) tier15_hits series is still discoverable. Value is always 1.
-	pdEpInfo = promauto.NewGaugeVec(
+	pdEpInfo = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_ep_info",
 			Help: "P/D endpoint identity: maps ep_idx (the label on the KV per-EP metrics) to the endpoint IP. Value is always 1.",
@@ -484,7 +482,7 @@ var (
 	// typed rule fronts, so per-engine dashboards can slice without parsing
 	// rule config. Value is always 1. Set on rule admission for engines with
 	// an admission/consistency probe (currently llamacpp).
-	aiEngineInfo = promauto.NewGaugeVec(
+	aiEngineInfo = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_ai_engine_info",
 			Help: "AI rule engine identity: maps a service to its kvEngineType. Value is always 1.",
@@ -496,7 +494,7 @@ var (
 	// endpoint (plain-LB fleets have no routing correctness to protect) — a
 	// non-zero rate here means a skewed fleet: mixed models/builds/slot
 	// counts behind one rule, or a sleeping endpoint behind the VIP.
-	llamacppProbeWarnTotal = promauto.NewCounterVec(
+	llamacppProbeWarnTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_llamacpp_probe_warnings_total",
 			Help: "Total llama.cpp /props admission-probe advisory warnings by kind (model_mismatch, build_mismatch, slots_mismatch, sleeping, unanswered).",
@@ -513,7 +511,7 @@ var (
 	// plan 42-02 (storage allocated here in plan 42-01).
 
 	// Metric #24: Tier 1.5 per-guard miss reasons (CounterVec)
-	pdKvT15MissReasonTotal = promauto.NewCounterVec(
+	pdKvT15MissReasonTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "loxilb",
 			Subsystem: "pd_kv",
@@ -524,7 +522,7 @@ var (
 	)
 
 	// Metric #25: Tier 1.5 fallthrough (Counter)
-	pdKvT15FallthroughTotal = promauto.NewCounter(
+	pdKvT15FallthroughTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: "loxilb",
 			Subsystem: "pd_kv",
@@ -540,7 +538,7 @@ var (
 	// detect silent subscriber disconnects. Populated from ai_kv_subscriber.go.
 
 	// KV subscriber connection gauge (1 = connected, 0 = disconnected/rebuilding).
-	kvSubscriberConnected = promauto.NewGaugeVec(
+	kvSubscriberConnected = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_kv_subscriber_connected",
 			Help: "ZMQ KV subscriber connection state per endpoint (1=connected, 0=disconnected/rebuilding).",
@@ -551,7 +549,7 @@ var (
 	// Reconnect counter — increments each time the subscriber rebuilds its SUB
 	// socket after detecting a dead connection. A non-zero rate indicates EP
 	// churn (vLLM restarts) and is the primary signal that recovery is working.
-	kvSubscriberReconnectTotal = promauto.NewCounterVec(
+	kvSubscriberReconnectTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_kv_subscriber_reconnect_total",
 			Help: "Total ZMQ KV subscriber socket rebuilds (increments on every successful reconnect after a dead-socket detection).",
@@ -566,7 +564,7 @@ var (
 	// the subscriber started. time() - this value is the event-staleness a
 	// connected=1 socket cannot expose on its own: a publisher that stays
 	// connected but silently stops publishing reads as up everywhere else.
-	kvSubscriberLastEventTs = promauto.NewGaugeVec(
+	kvSubscriberLastEventTs = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_kv_subscriber_last_event_timestamp_seconds",
 			Help: "Unix time of the last KV event batch accepted from this endpoint's publisher (decoded and rank-verified; rejected payloads excluded).",
@@ -581,7 +579,7 @@ var (
 	// regression, AllBlocksCleared) and at subscriber start until the first
 	// stored block arrives. 0 with connected=1 means Tier-1.5 routing is
 	// running cold/unproven for this EP even though the socket looks fine.
-	kvInventoryFresh = promauto.NewGaugeVec(
+	kvInventoryFresh = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_kv_inventory_fresh",
 			Help: "1 while the per-endpoint KV inventory holds blocks from the current publisher incarnation; 0 after any inventory clear (publisher restart, lossy gap, AllBlocksCleared) until the next stored block.",
@@ -592,7 +590,7 @@ var (
 	// Recv-error counter — increments on every RecvMultipart error before the
 	// subscriber decides whether to rebuild. Useful for detecting flaky links
 	// vs. outright EP crashes.
-	kvSubscriberRecvErrorTotal = promauto.NewCounterVec(
+	kvSubscriberRecvErrorTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_kv_subscriber_recv_error_total",
 			Help: "Total ZMQ KV subscriber recv errors (includes transient errors before rebuild threshold is crossed).",
@@ -608,7 +606,7 @@ var (
 	// set is defined in pkg/loxinet/ai_kv_wire_bindings.go. Nonzero here is
 	// the loud form of what used to be a silent debug-level skip that left
 	// a healthy-looking but permanently stale inventory.
-	kvSubscriberWireRejectTotal = promauto.NewCounterVec(
+	kvSubscriberWireRejectTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_kv_subscriber_wire_reject_total",
 			Help: "Total KV event payloads rejected by the stream's wire binding (schema_mismatch | decode_error | rank_mismatch).",
@@ -623,7 +621,7 @@ var (
 	// (incremented at the eviction site in ai_kv_subscriber.go AddBlocks),
 	// never lossy. Mirrors the loxilb_kv_subscriber_* name family (plain name,
 	// {service, ep} labels) — NOT the namespaced pd_kv family.
-	kvInvCapEvictionsTotal = promauto.NewCounterVec(
+	kvInvCapEvictionsTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_kv_inv_cap_evictions_total",
 			Help: "Total KV inventory blocks evicted due to the per-EP kvMaxBlocks cap. Nonzero is the authoritative publisher-misbehaving signal (BlockStored without matching BlockRemoved).",
@@ -639,7 +637,7 @@ var (
 	// authoritative C4 cap-enforcement signal — it proves the load/capacity term
 	// fired and the selector did NOT herd to the affinity winner. Sibling of
 	// pd_kv_tier15_hits_total; OFF entirely when the unified mode is disabled.
-	kvTier15SpillsTotal = promauto.NewCounterVec(
+	kvTier15SpillsTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_kv_tier15_spills_total",
 			Help: "Total Tier-1.5 unified-mode spills past the affinity-preferred EP because it exceeded its capacity-weighted bounded-load cap (C4 cap enforcement).",
@@ -654,7 +652,7 @@ var (
 	// the EP that RECEIVED the seed. Nonzero ⇒ a cold EP was re-admitted to
 	// exact-mode traffic; the series goes quiet again once its inventory fills.
 	// Sibling of pd_kv_tier15_spills_total.
-	kvTier15ColdSeedsTotal = promauto.NewCounterVec(
+	kvTier15ColdSeedsTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_kv_tier15_cold_seeds_total",
 			Help: "Total Tier-1.5 hits diverted to a healthy empty-inventory prefill EP by the bounded cold-start compensation (every Nth hit per service while a cold EP exists).",
@@ -671,7 +669,7 @@ var (
 	// WARN fires once per transition edge, shape; this counter carries
 	// the volume). Per-service labeling ({service_id} = the rule number) keeps
 	// the two-VIP coexistence scenario attributable per arm.
-	kvZeroHitWatchdogTotal = promauto.NewCounterVec(
+	kvZeroHitWatchdogTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_kv_zero_hit_watchdog_total",
 			Help: "Total KV-exact lookups at-or-past the consecutive-zero-hit watchdog threshold against a non-empty inventory. Nonzero is the authoritative silent hash-parity-failure signal (kvBlockSize/page-size mismatch or hash-algo drift).",
@@ -691,7 +689,7 @@ var (
 	// exported as loxilb_proxy_context_inflight / loxilb_proxy_accept_blocked_total.
 
 	// Metric #26: P/D per-EP admission sheds (Counter)
-	pdAdmissionShedTotal = promauto.NewCounter(
+	pdAdmissionShedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_admission_shed_total",
 			Help: "Total requests shed (retriable 429) by the per-EP admission layer : every healthy prefill EP at the in-flight cap with no parked-FIFO room. Distinct from global total-inflight valve.",
@@ -699,7 +697,7 @@ var (
 	)
 
 	// Metric #27: P/D per-EP admission parks (Counter)
-	pdAdmissionQueuedTotal = promauto.NewCounter(
+	pdAdmissionQueuedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_admission_queued_total",
 			Help: "Total requests PARKED (held, not shed) on a per-EP FIFO by the per-EP admission layer (hold-don't-drop). Distinct from global total-inflight valve.",
@@ -711,7 +709,7 @@ var (
 	// unreachable and this valve is the ONLY shed that can fire — without
 	// this family every overload drop on a queueing deployment is
 	// invisible.
-	pdAdmissionOverflowShedTotal = promauto.NewCounter(
+	pdAdmissionOverflowShedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_admission_overflow_shed_total",
 			Help: "Total requests shed (retriable 429) by the per-EP admission layer because every healthy prefill EP was at the in-flight cap AND its parked FIFO was full (overflow valve; the only reachable shed when queueing is enabled). Distinct from loxilb_pd_admission_shed_total, which counts sheds with queueing disabled.",
@@ -719,7 +717,7 @@ var (
 	)
 
 	// Client connections dropped at the header-completion deadline (Counter)
-	proxyHeaderDeadlineDropsTotal = promauto.NewCounter(
+	proxyHeaderDeadlineDropsTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_header_deadline_drops_total",
 			Help: "Client connections closed because the request headers did not complete within the listener's header-completion deadline (timeout_tcp_inspect_ms, default 10 s). A steady trickle is slow or half-open clients being shed; a burst alongside a p99 rise is a slowloris hold being cut.",
@@ -728,19 +726,19 @@ var (
 
 	// The process accept valve (LLB_PD_MAX_TOTAL_INFLIGHT): what it holds,
 	// what it held back, and its bound.
-	proxyContextInflight = promauto.NewGauge(
+	proxyContextInflight = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_context_inflight",
 			Help: "Proxy connection contexts held right now, client and backend legs alike: the quantity the process accept valve (LLB_PD_MAX_TOTAL_INFLIGHT) bounds. It counts contexts, not requests. Maintained only while the valve is on (LLB_PD_MAX_TOTAL_INFLIGHT > 0): with no bound the proxy does not count, and this reads 0.",
 		},
 	)
-	proxyAcceptBlockedTotal = promauto.NewCounter(
+	proxyAcceptBlockedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_accept_blocked_total",
 			Help: "Times the process valve paused accepting because loxilb_proxy_context_inflight had reached loxilb_proxy_accept_bound; connections then wait in the listen backlog until a context is released and the listener is re-armed. One count per pause, not per connection: a steady rate is the node reaching its connection footprint bound again and again, and a node that stays at the bound shows as loxilb_proxy_context_inflight at loxilb_proxy_accept_bound.",
 		},
 	)
-	proxyAcceptBound = promauto.NewGauge(
+	proxyAcceptBound = datapathMetrics.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_proxy_accept_bound",
 			Help: "The process accept valve's bound on connection contexts (LLB_PD_MAX_TOTAL_INFLIGHT); 0 when unbounded.",
@@ -748,7 +746,7 @@ var (
 	)
 
 	// Metric #28: P/D circuit-breaker proactive heals (Counter)
-	pdCbProactiveHealTotal = promauto.NewCounter(
+	pdCbProactiveHealTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_cb_proactive_heal_total",
 			Help: "Total circuit-breaker OPEN->HALF_OPEN transitions driven proactively by the 1Hz health pass (self-heal) without organic traffic. Sibling of loxilb_pd_cb_flips_total (which counts ALL CB state transitions).",
@@ -756,7 +754,7 @@ var (
 	)
 
 	// Metric #29: prefill endpoint deaths (Counter)
-	pdPrefillEpDiedTotal = promauto.NewCounter(
+	pdPrefillEpDiedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_prefill_ep_died_total",
 			Help: "Prefill backend connections that died mid-request (client received 503). Counts endpoint-death EVENTS as detected per connection, complementing the request-outcome view in loxilb_ai_pd_requests_total.",
@@ -764,7 +762,7 @@ var (
 	)
 
 	// Metric #30: decode endpoint deaths (Counter)
-	pdDecodeEpDiedTotal = promauto.NewCounter(
+	pdDecodeEpDiedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_decode_ep_died_total",
 			Help: "Decode endpoint failures detected: connect failure at decode initiation (after prefill completed) or backend EOF before any response byte was relayed.",
@@ -772,7 +770,7 @@ var (
 	)
 
 	// Metric #31: decode zero-byte EOFs (Counter)
-	pdDecodeZeroByteEofTotal = promauto.NewCounter(
+	pdDecodeZeroByteEofTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_decode_zero_byte_eof_total",
 			Help: "Decode backend EOF with ZERO response bytes relayed to the client (client received 502). Subset of loxilb_pd_decode_ep_died_total; the signature of an async connect to a dead decode endpoint.",
@@ -780,7 +778,7 @@ var (
 	)
 
 	// Metric #32: prefill connect failovers (Counter)
-	pdConnectFailoverTotal = promauto.NewCounter(
+	pdConnectFailoverTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_connect_failover_total",
 			Help: "Successful prefill connect failovers: the initially selected endpoint's TCP connect failed mid-health-cycle and a retry against another healthy prefill endpoint succeeded (client saw no error).",
@@ -790,13 +788,13 @@ var (
 	// Same-EP reconnects on transient backend connect failure (affinity-bearing
 	// services: P/D disagg or KV-exact). Attempts vs successes; a success means
 	// the cache-owner endpoint was preserved instead of falling to Tier-2.
-	pdConnectRetrySameEpTotal = promauto.NewCounter(
+	pdConnectRetrySameEpTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_connect_retry_same_ep_total",
 			Help: "Same-endpoint reconnect attempts after a transient backend connect failure on an affinity-bearing service (P/D disaggregation or KV-exact). Bounded by LLB_PD_CONNECT_RETRY_SAME_EP (default 1).",
 		},
 	)
-	pdConnectRetrySameEpOkTotal = promauto.NewCounter(
+	pdConnectRetrySameEpOkTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_connect_retry_same_ep_ok_total",
 			Help: "Same-endpoint reconnect attempts that succeeded: the originally selected (cache-owner) endpoint accepted on retry, preserving KV affinity instead of falling through to Tier-2 selection.",
@@ -804,7 +802,7 @@ var (
 	)
 
 	// Metric #33: raw shutdowns on selection failure (Counter)
-	lbSelectFailureShutdownTotal = promauto.NewCounter(
+	lbSelectFailureShutdownTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_lb_select_failure_shutdown_total",
 			Help: "Full-proxy client connections shut down raw (TCP reset, no HTTP error body) because backend selection or connect failed on a non-P/D path. Nonzero means clients are seeing connection resets instead of 502/503 during endpoint outages.",
@@ -812,7 +810,7 @@ var (
 	)
 
 	// Metric #34: SGLang prefill-failure decode aborts (Counter)
-	pdSgPrefillAbortDecodeTotal = promauto.NewCounter(
+	pdSgPrefillAbortDecodeTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_sg_prefill_abort_decode_total",
 			Help: "SGLang P/D dual dispatch: prefill drain-leg failure (error status, transport death, or rendezvous timeout) forced an abort of the in-flight decode leg (client received 502/504). A storm here means prefill endpoints or the bootstrap rendezvous are unhealthy.",
@@ -820,7 +818,7 @@ var (
 	)
 
 	// Metric #35: SGLang decode-failure drain closes (Counter)
-	pdSgDecodeCloseDrainTotal = promauto.NewCounter(
+	pdSgDecodeCloseDrainTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_sg_decode_close_drain_total",
 			Help: "SGLang P/D dual dispatch: a decode-leg failure closed the still-open prefill drain leg so it is not orphaned at the engine until the disaggregation timeout.",
@@ -828,7 +826,7 @@ var (
 	)
 
 	// Metric #36: SGLang pair retries with a fresh room (Counter)
-	pdSgRoomRetryTotal = promauto.NewCounter(
+	pdSgRoomRetryTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_sg_room_retry_total",
 			Help: "SGLang P/D dual dispatch: the whole (prefill, decode) pair was re-dispatched with a fresh bootstrap room after a retriable failure.",
@@ -836,7 +834,7 @@ var (
 	)
 
 	// Metric #37: SGLang prefill 4xx relayed verbatim (Counter)
-	pdSgPrefillRejectRelayTotal = promauto.NewCounter(
+	pdSgPrefillRejectRelayTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_sg_prefill_reject_relay_total",
 			Help: "SGLang P/D dual dispatch: the prefill engine answered a complete 4xx before decode produced output; the origin response was relayed to the client verbatim and the decode leg aborted. A client error, not an endpoint fault — a storm here means clients are sending unservable requests (for example prompts over the model context window).",
@@ -844,7 +842,7 @@ var (
 	)
 
 	// Metric #38: SGLang oversize fail-closed rejects (Counter)
-	pdSgOversizeRejectTotal = promauto.NewCounter(
+	pdSgOversizeRejectTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_sg_oversize_reject_total",
 			Help: "SGLang P/D: a streamable request (body above the gateway JSON inspection window) on a disaggregation rule was refused fail-closed with a 503 before contacting any engine, because bootstrap injection is impossible for an unbuffered body and disaggregation-mode engines cannot serve a bootstrap-less relay.",
@@ -852,7 +850,7 @@ var (
 	)
 
 	// Metric #39: TRT-LLM context early exits (Counter)
-	pdTrtCtxEarlyExitTotal = promauto.NewCounter(
+	pdTrtCtxEarlyExitTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_trt_ctx_early_exit_total",
 			Help: "TRT-LLM P/D: the context response finished the request in one step (finish_reason neither length nor not_finished) — the buffered response was relayed to the client and the generation leg skipped. A success outcome, not an error; a sustained high rate means prompts are completing within the context token cap.",
@@ -860,7 +858,7 @@ var (
 	)
 
 	// Metric #40: terminators the gateway synthesised (Counter)
-	pdTerminatorSynthesizedTotal = promauto.NewCounter(
+	pdTerminatorSynthesizedTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_pd_terminator_synthesized_total",
 			Help: "P/D streams the gateway ended by writing the SSE [DONE] terminator the decode engine never sent (the graceful-[DONE] sweep, after the engine went silent). The mechanism behind part of loxilb_ai_pd_requests_total{phase=\"decode\",status=\"truncated\"}: the rest of that series is answers the gateway cut with an error (stream timeout, idle cap, duration cap).",
@@ -868,7 +866,7 @@ var (
 	)
 
 	// Metric #41: reaper ends the owner worker could not take (Counter)
-	reapFallbackTotal = promauto.NewCounter(
+	reapFallbackTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_reap_fallback_total",
 			Help: "Connections a reaper (a P/D timeout, the idle cap, the duration cap, a stalled client) ended from the health thread because the connection's owner worker could not be handed the end (no owner, or its wake failed). The request such an end frees has no request record. Expected 0; a non-zero rate means requests are missing from loxilb_ai_requests_total.",
@@ -876,7 +874,7 @@ var (
 	)
 
 	// Metric #42: requests with no Host on a model-routed listener (Counter)
-	routeHostMissingTotal = promauto.NewCounter(
+	routeHostMissingTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_route_host_missing_total",
 			Help: "Requests that reached dispatch with no usable Host on a listener whose pools name models. Routed to the pool of the model the request named, or refused (503 model_unavailable / no_route); never sent to another model's pool. Expected 0: a non-zero rate means a path lost the Host.",
@@ -1041,7 +1039,7 @@ func (ttfbCollector) Collect(ch chan<- prometheus.Metric) {
 // init registers the TTFB collector once with the default registry (same
 // registry the promauto metrics above use).
 func init() {
-	prometheus.MustRegister(ttfbCollector{})
+	datapathRegisterer{}.MustRegister(ttfbCollector{})
 }
 
 // ============================================================================
@@ -1207,6 +1205,9 @@ func holdFromC(m *C.proxy_metrics_snapshot_t) holdSnapshot {
 // - CGO's 'C' package is file-scoped (only accessible in file with 'import "C"')
 // - C.proxy_metrics_snapshot_t type only exists in this file
 func RunSockproxyMetrics(ctx context.Context) {
+	if !datapathAvailable.Load() {
+		return // No native context exists in peer-only or before registration.
+	}
 	safeGoroutineOperation(func(ctx context.Context) error {
 		// 1. Fetch current metrics from C
 		current := C.proxy_get_metrics()
@@ -1478,7 +1479,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 		prevSockproxyMetrics = current
 
 		// 5. Sleep and loop (security pattern)
-		time.Sleep(PrometheusDefaultPeriod) // 10 seconds
+		waitMetricPeriod(ctx, PrometheusDefaultPeriod) // 10 seconds
 		return nil
 	}, "sockproxy_metrics", ctx)
 }
@@ -1820,7 +1821,7 @@ var (
 	// carries 1 per rule (the setter clears the previous state's series).
 	// States: PROFILE_VALIDATED, TOKEN_PARITY_VERIFIED, ENGINE_HASH_ATTESTED,
 	// READY, READY_FUNCTIONAL_ONLY, DEGRADED, ENFORCEMENT_FAULT, ...
-	kvAttestState = promauto.NewGaugeVec(
+	kvAttestState = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_ai_kv_attest_state",
 			Help: "KV-exact attestation ladder position per strict rule (1 on the current state's series).",
@@ -1831,7 +1832,7 @@ var (
 	// The KvExactEnforcementFault alert source (plan §7.4): 1 while a rule's
 	// data-plane contract word could not be ACKed and the Go deny set is the
 	// standing fence.
-	kvAttestEnforcementFault = promauto.NewGaugeVec(
+	kvAttestEnforcementFault = datapathMetrics.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_ai_kv_enforcement_fault",
 			Help: "1 while a strict KV-exact rule is in ENFORCEMENT_FAULT (contract word unACKable; Go deny set fencing).",
@@ -1839,7 +1840,7 @@ var (
 		[]string{"rule"},
 	)
 
-	kvAttestProbeFailTotal = promauto.NewCounterVec(
+	kvAttestProbeFailTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_kv_attest_probe_fail_total",
 			Help: "Attestation probe failures by typed reason (identity/token-parity probes, plan section 5).",
@@ -1847,7 +1848,7 @@ var (
 		[]string{"reason"},
 	)
 
-	kvAttestEchoTotal = promauto.NewCounterVec(
+	kvAttestEchoTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_kv_attest_echo_total",
 			Help: "Echo-challenge outcomes (plan section 6.2) by result (ok|fail).",
@@ -1859,7 +1860,7 @@ var (
 	// stream's continuity violations, by typed reason
 	// (drain_sequence_gap | drain_ownership_lost), and the heals that
 	// lift them (a created announcement or a stream re-acquire).
-	kvTrtllmDrainOwnFaultTotal = promauto.NewCounterVec(
+	kvTrtllmDrainOwnFaultTotal = datapathMetrics.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
 			Help: "TRT-LLM drain ownership continuity faults by typed reason (plan section 17.4).",
@@ -1867,7 +1868,7 @@ var (
 		[]string{"reason"},
 	)
 
-	kvTrtllmDrainOwnHealTotal = promauto.NewCounter(
+	kvTrtllmDrainOwnHealTotal = datapathMetrics.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
 			Help: "TRT-LLM drain ownership fault clears (fresh engine cache announcement or stream re-acquire).",

@@ -7,10 +7,12 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // EndPointHostState Explicit host-state input. Supply both nonzero epPort and epProto for generated-key targeting, or omit both for host-wide targeting. epPort is validated in 0..65535 before conversion. Fullproxy dataplane updates respect the selected endpoint port; zero retains all ports on the host. Custom monitor names cannot be selected by the specific tuple path. Host-wide requests can succeed without matches. Immediate dependent updates are implemented for fullproxy rules, not universally.
@@ -19,9 +21,12 @@ import (
 type EndPointHostState struct {
 
 	// Nonzero port in 1..65535 requires epProto; zero or omission requires epProto empty for host-wide targeting.
+	// Maximum: 65535
+	// Minimum: 0
 	EpPort int64 `json:"epPort,omitempty"`
 
 	// Generated monitor-key probe type: tcp, udp, sctp, http, https, ping, tls-hello or none. Supply together with nonzero epPort or omit both. This selector cannot resolve a custom monitor name and is not a universal transport-protocol selector.
+	// Enum: [ tcp udp sctp http https ping tls-hello none]
 	EpProto string `json:"epProto,omitempty"`
 
 	// Literal endpoint host IP used for monitor matching, not a hostname or CIDR.
@@ -33,20 +38,102 @@ type EndPointHostState struct {
 
 // Validate validates this end point host state
 func (m *EndPointHostState) Validate(formats strfmt.Registry) error {
-	if m == nil {
-		return errors.New(400, "endpoint host state is required")
+	if err := validateEndPointHostStateTuple(m); err != nil {
+		return err
 	}
-	if m.EpPort < 0 || m.EpPort > 65535 {
-		return errors.New(400, "epPort must be between 0 and 65535")
+
+	var res []error
+
+	if err := m.validateEpPort(formats); err != nil {
+		res = append(res, err)
 	}
-	if (m.EpPort == 0) != (m.EpProto == "") {
-		return errors.New(400, "nonzero epPort and epProto must be supplied together")
+
+	if err := m.validateEpProto(formats); err != nil {
+		res = append(res, err)
 	}
-	switch m.EpProto {
-	case "", "tcp", "udp", "sctp", "http", "https", "ping", "tls-hello", "none":
-	default:
-		return errors.New(400, "unknown epProto %q", m.EpProto)
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *EndPointHostState) validateEpPort(formats strfmt.Registry) error {
+	if swag.IsZero(m.EpPort) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("epPort", "body", m.EpPort, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("epPort", "body", m.EpPort, 65535, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var endPointHostStateTypeEpProtoPropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["","tcp","udp","sctp","http","https","ping","tls-hello","none"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		endPointHostStateTypeEpProtoPropEnum = append(endPointHostStateTypeEpProtoPropEnum, v)
+	}
+}
+
+const (
+
+	// EndPointHostStateEpProtoEmpty captures enum value ""
+	EndPointHostStateEpProtoEmpty string = ""
+
+	// EndPointHostStateEpProtoTCP captures enum value "tcp"
+	EndPointHostStateEpProtoTCP string = "tcp"
+
+	// EndPointHostStateEpProtoUDP captures enum value "udp"
+	EndPointHostStateEpProtoUDP string = "udp"
+
+	// EndPointHostStateEpProtoSctp captures enum value "sctp"
+	EndPointHostStateEpProtoSctp string = "sctp"
+
+	// EndPointHostStateEpProtoHTTP captures enum value "http"
+	EndPointHostStateEpProtoHTTP string = "http"
+
+	// EndPointHostStateEpProtoHTTPS captures enum value "https"
+	EndPointHostStateEpProtoHTTPS string = "https"
+
+	// EndPointHostStateEpProtoPing captures enum value "ping"
+	EndPointHostStateEpProtoPing string = "ping"
+
+	// EndPointHostStateEpProtoTLSDashHello captures enum value "tls-hello"
+	EndPointHostStateEpProtoTLSDashHello string = "tls-hello"
+
+	// EndPointHostStateEpProtoNone captures enum value "none"
+	EndPointHostStateEpProtoNone string = "none"
+)
+
+// prop value enum
+func (m *EndPointHostState) validateEpProtoEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, endPointHostStateTypeEpProtoPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *EndPointHostState) validateEpProto(formats strfmt.Registry) error {
+	if swag.IsZero(m.EpProto) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateEpProtoEnum("epProto", "body", m.EpProto); err != nil {
+		return err
+	}
+
 	return nil
 }
 

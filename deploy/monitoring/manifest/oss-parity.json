@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-07T22:10:53+00:00",
-  "source_revision": "d4de30686d98a2d90224291262915d7170bfdc17",
+  "generated_at": "2026-11-10T20:40:10+00:00",
+  "source_revision": "dac5bc40ae99ea8a200b7ba15f7df27e52a6fe23",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "4fa515f08017e845470218990a0a8961f5426e7e"
  },
  "contract": {
-  "gateway_families": 355,
+  "gateway_families": 356,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 320,
+  "absent": 321,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -2159,6 +2159,17 @@
    },
    "upstream": {
     "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_datapath_metrics_available",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
     "labels": []
    }
   },

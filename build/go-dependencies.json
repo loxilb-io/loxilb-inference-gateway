@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "go": "1.26.11",
+  "x_net": "v0.62.0",
+  "grpc": "v1.83.2",
+  "gobgp": {
+    "default": "v3.35.0",
+    "legacy": "v3.35.0"
+  },
+  "protoc_gen_go": "v1.34.2",
+  "protoc_gen_go_grpc": "v1.5.1",
+  "govulncheck": "v1.6.0"
+}

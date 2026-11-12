@@ -7,6 +7,28 @@ name: Trivy-Image
 # is published; the weekly schedule keeps `latest` covered.
 
 on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "Dockerfile*"
+      - "**/Dockerfile*"
+      - "packaging/Dockerfile*"
+      - "**/*.go"
+      - "**/go.mod"
+      - "**/go.sum"
+      - "go.mod"
+      - "go.sum"
+      - "cicd/common/**"
+      - "build/go-dependencies.json"
+      - "scripts/*go*"
+      - "Makefile"
+      - "loxilb-ebpf"
+      - ".dockerignore"
+      - ".github/scripts/**"
+      - ".github/actions/install-trivy/**"
+      - ".github/workflows/go-candidate-images.yml"
+      - ".github/workflows/trivy-image.yml"
+      - ".github/workflows/govulncheck.yml"
   workflow_call:
     inputs:
       image-tag:
@@ -29,7 +51,13 @@ permissions:
   packages: read
 
 jobs:
+  candidate-images:
+    if: ${{ github.event_name == 'pull_request' && inputs.image-tag == '' }}
+    uses: ./.github/workflows/go-candidate-images.yml
+    secrets: inherit
+
   scan:
+    if: ${{ github.event_name != 'pull_request' || inputs.image-tag != '' }}
     name: trivy ${{ matrix.suffix == '' && 'u22' || 'u24' }}
     runs-on: ubuntu-latest
     strategy:

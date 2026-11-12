@@ -640,14 +640,14 @@ var (
 	// between submit and their last report (the EPP's view of in-flight
 	// load), and decisions the C side table still holds. Both read the
 	// provider loxinet installs (SetEppStateProvider) at scrape time.
-	aiEppInflight = promauto.NewGaugeFunc(
+	aiEppInflight = datapathMetrics.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Name: "loxilb_ai_epp_inflight",
 			Help: "Requests currently handed to an Endpoint Picker and not yet reported finished (the EPP's in-flight view).",
 		},
 		func() float64 { a, _ := eppState(); return float64(a) },
 	)
-	aiEppPending = promauto.NewGaugeFunc(
+	aiEppPending = datapathMetrics.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Name: "loxilb_ai_epp_pending",
 			Help: "Endpoint Picker decisions the data plane side table still holds (parked or being applied).",
@@ -886,7 +886,7 @@ const (
 	// rather than as the primary detector.
 	//
 	// It is NOT reachable by a version skew between the two repos: the data
-	// plane is linked statically (-l:libloxilbdp.a, pkg/loxinet/dpebpf_linux.go),
+	// plane is linked statically (-Wl,-Bstatic -lloxilbdp, pkg/loxinet/dpebpf_linux.go),
 	// so a mismatched build fails to build — the C compiler rejects an argument
 	// the header does not declare, and check-source-invariants.sh §9 rejects a
 	// Go signature that moves without it. What a skew cannot do is reach
