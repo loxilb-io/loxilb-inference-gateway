@@ -39,7 +39,7 @@ package handler
 
 /*
 #cgo CFLAGS: -I./../../../loxilb-ebpf/libbpf/src/ -I./../../../loxilb-ebpf/common -I./../../../loxilb-ebpf/kernel
-#cgo LDFLAGS: -L. -L/lib64 -L./../../../loxilb-ebpf/kernel -L./../../../loxilb-ebpf/libbpf/src/build/usr/lib64/ -Wl,-rpath=/lib64/ -l:libloxilbdp.a -l:libbpf.a -lelf -lz -lssl -lcrypto -lnghttp2
+#cgo LDFLAGS: -L. -L/lib64 -L./../../../loxilb-ebpf/kernel -L./../../../loxilb-ebpf/libbpf/src/build/usr/lib64/ -Wl,-rpath=/lib64/ -Wl,-Bstatic -lloxilbdp -lbpf -Wl,-Bdynamic -lelf -lz -lssl -lcrypto -lnghttp2
 #include <stdlib.h>
 #include "loxilb_libdp.h"
 #include "uthash.h"

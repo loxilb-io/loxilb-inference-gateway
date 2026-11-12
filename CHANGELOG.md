@@ -13,6 +13,15 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
+### Build
+
+- Build with Go 1.26.11 (was 1.26.10): it fixes GO-2026-6859, an HTTP/1 server
+  crash in `net/http` that the vulnerability gate reports as reachable.
+- Link the datapath archives with `-Wl,-Bstatic -l<name> -Wl,-Bdynamic` instead
+  of `-l:lib<name>.a` in the cgo directives. Go 1.26.11 and 1.27.4 reject the
+  colon form in `#cgo LDFLAGS`; the archives, the search path and the static
+  linkage are unchanged.
+
 ### Bundled CLI
 
 - Pin the embedded CLI to `973c53c2`, including EPP + P/D support with explicit
