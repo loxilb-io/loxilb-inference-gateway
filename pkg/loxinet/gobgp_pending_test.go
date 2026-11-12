@@ -58,7 +58,7 @@ func TestBGPLateReadvertiseSkipsDeletedAndWaitsForGroup(t *testing.T) {
 	}
 	var prefix api.IPAddressPrefix
 	if err = c.paths[0].Path.Nlri.UnmarshalTo(&prefix); err != nil || prefix.Prefix != "127.0.0.23" {
-		t.Fatalf("wrong late prefix: %v %v", prefix, err)
+		t.Fatalf("wrong late prefix: %v %v", &prefix, err)
 	}
 }
 

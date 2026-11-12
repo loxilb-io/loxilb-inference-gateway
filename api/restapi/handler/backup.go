@@ -222,6 +222,12 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 	}
 	defer snapshotGate.Store(false)
 	defer beginRestoreFreeze()()
+	defer snapshot.LockBGPRecovery()()
+	// A daemon may fail after the middleware's pending check. Import does
+	// not replace a pending group; the full restore endpoint owns that flow.
+	if snapshot.BGPPending() {
+		return &ErrorResponse{Payload: &models.Error{Code: 409, Message: "Resource conflict", Result: "bgp_domain_pending: use a full POST /config/restore?mode=commit"}}
+	}
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	result, err := engine.Restore(raw, snapshot.RestoreOptions{Mode: snapshot.ModeCommit, Components: components})
@@ -236,6 +242,11 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 	// §6 write-through, same as POST /config/restore: an explicit
 	// persisted marker, never a bare "ok" over a failed persist.
 	if result.Result == snapshot.ResultOK {
+		if snapshot.ResultSelectsBGP(result) {
+			if notifier, ok := any(ApiHooks).(interface{ NetBGPRecoveryComplete() }); ok {
+				notifier.NetBGPRecoveryComplete()
+			}
+		}
 		persisted := false
 		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "config/import: write-through persist failed after commit: %v\n", werr)

@@ -248,7 +248,7 @@ paths:
   '/config/snapshot':
     get:
       summary: Download a complete instance snapshot
-      description: Returns a versioned, checksummed snapshot document using schema 1.12. Supported snapshot domains exclude some runtime-only state and externally stored secrets. Replaces deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.
+      description: Returns a versioned, checksummed snapshot document using schema 1.13. Supported snapshot domains exclude some runtime-only state and externally stored secrets. Replaces deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.
       parameters:
         - name: components
           in: query

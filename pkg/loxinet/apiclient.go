@@ -25,6 +25,7 @@ import (
 
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -2385,6 +2386,11 @@ func (na *NetAPIStruct) NetBGPRecoveryComplete() {
 	if mh.bgp == nil {
 		return
 	}
+	mh.bgp.cancelDaemonRecovery()
+	if mh.bgp.pMode {
+		mh.bgp.setDaemonConfigPending(false)
+		return
+	}
 	rules, err := mh.zr.Rules.GetLBRule()
 	if err != nil {
 		return
@@ -2399,6 +2405,7 @@ func (na *NetAPIStruct) NetBGPRecoveryComplete() {
 		mh.bgp.ciMap[cmn.CIDefault] = ci
 	}
 	ci.rules = liveBGPAdvertisements(rules)
+	mh.bgp.setDaemonConfigPending(false)
 	mh.bgp.reAdvertise = true
 }
 
@@ -2418,4 +2425,28 @@ func liveBGPAdvertisements(rules []cmn.LbRuleMod) map[string]int {
 		}
 	}
 	return refs
+}
+
+// NetBGPRecoveryHealthy is the snapshot layer's boundary for live captures.
+func (na *NetAPIStruct) NetBGPRecoveryHealthy() bool {
+	if mh.bgp == nil {
+		return true
+	}
+	mh.bgp.mtx.RLock()
+	defer mh.bgp.mtx.RUnlock()
+	return mh.bgp.state == BGPConnected && !mh.bgp.daemonConfigPending.Load() && !snapshot.BGPPending()
+}
+func (na *NetAPIStruct) NetBGPRecoveryGeneration() uint64 {
+	if mh.bgp == nil {
+		return 0
+	}
+	return mh.bgp.session.Load()
+}
+
+func (na *NetAPIStruct) NetBGPStaticConfigPresent() bool { return bgpStaticConfigFile() != "" }
+func (na *NetAPIStruct) NetBGPWaitForStartup() error {
+	if mh.bgp == nil {
+		return nil
+	}
+	return mh.bgp.waitForStartup(bgpOperationContext(), time.Now, waitBGPStartupDelay)
 }

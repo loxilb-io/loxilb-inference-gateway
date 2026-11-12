@@ -139,6 +139,9 @@ func LastRestore() *OpRecord {
 func ReadinessReasons(settled bool, boot BootRestoreState, lastRestore *OpRecord, autoPersist AutoPersistState, depFailures []string) []string {
 	var reasons []string
 	pending := BGPPending()
+	if BGPDaemonConfigPending() {
+		reasons = append(reasons, "bgp_daemon_config_pending: speaker configuration recovery is incomplete")
+	}
 	if pending {
 		reasons = append(reasons, "bgp_domain_pending: independent configuration is restored; BGP recovery is pending")
 	}

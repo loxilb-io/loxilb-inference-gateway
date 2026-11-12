@@ -141,6 +141,8 @@ jobs:
         run: bash cicd/common/test_persist_securityrate.sh
       - name: Persistence boot replay receipt oracle
         run: bash cicd/common/test_persist_replay_receipt.sh
+      - name: Persistence explicit BGP adoption oracle
+        run: bash cicd/cfg-persist-restartmatrix/test_oracle.sh
 
       # The producer half of the config-lifecycle contract check. The CLI
       # repository pins the operations and fields it decodes from the

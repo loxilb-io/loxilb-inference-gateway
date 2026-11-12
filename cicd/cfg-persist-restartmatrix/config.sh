@@ -5,7 +5,9 @@
 # process restart, container stop/start (the netns is recreated, the
 # host-mounted config volume is not), and a cold boot with the snapshot
 # removed. Every class ends on the same oracle — canonical deep-compare
-# against the pre-restart dump plus a live traffic probe — so a class that
+# against the pre-restart dump plus a live traffic probe. The committed cold
+# restore must explicitly adopt BGP and retain that marker after reboot; only
+# this ownership transition is added to the expected dump. A class that
 # silently loses or reinvents configuration cannot pass.
 
 export LLB_HOST_PORTS=""
