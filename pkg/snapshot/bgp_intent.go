@@ -74,6 +74,14 @@ func RememberBGPIntent(d *Document) {
 		return
 	}
 	copy := cloneBGPDocument(d)
+	// Completed intent may be overlaid after Capture's normalization. Strip
+	// session measurements here without reordering operator configuration.
+	for i := range copy.Domains.BGP.Neighbors {
+		copy.Domains.BGP.Neighbors[i].State, copy.Domains.BGP.Neighbors[i].Uptime = "", ""
+	}
+	// Only an active pending group preserves original boot JSON. A completed
+	// fallback must encode the desired projection, not stale raw measurements.
+	copy.pendingBGPRaw = nil
 	copy.Domains = Domains{BGP: copy.Domains.BGP, BGPPolicyAssignment: copy.Domains.BGPPolicyAssignment}
 	copy.IncludedDomains = append([]string(nil), bgpComponents...)
 	copy.RecoveryDependencies = nil

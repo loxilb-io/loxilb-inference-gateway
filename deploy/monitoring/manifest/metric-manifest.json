@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-11T18:33:55+00:00",
-  "source_revision": "fb9b5ee367f0bf99c4acc67d49febeb96bbb8f4f"
+  "generated_at": "2026-11-12T05:26:20+00:00",
+  "source_revision": "aaad5a70cdc2976d904a7fabddb5d3e630e1bdca"
  },
  "contract": {
   "total": 358,
@@ -6844,8 +6844,8 @@
      "symbol": "ChangeBGPIntent",
      "kind": "func",
      "file": "pkg/snapshot/bgp_intent.go",
-     "def_line": 144,
-     "call_line": 174,
+     "def_line": 152,
+     "call_line": 182,
      "calls": "record"
     },
     {

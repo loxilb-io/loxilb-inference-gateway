@@ -1088,8 +1088,8 @@
       "symbol": "ChangeBGPIntent",
       "kind": "func",
       "file": "pkg/snapshot/bgp_intent.go",
-      "def_line": 144,
-      "call_line": 174,
+      "def_line": 152,
+      "call_line": 182,
       "calls": "record"
      },
      {
