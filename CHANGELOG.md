@@ -86,6 +86,32 @@ inference-gateway delta is enumerated in detail.
   applied before it. Strict failures retain snapshot authority; legacy replay
   remains available only through the explicit compat fallback.
 
+- **OWNER REVIEW PENDING.** AI gateway: a refusal the gateway writes before any
+  request byte reaches a backend now carries `X-Loxilb-Refusal-Stage` with the
+  stage of its `sec.ai.deny` record (`auth`, `conflict`, `ratelimit`, `reserve`,
+  `capacity`, `objective`, `route`, `framing`, `security`), or `queue` for a
+  request that ended while it waited for capacity. Only `capacity` and `queue`
+  are congestion. Refusals written by the prefill/decode code itself stay
+  unmarked. Additive: no existing header, `error` code, body field, status or
+  audit field changes. See
+  [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md).
+
+- **OWNER REVIEW PENDING.** AI gateway: an answer the gateway writes itself, a
+  refusal or an outage, echoes the request's own ID as `X-Request-Id` (the
+  client's, at most 255 bytes, or the minted one), on HTTP/1.1 and HTTP/2. The
+  header is absent when the request has no ID of its own at that moment, and it
+  is never another request's on a keep-alive connection. A relayed backend
+  response keeps the backend's own header.
+
+- **OWNER REVIEW PENDING.** AI gateway: `X-Loxilb-Refusal-*` fields sent by a
+  backend are removed from every relayed response head, with or without
+  `fc_expose_headers` (HTTP/1.1: a head that arrives in one read; HTTP/2: the
+  interim and the final head).
+
+- **OWNER REVIEW PENDING.** AI gateway: the HTTP/2 `503` capacity body gains
+  `retry_after`, equal to the `retry-after` header, as on HTTP/1.1; the queue
+  endings' plain fallback answers gain `Content-Length`.
+
 ## [v0.9.9.1] - 2026-11-03
 
 `v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.

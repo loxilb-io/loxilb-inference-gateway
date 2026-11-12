@@ -23,6 +23,8 @@ PORT_TS=2033          # the same two backends, keyed: ceiling 4, tenant share 50
 PORT_TQ=2034          # the same two backends, keyed: ceiling 2, tenant share 50 %, a queue
 PORT_XH=2035          # the same two backends, ceiling 4, admission headers on admitted responses
 PORT_XH2=2036         # the two h2c backends, ceiling 4, admission headers on admitted streams
+PORT_DEAD=2037        # one endpoint nothing listens on (l3ep1:8099): the outage a failed connect is answered with
+DEAD_TARGET=8099
 FC_P_MAX=4
 FC_P_STALE_MS=45000
 FC_U_MAX=2
@@ -56,6 +58,34 @@ PG_OWNER_PW=oampass
 PG_DB=loxilb
 DP_PW=dp-secret-1
 MGMT_PW=mgmt-secret-1
+# gw_pg_start: the store, empty and bootstrapped. config.sh starts it; row
+# NEG stops it (the outage a cold key meets) and starts it again before the
+# observe-mode reboot, which needs it for the two keyed rules. The container
+# runs --rm, so a stop removes it and a start is always a new, empty store.
+gw_pg_start() {
+  local i
+  docker rm -f "$PG_NAME" >/dev/null 2>&1
+  # --rm hands the previous run's removal to the daemon asynchronously: wait,
+  # bounded, until the name is free before reusing it.
+  for i in $(seq 1 30); do
+    docker inspect "$PG_NAME" >/dev/null 2>&1 || break
+    sleep 1
+  done
+  docker inspect "$PG_NAME" >/dev/null 2>&1 && { echo "FATAL: a previous $PG_NAME is still being removed"; return 1; }
+  docker run --rm -d --name "$PG_NAME" -e POSTGRES_USER="$PG_OWNER" -e POSTGRES_PASSWORD="$PG_OWNER_PW" \
+    -e POSTGRES_DB="$PG_DB" postgres:18.6 >/dev/null
+  for i in $(seq 1 60); do
+    # Over TCP: pg_isready answers on the unix socket before the port listens.
+    docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" >/dev/null || {
+    echo "FATAL: PostgreSQL did not come up"; return 1; }
+  docker cp ../../scripts/aigw-db-bootstrap.sql "$PG_NAME:/tmp/aigw-db-bootstrap.sql"
+  docker exec -e AIGW_DB_PASSWORD="$DP_PW" -e AIGW_MGMT_DB_PASSWORD="$MGMT_PW" \
+    "$PG_NAME" psql -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" -q -f /tmp/aigw-db-bootstrap.sql || {
+    echo "FATAL: the store bootstrap failed"; return 1; }
+}
 # gw_db_args: the store flags, once the PostgreSQL container is up.
 gw_db_args() {
   local ip
@@ -179,6 +209,7 @@ gw_add_rules() {
   gw_add_rule $PORT_TQ  "$(gw_tq_json)"                                          8080 8081 || return 1
   gw_add_rule $PORT_XH  "$(gw_xh_json on)"                                       8080 8081 || return 1
   gw_add_rule $PORT_XH2 ", \"backend_protocol\": \"http2\"$(gw_xh_json on)"      8090 8091 || return 1
+  gw_add_rule $PORT_DEAD ""                                                      $DEAD_TARGET || return 1
   sleep 2
 }
 

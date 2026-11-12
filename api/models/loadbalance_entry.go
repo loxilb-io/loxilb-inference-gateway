@@ -798,7 +798,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 0
 	FcEpMaxInflight int32 `json:"fc_ep_max_inflight,omitempty"`
 
-	// on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and X-Loxilb-Admission-Limit on the head of every admitted inference response (HTTP/1 and HTTP/2, streamed ones included), the same three a capacity refusal carries: the pool's executing units and waiting requests as the response head goes out, and the service ceiling in force (0 is none). Fields of those names from the backend are replaced. off leaves responses as the backend sent them; inherit, or omitted on create, runs on the process default (LLB_FC_EXPOSE_HEADERS). Refused (400) with sockMapMode both or response, where the gateway never sees the response. Replace and null semantics as fc_mode.
+	// on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and X-Loxilb-Admission-Limit on the head of an admitted inference response (HTTP/1 and HTTP/2, streamed ones included; an HTTP/1 response head the backend split across several reads is sent without them, and with the backend's own fields of those names), the same three a capacity refusal carries: the pool's executing units and waiting requests as the response head goes out, and the service ceiling in force (0 is none). Fields of those names from the backend are replaced. off leaves responses as the backend sent them; inherit, or omitted on create, runs on the process default (LLB_FC_EXPOSE_HEADERS). Refused (400) with sockMapMode both or response, where the gateway never sees the response. Replace and null semantics as fc_mode.
 	// Enum: [on off inherit]
 	FcExposeHeaders string `json:"fc_expose_headers,omitempty"`
 
