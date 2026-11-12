@@ -119,7 +119,7 @@ for o in llb_ebpf_main.o llb_ebpf_emain.o llb_xdp_main.o llb_kern_sock.o \
   sudo docker cp "$REPO/loxilb-ebpf/kernel/$o" $C:/opt/loxilb/$o
 done
 sudo docker cp "$REPO/loxilb-ebpf/kernel/loxilb_dp_debug" $C:/usr/local/sbin/ 2>/dev/null || true
-# libbpf is linked statically (-l:libbpf.a), so the runtime .so is left alone.
+# libbpf is linked statically (-Wl,-Bstatic -lbpf), so the runtime .so is left alone.
 sudo docker exec $C mkllb_bpffs >/dev/null 2>&1 || true
 sudo docker commit $C ghcr.io/loxilb-io/loxilb-inference-gateway:"$TAG" >/dev/null
 sudo docker rm -f $C >/dev/null

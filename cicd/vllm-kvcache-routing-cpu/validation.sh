@@ -526,9 +526,9 @@ else
     # a missing binary must not read as a product FAIL (false-negative).
     command -v go >/dev/null 2>&1 || export PATH=/usr/local/go/bin:$PATH
     # PREREQUISITE: pkg/loxinet is a cgo package that links the eBPF datapath static
-    # archive (`-l:libloxilbdp.a`, produced by loxilb-ebpf/kernel). On a freshly-cloned or
+    # archive (`-Wl,-Bstatic -lloxilbdp`, produced by loxilb-ebpf/kernel). On a freshly-cloned or
     # `make clean`-ed tree that archive does not exist and the go LINKER fails with
-    #   /usr/bin/ld: cannot find -l:libloxilbdp.a
+    #   /usr/bin/ld: cannot find -lloxilbdp
     # — which reads as a KV unit-test FAIL but is really a missing build artifact (the
     # containers under test come from the prebuilt image, so nothing else in this suite
     # needs the host tree built). Build the prerequisite ONCE when absent; a FAILED
