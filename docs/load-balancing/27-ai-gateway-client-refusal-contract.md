@@ -155,7 +155,9 @@ sent when the request's class was resolved before the refusal. "llm-d reason" me
 | `403` | `objective_not_allowed` | objective | policy gate | none | no (name an objective the identity may use, or none); only on a rule with `ai_objective_strict` | absent | `message` | none | closed | same | reason `authz` | none |
 
 On a rule without `ai_objective_strict`, an objective the identity may not use is not refused: the request is
-admitted under the default objective and only the audit record says the hint was denied.
+admitted under the default objective. The audit record says the hint was denied, and on a rule with
+`fc_expose_headers` on the response does too: it carries `X-Loxilb-Admission-Objective-Requested` with what
+was asked for ([below](#admission-metadata-on-responses)).
 
 ### Stages `ratelimit` and `reserve` — the caller's own budget
 
@@ -324,6 +326,22 @@ The admission triple appears on capacity refusals always, and on admitted respon
   on HTTP/1.1, on an admitted response whose head the backend sent in more than one piece.
 - The class pair and `X-Loxilb-Admission-Objective` are present only when the request's class was resolved, which
   needs an identity that resolves a tenant. Their absence is not an error.
+- **`X-Loxilb-Admission-Objective-Requested`** is on an admitted response **only when the request asked for an
+  objective it may not use** and was served on its default (a rule without `ai_objective_strict`). Its value is
+  what was asked for and denied:
+  - the objective header (`x-llm-d-inference-objective`, or its deprecated name) was denied → the name as it
+    was sent, or `(oversize)` for a name of 64 bytes or more;
+  - the body's `service_tier` was denied, with no objective header → `tier:<value>`, the value being `flex`,
+    `priority` or `fast`;
+  - the request carried both → the header's name: the header is the hint the gateway judges when both are
+    present, so it is the one that was denied.
+
+  `X-Loxilb-Admission-Objective` beside it is what was applied. **Absent means "not
+  denied"** (nothing was asked for, or it was applied) wherever the other class headers are present; where they
+  are absent too it means nothing. It is never on a refusal: a strict rule answers `403 objective_not_allowed`
+  with stage `objective` instead. A header of this name sent by a backend is removed where the gateway writes
+  the class headers. Added with the two headers of
+  [the section above](#the-two-headers-on-a-gateway-written-answer), in the release that follows v0.9.9.1.
 
 ## What a backend's response can and cannot look like
 

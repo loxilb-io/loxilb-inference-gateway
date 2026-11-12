@@ -112,6 +112,16 @@ inference-gateway delta is enumerated in detail.
   `retry_after`, equal to the `retry-after` header, as on HTTP/1.1; the queue
   endings' plain fallback answers gain `Content-Length`.
 
+- **OWNER REVIEW PENDING.** AI gateway: on a rule with `fc_expose_headers` on,
+  the response to a request that named an objective it may not use, and was
+  admitted on its default, carries `X-Loxilb-Admission-Objective-Requested`
+  with what it asked for (the objective name, or `tier:<value>` for a body
+  `service_tier`), on HTTP/1.1 and HTTP/2. The header is absent on every other
+  response, so a client can tell "asked and was defaulted" from "asked
+  nothing". A backend's header of that name is removed where the gateway
+  writes the class headers. Additive; `ai_objective_strict` rules still refuse
+  with 403 `objective_not_allowed`.
+
 ## [v0.9.9.1] - 2026-11-03
 
 `v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.

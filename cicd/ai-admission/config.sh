@@ -28,6 +28,8 @@
 #   :2035  HTTP/1.1  -> l3ep1:8080, :8081   ceiling 4, admission headers on admitted responses
 #   :2036  HTTP/2    -> l3ep1:8090, :8091   ceiling 4, admission headers on admitted streams
 #   :2037  HTTP/1.1  -> l3ep1:8099          nothing listens there: a failed connect (row OS)
+#   :2038-:2040  the three rules row OBJ creates and deletes itself (gw.sh): keyed, admission
+#                    headers on; :2039 strict, :2040 on the h2c backends
 #   pg-ai-admission (docker bridge): the API-key store the two keyed pools need
 
 source ../common.sh

@@ -847,7 +847,24 @@ release capWU2
 # pool's ceiling (and of its queue); every other tenant keeps admitting.
 TS_URL="http://$VIP:$PORT_TS/v1/chat/completions"
 TQ_URL="http://$VIP:$PORT_TQ/v1/chat/completions"
+# Row NEG is terminal for the policy store: it ends by replacing the store
+# container with an empty one, and the gateway creates its tables only when
+# it starts. From there to the end of this script a write through the API is
+# answered 500. Every helper that writes to the store asks store_guard first:
+# after NEG it says so on stderr, where the write was attempted, the helper
+# returns nothing, and the attempt is counted as a failure at the end (the
+# helpers run in $(...), so they cannot count it themselves). A new row that
+# needs the store goes BEFORE row NEG.
+STORE_GONE=""
+STORE_TRAP=$(mktemp)
+store_guard() { # store_guard <who>: 0 while the store can be written
+  [ -z "$STORE_GONE" ] && return 0
+  echo "  [FAIL] STORE $1: a write to the policy store after row NEG. $STORE_GONE" >&2
+  echo "$1" >> "$STORE_TRAP"
+  return 1
+}
 mk_key() { # mk_key <tenant> -> the raw key of a new key for that tenant
+  store_guard "mk_key $1" || return 1
   $hexec l3h1 curl -s -m 10 -X POST "$API/config/ai/apikey" -H 'Content-Type: application/json' \
     -d "{\"tenant_id\": \"$1\", \"name\": \"$1-key\", \"allowed_models\": [\"$MODEL\"],
          \"rate_limit_rps\": 1000, \"burst_size\": 1000, \"enabled\": true}" | jq -r '.raw_key // empty'
@@ -1141,6 +1158,122 @@ chk OS27 "and the request's own X-Request-Id"                  capOSdown "$(mark
 chk OS28 "recorded as a completion, not a refusal"             0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOSdown")' | wc -l | tr -d ' ')"
 chk_has OS29 "the endpoint is marked up again"                 Success "$(dead_state green)"
 
+# ── OBJ: the objective a request asks for and may not use ───────────────────
+# Two objectives, two tenants (one may name obj-gold, one may not), a key
+# each, and three rules of this row's own: :PORT_OBJ serves a denied
+# objective at the tenant's default and says what was asked for
+# (X-Loxilb-Admission-Objective-Requested), :PORT_OBJS is strict and refuses
+# it, :PORT_OBJ2 is the first again on HTTP/2. The header is on an admitted
+# response only, and only when the objective was denied: its absence means
+# "not denied". The row runs before NEG: NEG ends by replacing the store with
+# an empty one, whose tables exist only after the gateway's next start.
+echo ""
+echo "OBJ: an objective the request may not use — strict refuses it, non-strict serves it and names what it asked for"
+DOBJ=$(mktemp -d)
+OBJ_URL="http://$VIP:$PORT_OBJ/v1/chat/completions"
+OBJS_URL="http://$VIP:$PORT_OBJS/v1/chat/completions"
+OBJ_HDR=X-Loxilb-Admission-Objective-Requested
+obj_api() { # obj_api <method> <path> [<json>] -> the status
+  [ "$1" == GET ] || store_guard "obj_api $1 $2" || { echo "not sent"; return 1; }
+  if [ -n "${3:-}" ]; then
+    $hexec l3h1 curl -s -m 10 -o /dev/null -w '%{http_code}' -X "$1" -H 'Content-Type: application/json' -d "$3" "$API$2"
+  else
+    $hexec l3h1 curl -s -m 10 -o /dev/null -w '%{http_code}' -X "$1" "$API$2"
+  fi
+}
+# obj_send <name> <url> <key> <body> [curl args...]: one request, X-Request-Id capOBJ<name>
+obj_send() {
+  local name=$1 url=$2 key=$3 body=$4; shift 4
+  $hexec l3h1 curl -s -o "$DOBJ/$name.body" -D "$DOBJ/$name.hdr" -w '%{http_code}' --max-time 20 \
+    "${HDRS[@]}" -H "X-Api-Key: $key" -H "X-Test-Nonce: capOBJ$name" -H "X-Request-Id: capOBJ$name" "$@" \
+    -d "$body" "$url" > "$DOBJ/$name.code" 2>/dev/null
+  cat "$DOBJ/$name.code"
+}
+obj_h() { hdr_val "$(hdr_of "$DOBJ/$1.hdr")" "$2"; }                      # obj_h <name> <header>: its value, "" when absent
+obj_lines() { grep -ci "^$OBJ_HDR:" "$DOBJ/$1.hdr" 2>/dev/null || true; }   # lines of the new header, whoever sent them
+ASK=(-H 'x-llm-d-inference-objective: obj-gold')
+# The objective handler answers 200 with a result body; the tenant handler
+# answers 204. The first draft of this row expected 204 from both: the
+# expectation was wrong and was corrected, no handler was changed.
+chk OBJ0a "two objectives are created" "200 200" "$(obj_api POST /config/ai/objective '{"name":"obj-gold","priority":1}') $(obj_api POST /config/ai/objective '{"name":"obj-base","priority":0}')"
+chk OBJ0b "a tenant that may name obj-gold, and one that may not" "204 204" \
+  "$(obj_api POST /config/ai/tenant/ratelimit '{"tenant_id":"obj-may","priority_class":"critical","allowed_objectives":["obj-gold"],"default_objective":"obj-base"}') $(obj_api POST /config/ai/tenant/ratelimit '{"tenant_id":"obj-maynot","default_objective":"obj-base"}')"
+KEY_OM=$(mk_key obj-may); KEY_ON=$(mk_key obj-maynot)
+chk OBJ0c "a key for each" "2 keys" "$(for k in "$KEY_OM" "$KEY_ON"; do [ -n "$k" ] && echo; done | wc -l | tr -d ' ') keys"
+chk_has OBJ0d "the non-strict rule :$PORT_OBJ"           Success "$(gw_add_rule $PORT_OBJ  "$(gw_obj_json false)" 8080 8081)"
+chk_has OBJ0e "the strict rule :$PORT_OBJS"              Success "$(gw_add_rule $PORT_OBJS "$(gw_obj_json true)"  8080 8081)"
+chk_has OBJ0f "the non-strict HTTP/2 rule :$PORT_OBJ2"   Success "$(gw_add_rule $PORT_OBJ2 ", \"backend_protocol\": \"http2\"$(gw_obj_json false)" 8090 8091)"
+chk OBJ0g "the strict flag reads back on :$PORT_OBJS and not on :$PORT_OBJ" "true false" "$(lb_get $PORT_OBJS | jq -r '.serviceArguments.ai_objective_strict // false') $(lb_get $PORT_OBJ | jq -r '.serviceArguments.ai_objective_strict // false')"
+# The class configuration is read by the gateway on an interval (10 s by
+# default). Wait for it with the request the configuration ALLOWS: the tenant
+# that may name obj-gold gets it applied. Nothing below is polled.
+got=""
+for i in $(seq 1 20); do
+  obj_send "ready$i" "$OBJ_URL" "$KEY_OM" "$BODY" "${ASK[@]}" >/dev/null
+  got=$(obj_h "ready$i" X-Loxilb-Admission-Objective)
+  [ "$got" == obj-gold ] && break
+  sleep 2
+done
+chk OBJ0h "the class configuration reached the data plane within 40 s" obj-gold "$got"
+
+chk OBJ1a "allowed, non-strict: served"                              200 "$(obj_send may "$OBJ_URL" "$KEY_OM" "$BODY" "${ASK[@]}")"
+chk OBJ1b "the applied objective is the one asked for"               obj-gold "$(obj_h may X-Loxilb-Admission-Objective)"
+chk OBJ1c "at its class"                                             critical "$(obj_h may X-Loxilb-Admission-Class)"
+chk OBJ1d "and no $OBJ_HDR: nothing was denied"                      0 "$(obj_lines may)"
+
+chk OBJ2a "denied, non-strict: served all the same"                  200 "$(obj_send den "$OBJ_URL" "$KEY_ON" "$BODY" "${ASK[@]}")"
+chk OBJ2b "the applied objective is the tenant's default"            obj-base "$(obj_h den X-Loxilb-Admission-Objective)"
+chk OBJ2c "at the default's class"                                   standard "$(obj_h den X-Loxilb-Admission-Class)"
+chk OBJ2d "$OBJ_HDR names what the client sent"                      obj-gold "$(obj_h den $OBJ_HDR)"
+chk OBJ2e "once"                                                     1 "$(obj_lines den)"
+chk OBJ2f "the request reached a backend"                            1 "$(receipts capOBJden)"
+chk OBJ2g "no stage header: it is not a refusal"                     0 "$(mark_lines "$DOBJ/den.hdr")"
+chk OBJ2h "and no deny record under its ID"                          0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOBJden")' | wc -l | tr -d ' ')"
+
+chk OBJ3a "the same tenant naming no objective: served"              200 "$(obj_send none "$OBJ_URL" "$KEY_ON" "$BODY")"
+chk OBJ3b "at its default, with no $OBJ_HDR"                         "obj-base 0" "$(obj_h none X-Loxilb-Admission-Objective) $(obj_lines none)"
+
+chk OBJ4a "an objective that does not exist: served"                 200 "$(obj_send unk "$OBJ_URL" "$KEY_ON" "$BODY" -H 'x-llm-d-inference-objective: no-such-objective')"
+chk OBJ4b "and named back as it was sent"                            no-such-objective "$(obj_h unk $OBJ_HDR)"
+
+chk OBJ5a "the deprecated header name, denied the same way"          "200 obj-gold" "$(obj_send old "$OBJ_URL" "$KEY_ON" "$BODY" -H 'x-gateway-inference-objective: obj-gold') $(obj_h old $OBJ_HDR)"
+
+OBJ_LONG=$(printf 'o%.0s' $(seq 1 70))
+chk OBJ6a "a name longer than an objective can be: served"           200 "$(obj_send big "$OBJ_URL" "$KEY_ON" "$BODY" -H "x-llm-d-inference-objective: $OBJ_LONG")"
+chk OBJ6b "and reported as (oversize), not echoed"                   "(oversize)" "$(obj_h big $OBJ_HDR)"
+
+TIER_BODY='{"model":"cap-model","service_tier":"priority","messages":[{"role":"user","content":"x"}]}'
+chk OBJ7a "a body service_tier the tenant may not ask for: served"   200 "$(obj_send tier "$OBJ_URL" "$KEY_ON" "$TIER_BODY")"
+chk OBJ7b "and named as tier:<value>"                                tier:priority "$(obj_h tier $OBJ_HDR)"
+
+chk OBJ8a "a backend's own $OBJ_HDR on a denied request: served"     200 "$(obj_send spd "$OBJ_URL" "$KEY_ON" "$BODY" "${ASK[@]}" -H 'X-Test-Spoof-Objective: 1')"
+chk OBJ8b "one line, the gateway's value"                            "1 obj-gold" "$(obj_lines spd) $(obj_h spd $OBJ_HDR)"
+chk OBJ8c "the same from the backend when nothing was denied: served" 200 "$(obj_send spa "$OBJ_URL" "$KEY_OM" "$BODY" "${ASK[@]}" -H 'X-Test-Spoof-Objective: 1')"
+chk OBJ8d "and the backend's line does not reach the client"         0 "$(obj_lines spa)"
+
+chk OBJ9a "denied on the strict rule: refused"                       403 "$(obj_send sden "$OBJS_URL" "$KEY_ON" "$BODY" "${ASK[@]}")"
+chk OBJ9b "error objective_not_allowed"                              objective_not_allowed "$(jq -r '.error // "unreadable"' "$DOBJ/sden.body" 2>/dev/null)"
+chk OBJ9c "X-Loxilb-Refusal-Stage: objective"                        objective "$(mark_stage "$DOBJ/sden.hdr")"
+chk OBJ9d "a client does not read it as congestion"                  "not congestion" "$(not_congestion "$(mark_stage "$DOBJ/sden.hdr")")"
+chk OBJ9e "X-Request-Id is the one sent"                             capOBJsden "$(mark_rid "$DOBJ/sden.hdr")"
+chk OBJ9f "the deny record, by that ID, is at"                       objective "$(deny_field capOBJsden .detail.stage)"
+chk OBJ9g "it never reached a backend"                               0 "$(receipts capOBJsden)"
+chk OBJ9h "a refusal carries no $OBJ_HDR: that header is for admitted responses" 0 "$(obj_lines sden)"
+chk OBJ9i "allowed on the strict rule: served with its objective"    "200 obj-gold" "$(obj_send smay "$OBJS_URL" "$KEY_OM" "$BODY" "${ASK[@]}") $(obj_h smay X-Loxilb-Admission-Objective)"
+chk OBJ9j "no objective named on the strict rule: served"            200 "$(obj_send snone "$OBJS_URL" "$KEY_ON" "$BODY")"
+
+OBJ2_DEN=$($hexec l3h1 python3 "$(pwd)/h2_admit.py" $VIP $PORT_OBJ2 --streams 1 --nonce-prefix capOBJh2d --header "x-api-key=$KEY_ON" --header "x-llm-d-inference-objective=obj-gold" 2>&1)
+OBJ2_MAY=$($hexec l3h1 python3 "$(pwd)/h2_admit.py" $VIP $PORT_OBJ2 --streams 1 --nonce-prefix capOBJh2m --header "x-api-key=$KEY_OM" --header "x-llm-d-inference-objective=obj-gold" 2>&1)
+obj_h2() { printf '%s\n' "$1" | jq -r "select(.stream) | $2" 2>/dev/null | head -n1; }
+chk OBJ10a "HTTP/2, denied, non-strict: served"                      200 "$(obj_h2 "$OBJ2_DEN" .status)"
+chk OBJ10b "the default applied and what was asked for, on the head" "obj-base obj-gold" "$(obj_h2 "$OBJ2_DEN" '"\(.headers["x-loxilb-admission-objective"] // "absent") \(.headers["x-loxilb-admission-objective-requested"] // "absent")"')"
+chk OBJ10c "HTTP/2, allowed: served with its objective and no requested header" "200 obj-gold absent" "$(obj_h2 "$OBJ2_MAY" '"\(.status) \(.headers["x-loxilb-admission-objective"] // "absent") \(.headers["x-loxilb-admission-objective-requested"] // "absent")"')"
+
+# This row's rules and objectives go: the rows below count listeners, and
+# with no objective left the class stage has nothing to apply.
+chk_has OBJ11a "the row's three rules are deleted" "Success Success Success" "$(for p in $PORT_OBJ $PORT_OBJS $PORT_OBJ2; do lb_delete $p | grep -o Success | head -n1; done | tr '\n' ' ')"
+chk OBJ11b "and its two objectives" "200 200" "$(obj_api DELETE /config/ai/objective/obj-gold) $(obj_api DELETE /config/ai/objective/obj-base)"
+
 echo ""
 echo "NEG: refusals that are not congestion, reproduced on this bed, each with its stage"
 DNG=$(mktemp -d)
@@ -1152,6 +1285,7 @@ neg_send() { # neg_send <name> [curl args...]: one request on the keyed pool, X-
   cat "$DNG/$name.code"
 }
 neg_key() { # neg_key <name> <allowed_models json> <rps> <burst> -> the raw key
+  store_guard "neg_key $1" || return 1
   $hexec l3h1 curl -s -m 10 -X POST "$API/config/ai/apikey" -H 'Content-Type: application/json' \
     -d "{\"tenant_id\": \"neg-$1\", \"name\": \"neg-$1\", \"allowed_models\": $2,
          \"rate_limit_rps\": $3, \"burst_size\": $4, \"enabled\": true}" | jq -r '.raw_key // empty'
@@ -1187,6 +1321,8 @@ chk_ge NEG4h "with Retry-After" 1 "$(hdr_val "$(hdr_of "$DNG/${rl:-rate4}.hdr")"
 # stage, on purpose: the gateway refused before dispatch, and it is not
 # congestion. The store container runs --rm, so the stop removes it; it is
 # started again, empty, for the reboot of row H (its keyed rules need it).
+# Empty means without the gateway's tables: this row is the last one that
+# may write to the store, and store_guard holds every later one to that.
 KEY_COLD=$(neg_key cold "[\"$MODEL\"]" 1000 1000)
 docker stop "$PG_NAME" >/dev/null 2>&1
 sleep 2
@@ -1195,6 +1331,7 @@ chk NEG5 "a cold key was issued before the store stopped" issued "$([ -n "$KEY_C
 neg_row NEG6 "the policy store is unreachable" store 503 policy_store_unavailable auth
 chk NEG6h "with Retry-After 5" 5 "$(hdr_val "$(hdr_of "$DNG/store.hdr")" Retry-After)"
 chk NEG7 "the store is started again for the rows below" up "$(gw_pg_start >/dev/null 2>&1 && echo up || echo down)"
+STORE_GONE="Row NEG replaced the store with an empty one; its tables exist again only after a gateway start. Move the row before NEG."
 
 echo ""
 echo "F2: does an Endpoint Picker fixture set X-Request-Id on an immediate answer?"
@@ -1272,7 +1409,16 @@ else
   echo "  [FAIL] VA0 the gateway did not come back with the valve bound"; nfail=$((nfail+1)); code=1
 fi
 
-rm -rf "${DXH:-/nonexistent}" "${DTS:-/nonexistent}" "${DTW:-/nonexistent}" "${DRI:-/nonexistent}" "${DOS:-/nonexistent}" "${DNG:-/nonexistent}" "$DB" "$DN" "$DC" "$E" "$DG" "$DL" "$DQ" "$DT" "$DX" "$DK" "$DD" "$DM" "$DP" "$DO" "$DU" "$DAD" "$DWU" "$DWU2" "$DVA" "${DH:-/nonexistent}" 2>/dev/null
+rm -rf "${DOBJ:-/nonexistent}" "${DXH:-/nonexistent}" "${DTS:-/nonexistent}" "${DTW:-/nonexistent}" "${DRI:-/nonexistent}" "${DOS:-/nonexistent}" "${DNG:-/nonexistent}" "$DB" "$DN" "$DC" "$E" "$DG" "$DL" "$DQ" "$DT" "$DX" "$DK" "$DD" "$DM" "$DP" "$DO" "$DU" "$DAD" "$DWU" "$DWU2" "$DVA" "${DH:-/nonexistent}" 2>/dev/null
+
+if [ -s "$STORE_TRAP" ]; then
+  echo ""
+  while read -r who; do
+    echo "  [FAIL] STORE $who tried to write to the policy store after row NEG, which leaves it empty until the gateway's next start"
+    nfail=$((nfail+1)); code=1
+  done < "$STORE_TRAP"
+fi
+rm -f "$STORE_TRAP"
 
 echo ""
 if [ "$code" -eq 0 ]; then
