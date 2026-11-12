@@ -13,6 +13,15 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
+### Build
+
+- Build with Go 1.26.11 (was 1.26.10): it fixes GO-2026-6859, an HTTP/1 server
+  crash in `net/http` that the vulnerability gate reports as reachable.
+- Link the datapath archives with `-Wl,-Bstatic -l<name> -Wl,-Bdynamic` instead
+  of `-l:lib<name>.a` in the cgo directives. Go 1.26.11 and 1.27.4 reject the
+  colon form in `#cgo LDFLAGS`; the archives, the search path and the static
+  linkage are unchanged.
+
 ### Bundled CLI
 
 - Pin the embedded CLI to `973c53c2`, including EPP + P/D support with explicit
@@ -76,6 +85,32 @@ inference-gateway delta is enumerated in detail.
 - When a snapshot is selected at boot, a stale `BFDconfig.txt` is no longer
   applied before it. Strict failures retain snapshot authority; legacy replay
   remains available only through the explicit compat fallback.
+
+- **OWNER REVIEW PENDING.** AI gateway: a refusal the gateway writes before any
+  request byte reaches a backend now carries `X-Loxilb-Refusal-Stage` with the
+  stage of its `sec.ai.deny` record (`auth`, `conflict`, `ratelimit`, `reserve`,
+  `capacity`, `objective`, `route`, `framing`, `security`), or `queue` for a
+  request that ended while it waited for capacity. Only `capacity` and `queue`
+  are congestion. Refusals written by the prefill/decode code itself stay
+  unmarked. Additive: no existing header, `error` code, body field, status or
+  audit field changes. See
+  [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md).
+
+- **OWNER REVIEW PENDING.** AI gateway: an answer the gateway writes itself, a
+  refusal or an outage, echoes the request's own ID as `X-Request-Id` (the
+  client's, at most 255 bytes, or the minted one), on HTTP/1.1 and HTTP/2. The
+  header is absent when the request has no ID of its own at that moment, and it
+  is never another request's on a keep-alive connection. A relayed backend
+  response keeps the backend's own header.
+
+- **OWNER REVIEW PENDING.** AI gateway: `X-Loxilb-Refusal-*` fields sent by a
+  backend are removed from every relayed response head, with or without
+  `fc_expose_headers` (HTTP/1.1: a head that arrives in one read; HTTP/2: the
+  interim and the final head).
+
+- **OWNER REVIEW PENDING.** AI gateway: the HTTP/2 `503` capacity body gains
+  `retry_after`, equal to the `retry-after` header, as on HTTP/1.1; the queue
+  endings' plain fallback answers gain `Content-Length`.
 
 ## [v0.9.9.1] - 2026-11-03
 

@@ -886,7 +886,7 @@ const (
 	// rather than as the primary detector.
 	//
 	// It is NOT reachable by a version skew between the two repos: the data
-	// plane is linked statically (-l:libloxilbdp.a, pkg/loxinet/dpebpf_linux.go),
+	// plane is linked statically (-Wl,-Bstatic -lloxilbdp, pkg/loxinet/dpebpf_linux.go),
 	// so a mismatched build fails to build — the C compiler rejects an argument
 	// the header does not declare, and check-source-invariants.sh §9 rejects a
 	// Go signature that moves without it. What a skew cannot do is reach

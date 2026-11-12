@@ -55,6 +55,7 @@ it*, *how to test it*, and *how to extend it*.
 | [`24-backend-tls-argument-changes.md`](24-backend-tls-argument-changes.md) | **Backend TLS argument changes**: which `mtls_backend` and backend cert-ID arguments a create request may no longer carry, what a read returns, and what happens to configuration persisted by an earlier release |
 | [`25-backend-tls-verification.md`](25-backend-tls-verification.md) | **Backend TLS verification and client certificates**: registering a CA bundle and a client certificate, referring to them from an `e2ehttps` rule, what a verified endpoint must present, changing the policy of a serving rule, rotation |
 | [`26-endpoint-picker-epp.md`](26-endpoint-picker-epp.md) | **Endpoint Picker (EPP) operator notes**: what `eppTimeoutMs` covers (dial included), the endpoint subset hint and the EPP `subset-filter` it needs, candidates outside the rule, the listener kept after the last rule is deleted (`503 no_route`), restarts on a host-network node |
+| [`27-ai-gateway-client-refusal-contract.md`](27-ai-gateway-client-refusal-contract.md) | **AI gateway client refusal contract**: every answer the gateway writes itself in one table (status, `error` code, stage, dispatch, retry-safety, `Retry-After`, body and headers, HTTP/1.1 and HTTP/2 differences, audit record), outages and post-dispatch endings, request-ID rules, the meaning of the admission headers, and what a relayed backend response can look like |
 
 ---
 
