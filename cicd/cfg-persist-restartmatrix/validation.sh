@@ -16,7 +16,9 @@
 # pre-restart dump plus a live traffic probe — a class that loses, invents
 # or half-applies configuration fails on the diff, not on a spot check.
 # Class (c) additionally asserts that the dump DIFFERS while it is empty,
-# so the comparison cannot pass vacuously.
+# so the comparison cannot pass vacuously. Its committed restore explicitly
+# adopts BGP: only that expected ownership transition differs from baseline,
+# and the marker must remain true on disk and across the following reboot.
 
 source ../common.sh
 
@@ -28,6 +30,7 @@ source ../common.sh
 require_host_tools jq || exit 1
 
 source ../common/persist_lib.sh
+source ./oracle.sh
 echo SCENARIO-cfg-persist-restartmatrix
 
 code=0
@@ -106,6 +109,10 @@ plib_curl llb1 "$PLIB_API/config/snapshot" -o "$PLIB_ARTIFACTS/good.json"
     && pass "known-good document captured for the recovery leg" \
     || fail "good capture"
 canonical_get_all llb1 "$PLIB_ARTIFACTS/base" || fail "baseline canonical dump"
+bgp_adoption_is "$PLIB_ARTIFACTS/good.json" false \
+    && bgp_adoption_is "$PLIB_ARTIFACTS/base/snapshotdoc.json" false \
+    && pass "baseline: the source document and live BGP have not been explicitly adopted" \
+    || fail "baseline: expected an unadopted BGP fixture"
 [[ "$(lb_count)" == "2" && "$(fw_count)" == "1" ]] \
     && pass "fixture in place (2 LB rules, 1 firewall rule)" \
     || fail "fixture: lb=$(lb_count) fw=$(fw_count)"
@@ -249,24 +256,45 @@ if deep_diff "$PLIB_ARTIFACTS/base" "$PLIB_ARTIFACTS/mode-c-empty" mode-c-empty 
 else
     pass "mode (c): the empty node's dump differs from the baseline (the oracle can fail)"
 fi
-# Operator recovery: the last good document goes back in through REST.
+bgp_adoption_is "$PLIB_ARTIFACTS/mode-c-empty/snapshotdoc.json" false \
+    && pass "mode (c): the cold boot has not adopted BGP" \
+    || fail "mode (c): the cold boot unexpectedly adopted BGP"
+# Operator recovery: a committed full restore explicitly adopts BGP, even
+# when its source document was unadopted. Derive the expected dump from the
+# untouched baseline, changing ONLY that marker; keep the shared oracle strict.
+expect_bgp_adoption "$PLIB_ARTIFACTS/base" "$PLIB_ARTIFACTS/mode-c-expected" \
+    || fail "mode (c): could not prepare the explicit-adoption expectation"
 rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
 [[ "$rc" == "200" ]] \
     && pass "mode (c): the operator restore of the last good document is accepted" \
     || fail "mode (c): recovery restore HTTP $rc"
 canonical_get_all llb1 "$PLIB_ARTIFACTS/mode-c-recovered" || fail "mode (c) recovered dump"
-deep_diff "$PLIB_ARTIFACTS/base" "$PLIB_ARTIFACTS/mode-c-recovered" mode-c-recovered \
-    && pass "mode (c): the recovered node is deep-equal to the baseline" \
-    || fail "mode (c): recovered state differs from the baseline"
+bgp_adoption_is "$PLIB_ARTIFACTS/mode-c-recovered/snapshotdoc.json" true \
+    && pass "mode (c): the committed restore explicitly adopted BGP" \
+    || fail "mode (c): the committed restore did not adopt BGP"
+deep_diff "$PLIB_ARTIFACTS/mode-c-expected" "$PLIB_ARTIFACTS/mode-c-recovered" mode-c-recovered \
+    && pass "mode (c): every domain is preserved with only the expected BGP adoption" \
+    || fail "mode (c): recovered state differs from the explicit-adoption expectation"
 assert_traffic "mode (c) recovery"
 # The commit restore writes through, so the volume is armed again: the
 # next boot of this node replays instead of coming up empty.
 sudo test -s "$CFG/snapshot.json" \
     && pass "mode (c): the recovery wrote the document back to the volume" \
     || fail "mode (c): no snapshot.json after the recovery restore"
+sudo cat "$CFG/snapshot.json" > "$PLIB_ARTIFACTS/mode-c-recovered-on-disk.json"
+bgp_adoption_is "$PLIB_ARTIFACTS/mode-c-recovered-on-disk.json" true \
+    && pass "mode (c): the committed restore persisted BGP adoption on disk" \
+    || fail "mode (c): BGP adoption is missing from the recovery document on disk"
 restart_inplace_keep llb1 || fail "mode (c): gateway did not come back after the recovery"
 canonical_get_all llb1 "$PLIB_ARTIFACTS/mode-c-reboot" || fail "mode (c) reboot dump"
-deep_diff "$PLIB_ARTIFACTS/base" "$PLIB_ARTIFACTS/mode-c-reboot" mode-c-reboot \
+bgp_adoption_is "$PLIB_ARTIFACTS/mode-c-reboot/snapshotdoc.json" true \
+    && pass "mode (c): BGP adoption survives the recovery reboot" \
+    || fail "mode (c): BGP adoption was lost across the recovery reboot"
+sudo cat "$CFG/snapshot.json" > "$PLIB_ARTIFACTS/mode-c-reboot-on-disk.json"
+bgp_adoption_is "$PLIB_ARTIFACTS/mode-c-reboot-on-disk.json" true \
+    && pass "mode (c): the reboot retains BGP adoption on disk" \
+    || fail "mode (c): BGP adoption is missing from the rebooted document on disk"
+deep_diff "$PLIB_ARTIFACTS/mode-c-expected" "$PLIB_ARTIFACTS/mode-c-reboot" mode-c-reboot \
     && pass "mode (c): the recovered configuration survives the next boot on its own" \
     || fail "mode (c): the recovered configuration did not survive a reboot"
 assert_traffic "mode (c) post-recovery reboot"

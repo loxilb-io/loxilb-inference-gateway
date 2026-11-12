@@ -214,6 +214,7 @@ func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, *D
 		return "", nil, err
 	}
 	completePersistSeq(seq)
+	RememberBGPIntent(doc)
 	return path, doc, nil
 }
 

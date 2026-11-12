@@ -305,6 +305,18 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		return result, nil
 	}
 
+	// Static YAML owns the entire BGP group until explicit adoption. Exclude
+	// it before planning, applying or rollback, even if the snapshot differs.
+	if opts.Boot && e.unadoptedStaticBGP(doc) {
+		kept := selected[:0]
+		for _, entry := range selected {
+			if !isBGPDomain(entry.Name) {
+				kept = append(kept, entry)
+			}
+		}
+		selected = kept
+	}
+
 	// BGP teardown also removes neighbors/definitions referenced by bindings.
 	// A legacy or component-scoped document that never selected the binding
 	// domain must not destroy those live bindings as a side effect.
@@ -370,6 +382,18 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		return result, nil
 	}
 
+	// Inspect before an interactive replacement wipes live YAML attributes.
+	// Emit only after a successful commit; dry-run/boot never adopts here.
+	var adoption bgpAdoptionCheck
+	if !opts.Boot {
+		for _, entry := range selected {
+			if isBGPDomain(entry.Name) {
+				adoption = checkBGPAdoption(e.Hooks)
+				break
+			}
+		}
+	}
+
 	// 4. PRESERVE -- capture + persist live config before touching
 	// anything, UNLESS this is the Boot variant (§6.2: datapath is empty at
 	// boot, nothing to preserve).
@@ -414,6 +438,10 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 
 	if len(applyErrs) == 0 {
 		// 7. COMMIT.
+		// Retain a successful BGP replacement before releasing the write
+		// freeze, including when its subsequent disk persist fails.
+		adoption.record()
+		e.rememberBGPSelection(doc, selected, !opts.Boot)
 		result.Result = ResultOK
 		recordRestoreSuccess(doc.Generation, doc.Checksum, opts.modeString())
 		return result, nil

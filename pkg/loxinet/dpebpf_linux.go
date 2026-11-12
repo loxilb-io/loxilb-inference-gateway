@@ -267,7 +267,7 @@ struct service_scoring_config {
 #endif
 
 #cgo CFLAGS:  -I./../../loxilb-ebpf/libbpf/src/ -I./../../loxilb-ebpf/common -DHAVE_DP_IP_FILTER=1 -DHAVE_DP_SECURITY_RATE_LIMIT=1 -DHAVE_DP_SECURITY_RATE_RUNTIME_CONFIG=1 -DHAVE_DP_GPU_ROUTING=1
-#cgo LDFLAGS: -L. -L/lib64 -L./../../loxilb-ebpf/kernel -L./../../loxilb-ebpf/libbpf/src/build/usr/lib64/ -Wl,-rpath=/lib64/ -l:libloxilbdp.a -l:libbpf.a -lelf -lz -lssl -lcrypto -lnghttp2 -ljson-c
+#cgo LDFLAGS: -L. -L/lib64 -L./../../loxilb-ebpf/kernel -L./../../loxilb-ebpf/libbpf/src/build/usr/lib64/ -Wl,-rpath=/lib64/ -Wl,-Bstatic -lloxilbdp -lbpf -Wl,-Bdynamic -lelf -lz -lssl -lcrypto -lnghttp2 -ljson-c
 */
 import "C"
 import (

@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "ce71c78472c97eafcacacc097f1cd99f62ece70f78ec09a514a029dd53abac1c",
-    "swagger.yml": "37b0ae9666dd9607628507e1000bdceb28b22813dc6ff538d3507d6b7bb3e70a"
+    "swagger.yml": "fa178fae4bd639a968b77e1a24d7e684049e646813dd9c2ca0679182a5dfa1b9"
   },
   "fields": [
     {
@@ -1886,7 +1886,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/fc_expose_headers",
       "required": false,
       "contract": {
-        "description": "on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and X-Loxilb-Admission-Limit on the head of every admitted inference response (HTTP/1 and HTTP/2, streamed ones included), the same three a capacity refusal carries: the pool's executing units and waiting requests as the response head goes out, and the service ceiling in force (0 is none). Fields of those names from the backend are replaced. off leaves responses as the backend sent them; inherit, or omitted on create, runs on the process default (LLB_FC_EXPOSE_HEADERS). Refused (400) with sockMapMode both or response, where the gateway never sees the response. Replace and null semantics as fc_mode.",
+        "description": "on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and X-Loxilb-Admission-Limit on the head of an admitted inference response (HTTP/1 and HTTP/2, streamed ones included; an HTTP/1 response head the backend split across several reads is sent without them, and with the backend's own fields of those names), the same three a capacity refusal carries: the pool's executing units and waiting requests as the response head goes out, and the service ceiling in force (0 is none). Fields of those names from the backend are replaced. off leaves responses as the backend sent them; inherit, or omitted on create, runs on the process default (LLB_FC_EXPOSE_HEADERS). Refused (400) with sockMapMode both or response, where the gateway never sees the response. Replace and null semantics as fc_mode.",
         "enum": [
           "on",
           "off",

@@ -18,6 +18,7 @@ package snapshot
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -228,7 +229,8 @@ func TestRestoreOfAnOlderDocumentLeavesTheBindings(t *testing.T) {
 // is to a 1.10 build.
 func TestDocumentOfANewerSchemaIsRefusedByAnOlderGate(t *testing.T) {
 	doc := sampleDocument()
-	doc.SchemaVersion = "1.13"
+	major, minor, _ := ParseSchemaVersion(SchemaVersion)
+	doc.SchemaVersion = fmt.Sprintf("%d.%d", major, minor+1)
 	hooks := newMockHooks()
 	e := newTestEngine(hooks, t.TempDir())
 	res, err := e.Restore(encodeDoc(t, doc), RestoreOptions{Mode: ModeDryRun})

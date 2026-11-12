@@ -2,6 +2,11 @@ name: Candidate Go image binaries
 
 on:
   workflow_call:
+    inputs:
+      bgp-recovery:
+        type: boolean
+        default: false
+        description: Export the u22 candidate to the privileged BGP recovery job
   workflow_dispatch:
 
 permissions:
@@ -16,11 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: u22
-            dockerfile: Dockerfile
-          - variant: u24
-            dockerfile: Dockerfile.u24
+        include: ${{ fromJSON(inputs.bgp-recovery && '[{"variant":"u22","dockerfile":"Dockerfile"}]' || '[{"variant":"u22","dockerfile":"Dockerfile"},{"variant":"u24","dockerfile":"Dockerfile.u24"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +56,20 @@ jobs:
             --build-arg "VERSION=ci-${revision:0:12}" --build-arg OPENSSL_BUILD_CPUS=2 \
             --label "org.opencontainers.image.revision=$revision" \
             -f "$DOCKERFILE" -t "loxilb-candidate:${VARIANT}" .
+      - name: Export the candidate for privileged BGP validation
+        if: ${{ inputs.bgp-recovery && matrix.variant == 'u22' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bgp-candidate"
+          docker image inspect loxilb-candidate:u22 --format '{{.Id}}' > "$RUNNER_TEMP/bgp-candidate/image-id"
+          git rev-parse HEAD > "$RUNNER_TEMP/bgp-candidate/source-revision"
+          docker save loxilb-candidate:u22 | gzip -1 > "$RUNNER_TEMP/bgp-candidate/image.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.bgp-recovery && matrix.variant == 'u22' }}
+        with:
+          name: bgp-recovery-candidate-u22
+          path: ${{ runner.temp }}/bgp-candidate/
+          compression-level: 0
+          retention-days: 1
       - name: Inspect and scan all actual candidate Go binaries
         env:
           VARIANT: ${{ matrix.variant }}
@@ -69,7 +84,7 @@ jobs:
           if-no-files-found: warn
 
   fixtures:
-    if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    if: ${{ !inputs.bgp-recovery && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:
@@ -143,4 +158,74 @@ jobs:
         with:
           name: candidate-go-fixtures
           path: security-results/
+          if-no-files-found: warn
+
+  # Match basic-sanity-ubuntu-24: the u22 datapath avoids the known u24
+  # image verifier E2BIG on hosted 6.x-azure kernels. Use our own PR build.
+  bgp-recovery:
+    needs: gateway
+    # The candidate is exported before security scans. Run recovery even if a
+    # scan fails; the gateway job keeps its failing security conclusion.
+    if: ${{ always() && inputs.bgp-recovery && needs.gateway.result != 'cancelled' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Start job runtime clock
+        run: date +%s > "$RUNNER_TEMP/bgp-recovery-job-start"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Require and download the exported BGP candidate artifact
+        id: candidate_artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bgp-recovery-candidate-u22
+          path: ${{ runner.temp }}/bgp-candidate
+      - name: Explain an unavailable candidate artifact
+        if: ${{ failure() && steps.candidate_artifact.outcome == 'failure' }}
+        run: |
+          echo "::error::Required artifact bgp-recovery-candidate-u22 is missing or unreadable (gateway result: ${{ needs.gateway.result }}). The gateway must export and upload its candidate before security scans."
+          exit 1
+      - name: Load and verify this revision's candidate
+        run: |
+          test "$(cat "$RUNNER_TEMP/bgp-candidate/source-revision")" = "$(git rev-parse HEAD)"
+          gzip -dc "$RUNNER_TEMP/bgp-candidate/image.tar.gz" | docker load
+          test "$(docker image inspect loxilb-candidate:u22 --format '{{.Id}}')" = "$(cat "$RUNNER_TEMP/bgp-candidate/image-id")"
+          test "$(docker image inspect loxilb-candidate:u22 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$(git rev-parse HEAD)"
+      - name: Verify API, HA, YAML adoption and YAML-only upgrade recovery
+        run: |
+          mkdir -p "$RUNNER_TEMP/bgp-recovery"
+          started=$SECONDS
+          trap 'printf "%s\n" "$((SECONDS-started))" > "$RUNNER_TEMP/bgp-recovery/profile-runtime-seconds.txt"' EXIT
+          for profile in default role static yaml-only; do
+            flags=()
+            case "$profile" in
+              role) flags+=(--role-managed) ;;
+              static) flags+=(--static-baseline) ;;
+              yaml-only) flags+=(--yaml-preservation) ;;
+            esac
+            python3 cicd/bgp-recovery/validate.py --image loxilb-candidate:u22 \
+              --output "$RUNNER_TEMP/bgp-recovery/$profile" "${flags[@]}"
+          done
+      - name: Record runtime
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/bgp-recovery"
+          if test -f "$RUNNER_TEMP/bgp-recovery-job-start"; then
+            elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/bgp-recovery-job-start") ))
+            printf '%s\n' "$elapsed" > "$RUNNER_TEMP/bgp-recovery/job-runtime-seconds.txt"
+            printf 'BGP recovery job elapsed through validation: %ss\n' "$elapsed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep BGP evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-recovery-evidence
+          path: |
+            ${{ runner.temp }}/bgp-recovery/
+            !${{ runner.temp }}/bgp-recovery/**/config/**
           if-no-files-found: warn

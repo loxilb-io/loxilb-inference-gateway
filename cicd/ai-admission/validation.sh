@@ -425,7 +425,7 @@ echo "J: the gate's accounting stayed consistent"
 chk J1 "no accounting anomaly (underflow)"      0 "$(msum loxilb_ai_admission_anomalies_total 'kind="underflow"')"
 chk J2 "no accounting anomaly (unknown permit)" 0 "$(msum loxilb_ai_admission_anomalies_total 'kind="unknown_permit"')"
 chk J3 "no request was refused for no capacity" 0 "$(msum loxilb_ai_admission_decisions_total 'reason="no_healthy_capacity"')"
-chk J4 "every pool is exported"                15 "$(metrics_raw | grep -c '^loxilb_ai_admission_mode{')"
+chk J4 "every pool is exported"                16 "$(metrics_raw | grep -c '^loxilb_ai_admission_mode{')"
 
 # ── Q: the bounded queue, FIFO ──────────────────────────────────────────────
 echo ""
@@ -847,7 +847,24 @@ release capWU2
 # pool's ceiling (and of its queue); every other tenant keeps admitting.
 TS_URL="http://$VIP:$PORT_TS/v1/chat/completions"
 TQ_URL="http://$VIP:$PORT_TQ/v1/chat/completions"
+# Row NEG is terminal for the policy store: it ends by replacing the store
+# container with an empty one, and the gateway creates its tables only when
+# it starts. From there to the end of this script a write through the API is
+# answered 500. Every helper that writes to the store asks store_guard first:
+# after NEG it says so on stderr, where the write was attempted, the helper
+# returns nothing, and the attempt is counted as a failure at the end (the
+# helpers run in $(...), so they cannot count it themselves). A new row that
+# needs the store goes BEFORE row NEG.
+STORE_GONE=""
+STORE_TRAP=$(mktemp)
+store_guard() { # store_guard <who>: 0 while the store can be written
+  [ -z "$STORE_GONE" ] && return 0
+  echo "  [FAIL] STORE $1: a write to the policy store after row NEG. $STORE_GONE" >&2
+  echo "$1" >> "$STORE_TRAP"
+  return 1
+}
 mk_key() { # mk_key <tenant> -> the raw key of a new key for that tenant
+  store_guard "mk_key $1" || return 1
   $hexec l3h1 curl -s -m 10 -X POST "$API/config/ai/apikey" -H 'Content-Type: application/json' \
     -d "{\"tenant_id\": \"$1\", \"name\": \"$1-key\", \"allowed_models\": [\"$MODEL\"],
          \"rate_limit_rps\": 1000, \"burst_size\": 1000, \"enabled\": true}" | jq -r '.raw_key // empty'
@@ -992,6 +1009,343 @@ chk XH2b "every admitted stream carries the three, queued 0, limit $FC_XH_MAX" 3
 chk XH2c "the first head counted all three streams"         3 "$(printf '%s\n' "$XH2_OUT" | jq -r 'select(.status == "200") | .headers["x-loxilb-admission-inflight"] // "0"' 2>/dev/null | sort -n | tail -1)"
 chk XH2d "no unit left held"                                0 "$(wait_lb_field $PORT_XH2 '(.serviceArguments.fc_effective | if . == null then "none" else (.inflight // 0) end)' 0 10)"
 
+# ── RI / OS / NEG / F2: the refusal contract on the wire ────────────────────
+# What a client reads to tell a refusal of the gateway from an answer of a
+# backend, and one request from another (docs/load-balancing/27):
+#   X-Loxilb-Refusal-Stage  the stage that refused, before any request byte
+#                           reached a backend; "queue" for a wait that ended
+#                           (its audit record is at stage capacity)
+#   X-Request-Id            on an answer the gateway wrote: this request's ID
+# The expected value of every check is the one written here, before the run.
+# RI and most of OS read the answers the rows above already collected: every
+# refusal shape of this scenario was sent with an X-Request-Id of its own and
+# its head was kept.
+hdr_of() { cat "$1" 2>/dev/null; }
+mark_stage() { hdr_val "$(hdr_of "$1")" X-Loxilb-Refusal-Stage; }
+mark_rid() { hdr_val "$(hdr_of "$1")" X-Request-Id; }
+mark_lines() { grep -ci '^x-loxilb-refusal-' "$1" 2>/dev/null || true; }   # the family, whoever sent it
+rid_lines() { grep -ci '^x-request-id:' "$1" 2>/dev/null || true; }
+# deny_field <request id> <jq path>: that field of the request's sec.ai.deny
+# records (one line, space separated), polled while the trail catches up.
+deny_field() {
+  local got="" i
+  for i in $(seq 1 20); do
+    got=$(trail | jq -r --arg r "$1" "select(.event_type==\"sec.ai.deny\" and .request_id==\$r) | $2" 2>/dev/null | sort -u | tr '\n' ' ' | sed 's/ $//')
+    [ -n "$got" ] && break
+    sleep 1
+  done
+  echo "$got"
+}
+# mark_row <id> <what> <hdr file> <request id sent> <stage on the wire> <stage of the deny record>
+mark_row() {
+  chk "$1a" "$2: X-Loxilb-Refusal-Stage"                    "$5" "$(mark_stage "$3")"
+  chk "$1b" "$2: X-Request-Id is the one the client sent"   "$4" "$(mark_rid "$3")"
+  chk "$1c" "$2: its sec.ai.deny record, by that ID, is at" "$6" "$(deny_field "$4" .detail.stage)"
+}
+not_congestion() { case "$1" in capacity|queue) echo congestion ;; "") echo unmarked ;; *) echo "not congestion" ;; esac; }
+
+echo ""
+echo "RI: every refusal names its request (X-Request-Id) and the trail has it under the same ID"
+f=$(grep -l '^429$' "$DB"/*.code 2>/dev/null | head -n1); bi=$(basename "${f%.code}")
+mark_row RI1 "429 admission_capacity (row B)"            "$DB/$bi.hdr"  "capB-$bi" capacity capacity
+mark_row RI2 "429 admission_tenant_share (row TS)"       "$DTS/a3.hdr"  capTSa3    capacity capacity
+mark_row RI3 "504 admission_queue_timeout (row T)"       "$DT/q1.hdr"   capTq-1    queue    capacity
+mark_row RI4 "503 admission_drained, rule delete (DL)"   "$DD/q1.hdr"   capDq-1    queue    capacity
+mark_row RI5 "503 admission_drained, maintenance (M)"    "$DM/q1.hdr"   capMq-1    queue    capacity
+mark_row RI6 "429 through TLS (row L)"                   "$DL/x.hdr"    capLx-1    capacity capacity
+# M's new request carried no X-Request-Id: the gateway minted one, and the
+# answer and the deny record name the same minted ID.
+MINT=$(mark_rid "$DM/n.hdr")
+chk RI7a "503 gateway_draining (row M): X-Loxilb-Refusal-Stage" capacity "$(mark_stage "$DM/n.hdr")"
+chk RI7b "a request sent without an ID is answered with a minted one" minted "$([ -n "$MINT" ] && echo minted || echo absent)"
+chk RI7c "and the trail has the refusal under that minted ID" "capacity gateway_draining" "$([ -n "$MINT" ] && echo "$(deny_field "$MINT" .detail.stage) $(deny_field "$MINT" .detail.decision)")"
+# A refusal that keeps the connection (row KA), read by the raw client.
+KA1=$(grep '"nonce": "capKA-first"' /tmp/ai-admission-KA.out 2>/dev/null | head -n1)
+chk RI8a "429 on a kept connection (row KA): the stage" capacity "$(printf '%s' "$KA1" | jq -r '.headers["x-loxilb-refusal-stage"] // "absent"')"
+chk RI8b "and the request's own ID" capKA-first "$(printf '%s' "$KA1" | jq -r '.headers["x-request-id"] // "absent"')"
+# Two requests on ONE connection (row G): the first was forwarded and
+# answered by the backend, the second refused. The refusal names the second.
+G2=$(grep '"nonce": "capG-second"' /tmp/ai-admission-G.out 2>/dev/null | head -n1)
+chk RI9a "second request on a kept connection (row G): the stage" capacity "$(printf '%s' "$G2" | jq -r '.headers["x-loxilb-refusal-stage"] // "absent"')"
+chk RI9b "the echo is the SECOND request's ID, not the first's" capG-second "$(printf '%s' "$G2" | jq -r '.headers["x-request-id"] // "absent"')"
+chk RI9c "and its deny record is under that ID" capacity "$(deny_field capG-second .detail.stage)"
+chk RI9d "the first request, which was served, has no deny record" 0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capG-first")' | wc -l | tr -d ' ')"
+# The same two requests, the second WITHOUT an ID of its own: whatever its
+# refusal names is the gateway's minted ID for it, never the first request's.
+SIG=$(pwd)/.h1_signal; rm -f "$SIG"
+$hexec l3h1 python3 "$(pwd)/h1_client.py" kept $VIP $PORT_H1 --signal "$SIG" --nonce-prefix capRIk --second-no-rid --timeout 90 > /tmp/ai-admission-RIk.out 2>&1 &
+for i in $(seq 1 20); do grep -q '"status": "200"' /tmp/ai-admission-RIk.out 2>/dev/null && break; sleep 1; done
+DRI=$(mktemp -d)
+hold_burst "$DRI" $FC_MAX_OUT capRIfill "$H1_URL"
+chk RI10a "the first request was served, the pool then filled" "1 $FC_MAX_OUT" "$(grep -c '"status": "200"' /tmp/ai-admission-RIk.out) $(wait_receipts capRIfill $FC_MAX_OUT 15)"
+touch "$SIG"
+for i in $(seq 1 30); do grep -q '"summary": "kept"' /tmp/ai-admission-RIk.out 2>/dev/null && break; sleep 1; done
+K2=$(grep '"nonce": "capRIk-second"' /tmp/ai-admission-RIk.out 2>/dev/null | head -n1)
+K2RID=$(printf '%s' "$K2" | jq -r '.headers["x-request-id"] // ""')
+chk RI10b "the second, sent with no ID, refused on the same connection" "429 true" "$(grep '"summary": "kept"' /tmp/ai-admission-RIk.out | jq -r '"\(.second) \(.reused)"')"
+chk RI10c "its refusal names an ID" minted "$([ -n "$K2RID" ] && echo minted || echo absent)"
+chk RI10d "which is not the first request's" other "$([ "$K2RID" == "capRIk-first" ] && echo "the first's" || echo other)"
+chk RI10e "and the trail has the refusal under that ID" capacity "$([ -n "$K2RID" ] && deny_field "$K2RID" .detail.stage)"
+release_all; wait; rm -f "$SIG"
+chk RI10f "gauge back to zero" 0 "$(wait_metric loxilb_ai_admission_inflight 0 25 "$(svc $PORT_H1)" 'role="service"')"
+# HTTP/2 (row E): a stream refused on its own stream.
+E429=$(grep '"429"' "$E/out" 2>/dev/null | head -n1)
+chk RI11a "a refused HTTP/2 stream (row E): x-loxilb-refusal-stage" capacity "$(printf '%s' "$E429" | jq -r '.headers["x-loxilb-refusal-stage"] // "absent"')"
+chk RI11b "and x-request-id is that stream's own" "$(printf '%s' "$E429" | jq -r '.nonce')" "$(printf '%s' "$E429" | jq -r '.headers["x-request-id"] // "absent"')"
+
+echo ""
+echo "OS: only the gateway's own refusals carry a stage; a backend's answer never does"
+DOS=$(mktemp -d)
+os_send() { # os_send <name> <url> [curl args...]: one request with X-Request-Id capOS<name>; its code
+  local name=$1 url=$2; shift 2
+  $hexec l3h1 curl -s -o "$DOS/$name.body" -D "$DOS/$name.hdr" -w '%{http_code}' --max-time 20 \
+    "${HDRS[@]}" -H "X-Test-Nonce: capOS$name" -H "X-Request-Id: capOS$name" "$@" \
+    -d "$BODY" "$url" > "$DOS/$name.code" 2>/dev/null
+  cat "$DOS/$name.code"
+}
+# A backend that refuses on its own, the way an OpenAI-compatible engine
+# does: 429, an {"error": {...}} object, its own Retry-After. On :PORT_XH
+# (admission headers on) the relayed answer carries the pool's counts, and
+# nothing says the gateway refused it.
+be admin/answer-429-object >/dev/null
+chk OS1 "a backend's own 429 is relayed"                       429 "$(os_send b429 "$XH_URL")"
+chk OS2 "the request did reach the backend"                    1 "$(receipts capOSb429)"
+chk OS3 "no X-Loxilb-Refusal-* on it"                          0 "$(mark_lines "$DOS/b429.hdr")"
+chk OS4 "the admission triple is there (inflight 1, queued 0, limit $FC_XH_MAX)" "3 1 0 $FC_XH_MAX" "$(xh_lines "$DOS/b429.hdr") $(xh_vals "$DOS/b429.hdr")"
+chk OS5 "the body is the backend's object, untouched"          "rate_limit_error rate_limit_exceeded" "$(jq -r '.error | "\(.type) \(.code)"' "$DOS/b429.body" 2>/dev/null)"
+chk OS6 "and so is its Retry-After"                            7 "$(hdr_val "$(hdr_of "$DOS/b429.hdr")" Retry-After)"
+chk OS7 "the gateway recorded no refusal for it"               0 "$(sleep 3; trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOSb429")' | wc -l | tr -d ' ')"
+# A backend that sends the gateway's own header: removed from the head.
+be admin/echo-spoof-headers >/dev/null
+chk OS8 "a backend 200 that claims X-Loxilb-Refusal-Stage: capacity is relayed" 200 "$(os_send spoof "$XH_URL")"
+chk OS9 "without the header"                                   0 "$(mark_lines "$DOS/spoof.hdr")"
+chk OS10 "and with the gateway's admission values, one of each" "3 1 0 $FC_XH_MAX" "$(xh_lines "$DOS/spoof.hdr") $(xh_vals "$DOS/spoof.hdr")"
+# Both at once: the backend's own 429 dressed as a gateway capacity refusal.
+be admin/answer-429-object >/dev/null; be admin/echo-spoof-headers >/dev/null
+chk OS11 "a backend 429 that claims the capacity stage is relayed as 429" 429 "$(os_send both "$XH_URL")"
+chk OS12 "without the stage: a client does not read it as gateway congestion" 0 "$(mark_lines "$DOS/both.hdr")"
+chk OS13 "its body still the backend's object"                 rate_limit_error "$(jq -r '.error.type' "$DOS/both.body" 2>/dev/null)"
+# The strip does not depend on the admission headers being on (:PORT_H1 is off).
+be admin/echo-spoof-headers >/dev/null
+chk OS14 "on a pool without admission headers the claim is removed too" "200 0" "$(os_send spoofoff "$H1_URL") $(mark_lines "$DOS/spoofoff.hdr")"
+# An outage is not a refusal: no stage, ever. Whether it names the request
+# depends on who writes it. The 502 for an endpoint that refuses the
+# connection is written from the connect event, after the request was handed
+# to the connect: it carries no X-Request-Id (a documented residual; the
+# trail has the request, as a completion). The 503 for a pool with no
+# healthy endpoint is written while the request is still being placed, and
+# names it (OS23 on).
+chk OS15 "a request whose only endpoint refuses the connection is answered 502" 502 "$(os_send dead "http://$VIP:$PORT_DEAD/v1/chat/completions")"
+chk_has OS16 "naming the outage"                               backend_unreachable "$(cat "$DOS/dead.body" 2>/dev/null)"
+chk OS17 "no stage on an outage"                               0 "$(mark_lines "$DOS/dead.hdr")"
+chk OS18 "and no X-Request-Id on this one (written from the connect event)" 0 "$(rid_lines "$DOS/dead.hdr")"
+chk OS19 "an outage is recorded as a completion, not a refusal" 0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOSdead")' | wc -l | tr -d ' ')"
+# After the request was forwarded the gateway no longer holds its ID for the
+# answer: a backend that resets without answering gives a 502 with neither.
+chk OS20 "a backend that resets after taking the request: 502" 502 "$(os_send reset "$H1_URL" -H 'X-Test-Reset: 1')"
+chk OS21 "it had reached the backend"                          1 "$(receipts capOSreset)"
+chk OS22 "no stage, and no X-Request-Id (the documented post-dispatch case)" "0 0" "$(mark_lines "$DOS/reset.hdr") $(rid_lines "$DOS/reset.hdr")"
+# The outage that does name the request: the pool's only endpoint marked down
+# through the API, so the request is answered while it is being placed.
+dead_state() { $hexec l3h1 curl -s -m 8 -X POST "$API/config/endpointhoststate" -H 'Content-Type: application/json' \
+  -d "{\"hostName\": \"31.31.31.1\", \"epPort\": $DEAD_TARGET, \"epProto\": \"tcp\", \"state\": \"$1\"}"; }
+chk_has OS23 "the :$PORT_DEAD endpoint is marked down"            Success "$(dead_state red)"
+sleep 1
+chk OS24 "a request on a pool with no healthy endpoint is answered 503" 503 "$(os_send down "http://$VIP:$PORT_DEAD/v1/chat/completions")"
+chk OS25 "naming the outage"                                   no_healthy_backend "$(jq -r '.error // "unreadable"' "$DOS/down.body" 2>/dev/null)"
+chk OS26 "no stage on an outage"                               0 "$(mark_lines "$DOS/down.hdr")"
+chk OS27 "and the request's own X-Request-Id"                  capOSdown "$(mark_rid "$DOS/down.hdr")"
+chk OS28 "recorded as a completion, not a refusal"             0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOSdown")' | wc -l | tr -d ' ')"
+chk_has OS29 "the endpoint is marked up again"                 Success "$(dead_state green)"
+
+# ── OBJ: the objective a request asks for and may not use ───────────────────
+# Two objectives, two tenants (one may name obj-gold, one may not), a key
+# each, and three rules of this row's own: :PORT_OBJ serves a denied
+# objective at the tenant's default and says what was asked for
+# (X-Loxilb-Admission-Objective-Requested), :PORT_OBJS is strict and refuses
+# it, :PORT_OBJ2 is the first again on HTTP/2. The header is on an admitted
+# response only, and only when the objective was denied: its absence means
+# "not denied". The row runs before NEG: NEG ends by replacing the store with
+# an empty one, whose tables exist only after the gateway's next start.
+echo ""
+echo "OBJ: an objective the request may not use — strict refuses it, non-strict serves it and names what it asked for"
+DOBJ=$(mktemp -d)
+OBJ_URL="http://$VIP:$PORT_OBJ/v1/chat/completions"
+OBJS_URL="http://$VIP:$PORT_OBJS/v1/chat/completions"
+OBJ_HDR=X-Loxilb-Admission-Objective-Requested
+obj_api() { # obj_api <method> <path> [<json>] -> the status
+  [ "$1" == GET ] || store_guard "obj_api $1 $2" || { echo "not sent"; return 1; }
+  if [ -n "${3:-}" ]; then
+    $hexec l3h1 curl -s -m 10 -o /dev/null -w '%{http_code}' -X "$1" -H 'Content-Type: application/json' -d "$3" "$API$2"
+  else
+    $hexec l3h1 curl -s -m 10 -o /dev/null -w '%{http_code}' -X "$1" "$API$2"
+  fi
+}
+# obj_send <name> <url> <key> <body> [curl args...]: one request, X-Request-Id capOBJ<name>
+obj_send() {
+  local name=$1 url=$2 key=$3 body=$4; shift 4
+  $hexec l3h1 curl -s -o "$DOBJ/$name.body" -D "$DOBJ/$name.hdr" -w '%{http_code}' --max-time 20 \
+    "${HDRS[@]}" -H "X-Api-Key: $key" -H "X-Test-Nonce: capOBJ$name" -H "X-Request-Id: capOBJ$name" "$@" \
+    -d "$body" "$url" > "$DOBJ/$name.code" 2>/dev/null
+  cat "$DOBJ/$name.code"
+}
+obj_h() { hdr_val "$(hdr_of "$DOBJ/$1.hdr")" "$2"; }                      # obj_h <name> <header>: its value, "" when absent
+obj_lines() { grep -ci "^$OBJ_HDR:" "$DOBJ/$1.hdr" 2>/dev/null || true; }   # lines of the new header, whoever sent them
+ASK=(-H 'x-llm-d-inference-objective: obj-gold')
+# The objective handler answers 200 with a result body; the tenant handler
+# answers 204. The first draft of this row expected 204 from both: the
+# expectation was wrong and was corrected, no handler was changed.
+chk OBJ0a "two objectives are created" "200 200" "$(obj_api POST /config/ai/objective '{"name":"obj-gold","priority":1}') $(obj_api POST /config/ai/objective '{"name":"obj-base","priority":0}')"
+chk OBJ0b "a tenant that may name obj-gold, and one that may not" "204 204" \
+  "$(obj_api POST /config/ai/tenant/ratelimit '{"tenant_id":"obj-may","priority_class":"critical","allowed_objectives":["obj-gold"],"default_objective":"obj-base"}') $(obj_api POST /config/ai/tenant/ratelimit '{"tenant_id":"obj-maynot","default_objective":"obj-base"}')"
+KEY_OM=$(mk_key obj-may); KEY_ON=$(mk_key obj-maynot)
+chk OBJ0c "a key for each" "2 keys" "$(for k in "$KEY_OM" "$KEY_ON"; do [ -n "$k" ] && echo; done | wc -l | tr -d ' ') keys"
+chk_has OBJ0d "the non-strict rule :$PORT_OBJ"           Success "$(gw_add_rule $PORT_OBJ  "$(gw_obj_json false)" 8080 8081)"
+chk_has OBJ0e "the strict rule :$PORT_OBJS"              Success "$(gw_add_rule $PORT_OBJS "$(gw_obj_json true)"  8080 8081)"
+chk_has OBJ0f "the non-strict HTTP/2 rule :$PORT_OBJ2"   Success "$(gw_add_rule $PORT_OBJ2 ", \"backend_protocol\": \"http2\"$(gw_obj_json false)" 8090 8091)"
+chk OBJ0g "the strict flag reads back on :$PORT_OBJS and not on :$PORT_OBJ" "true false" "$(lb_get $PORT_OBJS | jq -r '.serviceArguments.ai_objective_strict // false') $(lb_get $PORT_OBJ | jq -r '.serviceArguments.ai_objective_strict // false')"
+# The class configuration is read by the gateway on an interval (10 s by
+# default). Wait for it with the request the configuration ALLOWS: the tenant
+# that may name obj-gold gets it applied. Nothing below is polled.
+got=""
+for i in $(seq 1 20); do
+  obj_send "ready$i" "$OBJ_URL" "$KEY_OM" "$BODY" "${ASK[@]}" >/dev/null
+  got=$(obj_h "ready$i" X-Loxilb-Admission-Objective)
+  [ "$got" == obj-gold ] && break
+  sleep 2
+done
+chk OBJ0h "the class configuration reached the data plane within 40 s" obj-gold "$got"
+
+chk OBJ1a "allowed, non-strict: served"                              200 "$(obj_send may "$OBJ_URL" "$KEY_OM" "$BODY" "${ASK[@]}")"
+chk OBJ1b "the applied objective is the one asked for"               obj-gold "$(obj_h may X-Loxilb-Admission-Objective)"
+chk OBJ1c "at its class"                                             critical "$(obj_h may X-Loxilb-Admission-Class)"
+chk OBJ1d "and no $OBJ_HDR: nothing was denied"                      0 "$(obj_lines may)"
+
+chk OBJ2a "denied, non-strict: served all the same"                  200 "$(obj_send den "$OBJ_URL" "$KEY_ON" "$BODY" "${ASK[@]}")"
+chk OBJ2b "the applied objective is the tenant's default"            obj-base "$(obj_h den X-Loxilb-Admission-Objective)"
+chk OBJ2c "at the default's class"                                   standard "$(obj_h den X-Loxilb-Admission-Class)"
+chk OBJ2d "$OBJ_HDR names what the client sent"                      obj-gold "$(obj_h den $OBJ_HDR)"
+chk OBJ2e "once"                                                     1 "$(obj_lines den)"
+chk OBJ2f "the request reached a backend"                            1 "$(receipts capOBJden)"
+chk OBJ2g "no stage header: it is not a refusal"                     0 "$(mark_lines "$DOBJ/den.hdr")"
+chk OBJ2h "and no deny record under its ID"                          0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOBJden")' | wc -l | tr -d ' ')"
+
+chk OBJ3a "the same tenant naming no objective: served"              200 "$(obj_send none "$OBJ_URL" "$KEY_ON" "$BODY")"
+chk OBJ3b "at its default, with no $OBJ_HDR"                         "obj-base 0" "$(obj_h none X-Loxilb-Admission-Objective) $(obj_lines none)"
+
+chk OBJ4a "an objective that does not exist: served"                 200 "$(obj_send unk "$OBJ_URL" "$KEY_ON" "$BODY" -H 'x-llm-d-inference-objective: no-such-objective')"
+chk OBJ4b "and named back as it was sent"                            no-such-objective "$(obj_h unk $OBJ_HDR)"
+
+chk OBJ5a "the deprecated header name, denied the same way"          "200 obj-gold" "$(obj_send old "$OBJ_URL" "$KEY_ON" "$BODY" -H 'x-gateway-inference-objective: obj-gold') $(obj_h old $OBJ_HDR)"
+
+OBJ_LONG=$(printf 'o%.0s' $(seq 1 70))
+chk OBJ6a "a name longer than an objective can be: served"           200 "$(obj_send big "$OBJ_URL" "$KEY_ON" "$BODY" -H "x-llm-d-inference-objective: $OBJ_LONG")"
+chk OBJ6b "and reported as (oversize), not echoed"                   "(oversize)" "$(obj_h big $OBJ_HDR)"
+
+TIER_BODY='{"model":"cap-model","service_tier":"priority","messages":[{"role":"user","content":"x"}]}'
+chk OBJ7a "a body service_tier the tenant may not ask for: served"   200 "$(obj_send tier "$OBJ_URL" "$KEY_ON" "$TIER_BODY")"
+chk OBJ7b "and named as tier:<value>"                                tier:priority "$(obj_h tier $OBJ_HDR)"
+
+chk OBJ8a "a backend's own $OBJ_HDR on a denied request: served"     200 "$(obj_send spd "$OBJ_URL" "$KEY_ON" "$BODY" "${ASK[@]}" -H 'X-Test-Spoof-Objective: 1')"
+chk OBJ8b "one line, the gateway's value"                            "1 obj-gold" "$(obj_lines spd) $(obj_h spd $OBJ_HDR)"
+chk OBJ8c "the same from the backend when nothing was denied: served" 200 "$(obj_send spa "$OBJ_URL" "$KEY_OM" "$BODY" "${ASK[@]}" -H 'X-Test-Spoof-Objective: 1')"
+chk OBJ8d "and the backend's line does not reach the client"         0 "$(obj_lines spa)"
+
+chk OBJ9a "denied on the strict rule: refused"                       403 "$(obj_send sden "$OBJS_URL" "$KEY_ON" "$BODY" "${ASK[@]}")"
+chk OBJ9b "error objective_not_allowed"                              objective_not_allowed "$(jq -r '.error // "unreadable"' "$DOBJ/sden.body" 2>/dev/null)"
+chk OBJ9c "X-Loxilb-Refusal-Stage: objective"                        objective "$(mark_stage "$DOBJ/sden.hdr")"
+chk OBJ9d "a client does not read it as congestion"                  "not congestion" "$(not_congestion "$(mark_stage "$DOBJ/sden.hdr")")"
+chk OBJ9e "X-Request-Id is the one sent"                             capOBJsden "$(mark_rid "$DOBJ/sden.hdr")"
+chk OBJ9f "the deny record, by that ID, is at"                       objective "$(deny_field capOBJsden .detail.stage)"
+chk OBJ9g "it never reached a backend"                               0 "$(receipts capOBJsden)"
+chk OBJ9h "a refusal carries no $OBJ_HDR: that header is for admitted responses" 0 "$(obj_lines sden)"
+chk OBJ9i "allowed on the strict rule: served with its objective"    "200 obj-gold" "$(obj_send smay "$OBJS_URL" "$KEY_OM" "$BODY" "${ASK[@]}") $(obj_h smay X-Loxilb-Admission-Objective)"
+chk OBJ9j "no objective named on the strict rule: served"            200 "$(obj_send snone "$OBJS_URL" "$KEY_ON" "$BODY")"
+
+OBJ2_DEN=$($hexec l3h1 python3 "$(pwd)/h2_admit.py" $VIP $PORT_OBJ2 --streams 1 --nonce-prefix capOBJh2d --header "x-api-key=$KEY_ON" --header "x-llm-d-inference-objective=obj-gold" 2>&1)
+OBJ2_MAY=$($hexec l3h1 python3 "$(pwd)/h2_admit.py" $VIP $PORT_OBJ2 --streams 1 --nonce-prefix capOBJh2m --header "x-api-key=$KEY_OM" --header "x-llm-d-inference-objective=obj-gold" 2>&1)
+obj_h2() { printf '%s\n' "$1" | jq -r "select(.stream) | $2" 2>/dev/null | head -n1; }
+chk OBJ10a "HTTP/2, denied, non-strict: served"                      200 "$(obj_h2 "$OBJ2_DEN" .status)"
+chk OBJ10b "the default applied and what was asked for, on the head" "obj-base obj-gold" "$(obj_h2 "$OBJ2_DEN" '"\(.headers["x-loxilb-admission-objective"] // "absent") \(.headers["x-loxilb-admission-objective-requested"] // "absent")"')"
+chk OBJ10c "HTTP/2, allowed: served with its objective and no requested header" "200 obj-gold absent" "$(obj_h2 "$OBJ2_MAY" '"\(.status) \(.headers["x-loxilb-admission-objective"] // "absent") \(.headers["x-loxilb-admission-objective-requested"] // "absent")"')"
+
+# This row's rules and objectives go: the rows below count listeners, and
+# with no objective left the class stage has nothing to apply.
+chk_has OBJ11a "the row's three rules are deleted" "Success Success Success" "$(for p in $PORT_OBJ $PORT_OBJS $PORT_OBJ2; do lb_delete $p | grep -o Success | head -n1; done | tr '\n' ' ')"
+chk OBJ11b "and its two objectives" "200 200" "$(obj_api DELETE /config/ai/objective/obj-gold) $(obj_api DELETE /config/ai/objective/obj-base)"
+
+echo ""
+echo "NEG: refusals that are not congestion, reproduced on this bed, each with its stage"
+DNG=$(mktemp -d)
+neg_send() { # neg_send <name> [curl args...]: one request on the keyed pool, X-Request-Id capNG<name>
+  local name=$1; shift
+  $hexec l3h1 curl -s -o "$DNG/$name.body" -D "$DNG/$name.hdr" -w '%{http_code}' --max-time 20 \
+    "${HDRS[@]}" -H "X-Test-Nonce: capNG$name" -H "X-Request-Id: capNG$name" "$@" \
+    -d "$BODY" "$TS_URL" > "$DNG/$name.code" 2>/dev/null
+  cat "$DNG/$name.code"
+}
+neg_key() { # neg_key <name> <allowed_models json> <rps> <burst> -> the raw key
+  store_guard "neg_key $1" || return 1
+  $hexec l3h1 curl -s -m 10 -X POST "$API/config/ai/apikey" -H 'Content-Type: application/json' \
+    -d "{\"tenant_id\": \"neg-$1\", \"name\": \"neg-$1\", \"allowed_models\": $2,
+         \"rate_limit_rps\": $3, \"burst_size\": $4, \"enabled\": true}" | jq -r '.raw_key // empty'
+}
+# neg_row <id> <what> <name> <status> <error> <stage>
+neg_row() {
+  chk "$1a" "$2: status"                                  "$4" "$(cat "$DNG/$3.code" 2>/dev/null)"
+  chk "$1b" "$2: error"                                   "$5" "$(jq -r '.error // "unreadable"' "$DNG/$3.body" 2>/dev/null)"
+  chk "$1c" "$2: X-Loxilb-Refusal-Stage"                  "$6" "$(mark_stage "$DNG/$3.hdr")"
+  chk "$1d" "$2: a client does not read it as congestion" "not congestion" "$(not_congestion "$(mark_stage "$DNG/$3.hdr")")"
+  chk "$1e" "$2: X-Request-Id is the one sent"            "capNG$3" "$(mark_rid "$DNG/$3.hdr")"
+  chk "$1f" "$2: the deny record, by that ID, is at"      "$6" "$(deny_field "capNG$3" .detail.stage)"
+  chk "$1g" "$2: it never reached a backend"              0 "$(receipts "capNG$3")"
+}
+neg_send nokey >/dev/null
+neg_row NEG1 "no API key" nokey 401 invalid_api_key auth
+KEY_M=$(neg_key model '["some-other-model"]' 1000 1000)
+neg_send model -H "X-Api-Key: $KEY_M" >/dev/null
+neg_row NEG2 "a key that may not use this model" model 403 model_not_allowed auth
+# A key with one request a second and a burst of one: of four sent back to
+# back the first passes, and at least one of the rest is over the rate.
+KEY_R=$(neg_key rate "[\"$MODEL\"]" 1 1)
+rl=""
+for i in 1 2 3 4; do
+  c=$(neg_send "rate$i" -H "X-Api-Key: $KEY_R")
+  [ -z "$rl" ] && [ "$c" == "429" ] && rl="rate$i"
+done
+chk NEG3 "two keys issued; the rate-limited key was refused within four requests" "2 refused" "$(for k in "$KEY_M" "$KEY_R"; do [ -n "$k" ] && echo; done | wc -l | tr -d ' ') $([ -n "$rl" ] && echo refused || echo "never refused")"
+neg_row NEG4 "the key's own request rate" "${rl:-rate4}" 429 rate_limit_exceeded ratelimit
+chk_ge NEG4h "with Retry-After" 1 "$(hdr_val "$(hdr_of "$DNG/${rl:-rate4}.hdr")" Retry-After)"
+# The store goes away: a key the gateway has never seen cannot be checked.
+# The answer is a 503 at the auth stage with Retry-After 5 — a 5xx WITH a
+# stage, on purpose: the gateway refused before dispatch, and it is not
+# congestion. The store container runs --rm, so the stop removes it; it is
+# started again, empty, for the reboot of row H (its keyed rules need it).
+# Empty means without the gateway's tables: this row is the last one that
+# may write to the store, and store_guard holds every later one to that.
+KEY_COLD=$(neg_key cold "[\"$MODEL\"]" 1000 1000)
+docker stop "$PG_NAME" >/dev/null 2>&1
+sleep 2
+neg_send store -H "X-Api-Key: $KEY_COLD" >/dev/null
+chk NEG5 "a cold key was issued before the store stopped" issued "$([ -n "$KEY_COLD" ] && echo issued || echo none)"
+neg_row NEG6 "the policy store is unreachable" store 503 policy_store_unavailable auth
+chk NEG6h "with Retry-After 5" 5 "$(hdr_val "$(hdr_of "$DNG/store.hdr")" Retry-After)"
+chk NEG7 "the store is started again for the rows below" up "$(gw_pg_start >/dev/null 2>&1 && echo up || echo down)"
+STORE_GONE="Row NEG replaced the store with an empty one; its tables exist again only after a gateway start. Move the row before NEG."
+
+echo ""
+echo "F2: does an Endpoint Picker fixture set X-Request-Id on an immediate answer?"
+# No rule of this scenario runs an Endpoint Picker. The one EPP fixture the
+# repository has is the fake in pkg/epp/epptest (driven by
+# cicd/k3d-incluster-inference-epp); its immediate answers go out through the
+# sender that adds the gateway's X-Request-Id. If the fake ever sets that
+# header itself the answer would carry two, and this row turns red so the
+# one-header assertion is added where the fake runs.
+EPP_FAKE=../../pkg/epp/epptest/fake.go
+chk F2a "the EPP fixture's source is readable" readable "$([ -r "$EPP_FAKE" ] && echo readable || echo missing)"
+chk F2b "it sets no X-Request-Id on any answer of its own (0 = nothing to assert on the wire)" 0 "$(grep -ci 'hv("x-request-id"' "$EPP_FAKE" 2>/dev/null || true)"
+echo "   headers the fixture sets on its immediate answers: $(grep -A6 'ImmediateResponse{' "$EPP_FAKE" 2>/dev/null | grep -o 'hv("[^"]*"' | sort -u | tr '\n' ' ')"
+
 # ── H: observe mode ─────────────────────────────────────────────────────────
 echo ""
 echo "H: the same load in observe mode is admitted and only counted"
@@ -1055,7 +1409,16 @@ else
   echo "  [FAIL] VA0 the gateway did not come back with the valve bound"; nfail=$((nfail+1)); code=1
 fi
 
-rm -rf "${DXH:-/nonexistent}" "$DB" "$DN" "$DC" "$E" "$DG" "$DL" "$DQ" "$DT" "$DX" "$DK" "$DD" "$DM" "$DP" "$DO" "$DU" "$DAD" "$DWU" "$DWU2" "$DVA" "${DH:-/nonexistent}" 2>/dev/null
+rm -rf "${DOBJ:-/nonexistent}" "${DXH:-/nonexistent}" "${DTS:-/nonexistent}" "${DTW:-/nonexistent}" "${DRI:-/nonexistent}" "${DOS:-/nonexistent}" "${DNG:-/nonexistent}" "$DB" "$DN" "$DC" "$E" "$DG" "$DL" "$DQ" "$DT" "$DX" "$DK" "$DD" "$DM" "$DP" "$DO" "$DU" "$DAD" "$DWU" "$DWU2" "$DVA" "${DH:-/nonexistent}" 2>/dev/null
+
+if [ -s "$STORE_TRAP" ]; then
+  echo ""
+  while read -r who; do
+    echo "  [FAIL] STORE $who tried to write to the policy store after row NEG, which leaves it empty until the gateway's next start"
+    nfail=$((nfail+1)); code=1
+  done < "$STORE_TRAP"
+fi
+rm -f "$STORE_TRAP"
 
 echo ""
 if [ "$code" -eq 0 ]; then

@@ -179,6 +179,7 @@ var Migrations = []Migration{
 		Apply:       func(doc *Document) error { return nil },
 	},
 	{FromVersion: "1.11", ToVersion: "1.12", Apply: func(doc *Document) error { return nil }},
+	{FromVersion: "1.12", ToVersion: "1.13", Apply: func(doc *Document) error { return nil }},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

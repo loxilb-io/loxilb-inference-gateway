@@ -472,6 +472,11 @@ the jitter the body hints, so a burst of refusals does not return as one
 burst of retries. Every non-admit decision is also a `sec.ai.deny` record on
 the audit trail with the service, the model and the decision.
 
+These are the capacity-stage rows of the gateway's whole refusal table. The
+other stages (credentials, rate limits and quotas, routing, framing), what
+is safe to retry, and the HTTP/1.1 and HTTP/2 differences are in the
+[client refusal contract](27-ai-gateway-client-refusal-contract.md).
+
 ### The same headers on admitted responses
 
 With `fc_expose_headers` `on` (or `LLB_FC_EXPOSE_HEADERS=on` and the rule

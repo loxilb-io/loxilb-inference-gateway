@@ -16,6 +16,7 @@ answered.
 
 Usage: h2_admit.py <host> <port> --streams K --delay-ms D
                    [--rst N --rst-after-s S] [--nonce-prefix P] [--model M]
+                   [--header name=value ...]
 """
 import argparse
 import json
@@ -40,6 +41,8 @@ def main():
     ap.add_argument("--nonce-prefix", default="h2adm")
     ap.add_argument("--model", default="cap-model")
     ap.add_argument("--path", default="/v1/chat/completions")
+    ap.add_argument("--header", action="append", default=[],
+                    help="name=value, added to every stream's request (repeatable)")
     args = ap.parse_args()
 
     timeout = args.delay_ms / 1000.0 + 20.0
@@ -66,6 +69,9 @@ def main():
         ]
         if args.delay_ms:
             headers.append(("x-test-delay-ms", str(args.delay_ms)))
+        for h in args.header:
+            name, _, value = h.partition("=")
+            headers.append((name.lower(), value))
         conn.send_headers(sid, headers)
         conn.send_data(sid, body, end_stream=True)
         streams[sid] = {"nonce": nonce, "status": "", "headers": {},
@@ -114,7 +120,9 @@ def main():
                     value = value.decode() if isinstance(value, bytes) else value
                     if name == ":status":
                         st["status"] = value
-                    elif name.startswith("x-loxilb-admission-") or name == "retry-after":
+                    elif (name.startswith("x-loxilb-admission-") or
+                          name.startswith("x-loxilb-refusal-") or
+                          name in ("retry-after", "x-request-id")):
                         st["headers"][name] = value
             elif isinstance(event, h2.events.DataReceived) and st is not None:
                 st["body"] += event.data
