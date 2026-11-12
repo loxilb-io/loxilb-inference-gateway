@@ -164,7 +164,9 @@ jobs:
   # image verifier E2BIG on hosted 6.x-azure kernels. Use our own PR build.
   bgp-recovery:
     needs: gateway
-    if: ${{ inputs.bgp-recovery && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    # The candidate is exported before security scans. Run recovery even if a
+    # scan fails; the gateway job keeps its failing security conclusion.
+    if: ${{ always() && inputs.bgp-recovery && needs.gateway.result != 'cancelled' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -177,10 +179,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/download-artifact@v4
+      - name: Require and download the exported BGP candidate artifact
+        id: candidate_artifact
+        uses: actions/download-artifact@v4
         with:
           name: bgp-recovery-candidate-u22
           path: ${{ runner.temp }}/bgp-candidate
+      - name: Explain an unavailable candidate artifact
+        if: ${{ failure() && steps.candidate_artifact.outcome == 'failure' }}
+        run: |
+          echo "::error::Required artifact bgp-recovery-candidate-u22 is missing or unreadable (gateway result: ${{ needs.gateway.result }}). The gateway must export and upload its candidate before security scans."
+          exit 1
       - name: Load and verify this revision's candidate
         run: |
           test "$(cat "$RUNNER_TEMP/bgp-candidate/source-revision")" = "$(git rev-parse HEAD)"

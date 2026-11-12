@@ -47,7 +47,10 @@ networks are checked before selecting an unused internal subnet.
 The BGP recovery workflow runs all four profiles on trusted repository PRs
 matching the recovery paths and nightly. It reuses the reusable candidate-image
 builder's Ubuntu 22.04 image artifact, verifies image ID and source revision,
-and never selects a published `latest` image. Like basic-sanity-ubuntu-24, it
+and never selects a published `latest` image. Recovery runs even when a candidate
+security scan fails; the security gate still fails independently. A cancelled
+gateway job prevents recovery, and a missing candidate artifact fails the runtime
+job with an explicit diagnostic. Like basic-sanity-ubuntu-24, it
 uses the u22 datapath on the Ubuntu 24.04 runner to avoid the documented u24
 image verifier E2BIG on hosted 6.x-azure kernels. The runtime job uses the standard
 hosted Ubuntu Docker/privileged pattern and records elapsed seconds in its job
