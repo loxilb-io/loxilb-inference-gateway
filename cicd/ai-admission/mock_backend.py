@@ -60,6 +60,10 @@ Request headers that shape the answer:
   X-Test-Spoof-Admission: 1
                           the answer carries X-Loxilb-Admission-Inflight: 999
                           of its own, which the gateway must replace
+  X-Test-Spoof-Objective: 1
+                          the answer carries
+                          X-Loxilb-Admission-Objective-Requested: forged of its
+                          own, which the gateway must not relay
   X-Test-Engine: vllm|sglang|trtllm
                           answer as that engine would a top-level body key
                           it does not know: vllm allows it, sglang ignores
@@ -161,6 +165,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("X-Loxilb-Admission-Inflight", "999")
         if getattr(self, "spoof_stage", False):
             self.send_header("X-Loxilb-Refusal-Stage", "capacity")
+        if getattr(self, "spoof_objective", False):
+            self.send_header("X-Loxilb-Admission-Objective-Requested", "forged")
 
     def _enter(self, nonce, body=None):
         global INFLIGHT
@@ -334,6 +340,7 @@ class Handler(BaseHTTPRequestHandler):
         reset = self.headers.get("X-Test-Reset", "") == "1"
         forever = self.headers.get("X-Test-Forever", "") == "1"
         self.spoof = self.headers.get("X-Test-Spoof-Admission", "") == "1"
+        self.spoof_objective = self.headers.get("X-Test-Spoof-Objective", "") == "1"
         engine = self.headers.get("X-Test-Engine", "")
         # The two admin arms are taken by the next inference request, whichever
         # port it arrives on, and by that one only.
