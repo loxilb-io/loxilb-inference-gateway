@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 358,
+  "total": 359,
   "owners": {
-   "loxilb": 335,
+   "loxilb": 336,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 302,
+   "default": 303,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -391,6 +391,7 @@
   "loxilb_audit_last_write_timestamp_seconds": "C",
   "loxilb_audit_last_heartbeat_timestamp_seconds": "C",
   "loxilb_log_lines_dropped_total": "C",
+  "loxilb_lb_conn_count_corrections_total": "C",
   "loxilb_ai_class_config_lkg_intervals_total": "C",
   "loxilb_audit_records_unattributed_total": "C",
   "loxilb_audit_orphaned_intents_total": "C",
@@ -543,6 +544,7 @@
   "loxilb_audit_last_write_timestamp_seconds": "gauge",
   "loxilb_audit_last_heartbeat_timestamp_seconds": "gauge",
   "loxilb_log_lines_dropped_total": "counter",
+  "loxilb_lb_conn_count_corrections_total": "counter",
   "loxilb_ai_class_config_lkg_intervals_total": "counter",
   "loxilb_audit_records_unattributed_total": "counter",
   "loxilb_audit_orphaned_intents_total": "counter",
@@ -676,6 +678,7 @@
    "loxilb_kv_inventory_fresh",
    "loxilb_kv_subscriber_last_event_timestamp_seconds",
    "loxilb_kv_subscriber_wire_reject_total",
+   "loxilb_lb_conn_count_corrections_total",
    "loxilb_log_lines_dropped_total",
    "loxilb_pd_admission_overflow_shed_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
@@ -727,6 +730,7 @@
   ]
  },
  "coverage_waivers": {
+  "loxilb_lb_conn_count_corrections_total": "Are the live connection count behind connectionLimit, or the per-endpoint session counts of a least-connections rule, drifting from the connections that exist? The counts are kept by increments and decrements; after every conntrack ageing run they are compared with the connections that exist, and a rule whose counts differ is corrected. Zero on an idle gateway. An occasional correction on a busy rule is expected when the gateway removes a connection (idle timeout, rule or endpoint change) while the data path counts another, and one correction per least-connections rule is expected after an HA failover, when the new master first verifies the connections it inherited; a steady increase without such events means a path that adds or removes connections is not counted. Every correction is also a WARN line in the data-plane log that names the rule index, the endpoint slot for a session count, and both values, and the corrected count is in effect from that moment. Operators can query the scalar directly; no dashboard or alert policy is introduced with the fix that adds the correction.",
   "loxilb_bgp_adoption_dropped_attributes": "Process-local adoption diagnostic: WARN logs identify peer and unsupported attribute names immediately; this scalar records the last adoption count (or -1 for incomplete inspection). Operators can query it directly. No automatic alert policy is introduced for an explicitly requested ownership transition.",
   "loxilb_bgp_daemon_config_pending": "Daemon configuration recovery gate, including preparation failures before a retry group exists. Operators can query the scalar directly; the readiness endpoint also reports the blocked state. No new dashboard or alert policy is introduced by this recovery fix.",
   "loxilb_ai_engine_info": "Info metric (constant 1) for PromQL joins and legend enrichment of engine identity; standalone display would duplicate configuration.",
@@ -4405,6 +4409,14 @@
      { "symbol": "init", "kind": "func", "file": "api/restapi/handler/audit_metrics.go", "def_line": 245, "call_line": 246, "calls": "auditCollector", "entry_point": "registry-collector", "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect" }
     ],
     "evidence": "api/restapi/handler TestAuditMetricsWithoutWriter and TestAuditMetricsFollowTheWriter compare the collector's exposition against the writer's Stats snapshot with and without a writer installed; the gate tests behind the counters (audit_gate_test.go, audit_originator_test.go) drive the values they read."
+   },
+   "loxilb_lb_conn_count_corrections_total": {
+    "status": "verified-static",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "lbConnCountCorrectionsCollector", "file": "api/prometheus/lb_conn_count_metrics.go", "def_line": 48, "writes": "lbConnCountCorrectionsDesc", "note": "read at scrape time from the source pkg/loxinet sets (dpebpf_lbconncount_linux.go, llb_nat_conc_fixups: corrections the data plane made to a rule's live connection count or per-endpoint session counts after a conntrack ageing run, summed over all rules); reads zero until the data plane is up" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/lb_conn_count_metrics.go", "def_line": 56, "call_line": 57, "calls": "lbConnCountCorrectionsCollector", "entry_point": "registry-collector", "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect" }
+    ],
+    "evidence": "api/prometheus TestLBConnCountCorrectionsReadsZeroWithoutSource and TestLBConnCountCorrectionsReadsItsSourceAtScrape compare the collector's exposition with and without a source; cicd/tcplbconnlimit-reuse arm E overwrites a rule's count under two open connections and reads the family going from 0 to 1 when the data plane corrects it; arm H does the same with a per-endpoint session count of a least-connections rule and reads it going up by one."
    },
    "loxilb_log_lines_dropped_total": {
     "status": "verified-static",
