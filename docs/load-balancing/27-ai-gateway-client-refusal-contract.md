@@ -91,10 +91,23 @@ an outage completion, not as a `sec.ai.deny` at `route`. It is the only answer w
 record of that stage behind it.
 
 **A backend cannot send the stage.** `X-Loxilb-Refusal-*` fields in a backend's response are removed from every
-relayed response head, on every service, whatever `fc_expose_headers` says. Two residuals: on HTTP/1.1 only a
-head that arrives in one read is cleaned (a head split across reads passes as sent; an interim `1xx` and the
-final head arriving in one read: the `1xx` is cleaned, the final head is not), and HTTP/2 trailers are not a head
-and pass. Backends are operator-controlled; the residual closes with the HTTP/1.1 response-head assembly work.
+relayed response head, on every service, whatever `fc_expose_headers` says. On HTTP/1.1 a head that arrives in
+one read is cleaned, and so is a head that arrives in several pieces wherever the gateway puts it together: an
+admitted response that takes the admission or class headers, up to 16 KiB. The residuals:
+
+- an HTTP/1.1 head that arrives in pieces and is **not** put together passes as the backend sent it: one that
+  grows past 16 KiB (counted, `loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"}`), and one on a
+  response that takes no admission or class headers (a rule without `fc_expose_headers`, a request the gate does
+  not count);
+- an interim `1xx` and the final head arriving in one read: the `1xx` is cleaned, the final head is not;
+- HTTP/2 trailers are not a head and pass.
+
+Backends are operator-controlled.
+
+**Never a partial head from the gateway.** When the gateway itself ends an HTTP/1.1 answer while it is still
+putting that answer's head together, the client reads the close and no byte of that head. This is about answers
+the gateway ends. A backend that closes after sending part of a head is different: the bytes it sent are passed
+on as they came, then the close, as before.
 
 ## Columns
 
@@ -323,7 +336,10 @@ The admission triple appears on capacity refusals always, and on admitted respon
   how long this client would wait.
 - **Absent means unknown, never zero.** The headers are absent on requests the gate does not count
   (non-inference paths such as `GET /v1/models`, a pool in `off` mode), on rules without `fc_expose_headers`, and,
-  on HTTP/1.1, on an admitted response whose head the backend sent in more than one piece.
+  on HTTP/1.1, on an admitted response whose head arrived in more than one piece and grew past 16 KiB. Every
+  admitted HTTP/1.1 and HTTP/2 response whose head is ≤ 16 KiB carries them, an interim `1xx` and the final
+  head arriving together included
+  ([doc 23](23-ai-admission-flow-control.md#the-same-headers-on-admitted-responses)).
 - The class pair and `X-Loxilb-Admission-Objective` are present only when the request's class was resolved, which
   needs an identity that resolves a tenant. Their absence is not an error.
 - **`X-Loxilb-Admission-Objective-Requested`** is on an admitted response **only when the request asked for an
@@ -353,8 +369,8 @@ gateway answers from backend answers:
   a `429` is therefore not proof that the gateway refused; the string-typed `error` code is.
 - With `fc_expose_headers` on, `X-Loxilb-Admission-*` headers sent by a backend are replaced by the gateway's.
   This happens only on the paths that add the gateway's values: not on rules with `fc_expose_headers` off, not on
-  requests the gate does not count, and not on an HTTP/1.1 response head split across reads — there a backend's
-  headers of those names pass through. Backends are operator-controlled; a backend that must not be able to say
+  requests the gate does not count, and not on an HTTP/1.1 response head that arrived in pieces and grew past
+  16 KiB — there a backend's headers of those names pass through. Backends are operator-controlled; a backend that must not be able to say
   anything under these names should not send them.
 - A backend's `X-Loxilb-Refusal-*` fields are removed from every relayed response head, with or without
   `fc_expose_headers` (the residuals are [above](#the-two-headers-on-a-gateway-written-answer)). A backend's

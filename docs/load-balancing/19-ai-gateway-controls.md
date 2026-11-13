@@ -389,8 +389,8 @@ X-Loxilb-Admission-Objective-Requested: realtime-chat
 - **The header is absent on every other response**: the request named no objective, or the one
   it named was applied. So "asked and was defaulted" and "asked nothing" are no longer the same
   response. It is also absent when the class stage did not run (no identity that resolves a
-  tenant), on rules without `fc_expose_headers`, and, on HTTP/1.1, on a response whose head the
-  backend sent in more than one piece, like the other two class headers.
+  tenant), on rules without `fc_expose_headers`, and, on HTTP/1.1, on a response whose head
+  arrived in more than one piece and grew past 16 KiB, like the other two class headers.
 - A header of that name sent by a backend is removed wherever the gateway writes the class
   headers. On a strict rule the request is refused instead (403, stage `objective`), and a
   refusal does not carry it.

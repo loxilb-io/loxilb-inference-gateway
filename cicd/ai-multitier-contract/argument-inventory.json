@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "ce71c78472c97eafcacacc097f1cd99f62ece70f78ec09a514a029dd53abac1c",
-    "swagger.yml": "a7e67e412bcfa166001ecf7db75845201e43c95991ef5186819875b8601976b8"
+    "swagger.yml": "84a6d580d6a190efc59ec70773e61f4576be1d47f915fb71e191c034ca6b0f89"
   },
   "fields": [
     {
@@ -1886,7 +1886,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/fc_expose_headers",
       "required": false,
       "contract": {
-        "description": "on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and X-Loxilb-Admission-Limit on the head of an admitted inference response (HTTP/1 and HTTP/2, streamed ones included; an HTTP/1 response head the backend split across several reads is sent without them, and with the backend's own fields of those names), the same three a capacity refusal carries: the pool's executing units and waiting requests as the response head goes out, and the service ceiling in force (0 is none). Fields of those names from the backend are replaced. off leaves responses as the backend sent them; inherit, or omitted on create, runs on the process default (LLB_FC_EXPOSE_HEADERS). Refused (400) with sockMapMode both or response, where the gateway never sees the response. Replace and null semantics as fc_mode.",
+        "description": "on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and X-Loxilb-Admission-Limit on the head of every admitted HTTP/1.1 and HTTP/2 response whose head is ≤ 16 KiB (streamed ones included; an HTTP/1.1 head that arrives in several pieces and grows past 16 KiB is sent as the backend sent it, without them and with the backend's own fields of those names), the same three a capacity refusal carries: the pool's executing units and waiting requests as the response head goes out, and the service ceiling in force (0 is none). Fields of those names from the backend are replaced. off leaves responses as the backend sent them; inherit, or omitted on create, runs on the process default (LLB_FC_EXPOSE_HEADERS). Refused (400) with sockMapMode both or response, where the gateway never sees the response. Replace and null semantics as fc_mode.",
         "enum": [
           "on",
           "off",

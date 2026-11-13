@@ -122,6 +122,20 @@ inference-gateway delta is enumerated in detail.
   writes the class headers. Additive; `ai_objective_strict` rules still refuse
   with 403 `objective_not_allowed`.
 
+- **OWNER REVIEW PENDING.** AI gateway: with `fc_expose_headers` on, every
+  admitted HTTP/1.1 and HTTP/2 response whose head is ≤ 16 KiB carries the
+  admission headers (and the class headers). An HTTP/1.1 response head the
+  backend sends in several pieces used to leave without them, and with the
+  backend's own fields of those names; it is now put together first, up to
+  16 KiB, and a backend's `X-Loxilb-Refusal-*` fields are removed from it as
+  from a head that arrives whole. An interim `1xx` and the final head arriving
+  together: the final head now gets the headers. A head that arrives in pieces
+  and grows past 16 KiB is relayed as the backend sent it and counted in the
+  new `loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"}`. An
+  answer the gateway itself ends while its head is incomplete closes with no
+  byte of that head. No header, `error` code, body field, status or audit
+  field changes; a client that read the headers as optional needs no change.
+
 ## [v0.9.9.1] - 2026-11-03
 
 `v0.9.9.1` is the first final release since `v0.9.8.7` (2026-08-10); `v0.9.8.9-rc.1` (2026-08-28) was a pre-release between them. Neither has its own section, so this one holds everything since the fork from upstream loxilb `0.9.8.6-beta`, including what `v0.9.8.7` first shipped. AI routing and enforcement stay opt-in per load-balancer rule; some defaults changed for every deployment, see Changed and Upgrade notes.

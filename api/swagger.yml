@@ -11482,10 +11482,11 @@ definitions:
             enum: ["on", "off", "inherit"]
             description: >-
               on puts X-Loxilb-Admission-Inflight, X-Loxilb-Admission-Queued and
-              X-Loxilb-Admission-Limit on the head of an admitted inference
-              response (HTTP/1 and HTTP/2, streamed ones included; an HTTP/1
-              response head the backend split across several reads is sent
-              without them, and with the backend's own fields of those names),
+              X-Loxilb-Admission-Limit on the head of every admitted HTTP/1.1
+              and HTTP/2 response whose head is ≤ 16 KiB (streamed ones
+              included; an HTTP/1.1 head that arrives in several pieces and
+              grows past 16 KiB is sent as the backend sent it, without them
+              and with the backend's own fields of those names),
               the same three
               a capacity refusal carries: the pool's executing units and waiting
               requests as the response head goes out, and the service ceiling in
