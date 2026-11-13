@@ -25,7 +25,7 @@ import (
 
 // No AI-gateway pool, no band series.
 func TestFcBandCollectorEmptyStore(t *testing.T) {
-	withAdmissionStore(t, nil, [4]float64{})
+	withAdmissionStore(t, nil, [5]float64{})
 	if n := testutil.CollectAndCount(fcBandCollector{}); n != 0 {
 		t.Errorf("collected %d band series with no pool, want 0", n)
 	}
@@ -47,7 +47,7 @@ func TestFcBandCollectorSumsPoolsPerService(t *testing.T) {
 			{0, 0, 2, 0, 0},
 		}},
 		{service: "10.0.0.2:8080", pool: "-"},
-	}, [4]float64{})
+	}, [5]float64{})
 
 	if n := testutil.CollectAndCount(fcBandCollector{}); n != 30 {
 		t.Errorf("collected %d band series for two services, want 30", n)

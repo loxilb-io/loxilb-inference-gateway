@@ -190,7 +190,7 @@ var admissionAdaptStateLabels = [4]string{"off", "open", "tightened", "frozen"}
 var admissionAdaptReasonLabels = [5]string{"none", "queued", "ttft", "clear", "stale"}
 
 // Anomaly kinds, indexed as the gate's enum fc_anomaly.
-var admissionAnomalyLabels = [4]string{"underflow", "unknown_permit", "tenant_table_full", "h2_deny_headers"}
+var admissionAnomalyLabels = [5]string{"underflow", "unknown_permit", "tenant_table_full", "h2_deny_headers", "expose_head_overflow"}
 
 // admissionSample is one pool's gate state, converted to Go types and label
 // strings.
@@ -233,7 +233,7 @@ type admissionSample struct {
 var (
 	admissionStoreMutex sync.Mutex
 	admissionStore      []admissionSample
-	admissionAnomalies  [4]float64
+	admissionAnomalies  [5]float64
 )
 
 var admissionPoolLabels = []string{"service", "pool"}
@@ -313,7 +313,7 @@ var (
 	)
 	admissionAnomaliesDesc = prometheus.NewDesc(
 		"loxilb_ai_admission_anomalies_total",
-		"Accounting anomalies in the capacity gate, process-wide: underflow (a release found its counter at zero), unknown_permit (an executing permit with no pool), tenant_table_full (a request whose tenant found the pool's tenant table full and shared the last slot with the other tenants past it) and h2_deny_headers (an HTTP/2 refusal had more headers than its frame holds; the stream was reset instead). underflow, unknown_permit and h2_deny_headers are defects; tenant_table_full means more tenants than the table holds are active on one pool.",
+		"Accounting anomalies in the capacity gate, process-wide: underflow (a release found its counter at zero), unknown_permit (an executing permit with no pool), tenant_table_full (a request whose tenant found the pool's tenant table full and shared the last slot with the other tenants past it), h2_deny_headers (an HTTP/2 refusal had more headers than its frame holds; the stream was reset instead) and expose_head_overflow (an HTTP/1.1 response head arrived in pieces and grew past 16 KiB before it ended; it was relayed as it came, without the admission headers). underflow, unknown_permit and h2_deny_headers are defects; tenant_table_full means more tenants than the table holds are active on one pool; expose_head_overflow means a backend sends response heads larger than the gateway assembles.",
 		admissionAnomalyLabelNames, nil,
 	)
 )
@@ -556,7 +556,7 @@ func refreshAdmissionStore() {
 	sortAdmissionSamples(samples)
 	samples = dedupeAdmissionSamples(samples)
 
-	var anomalies [4]float64
+	var anomalies [5]float64
 	for k := range admissionAnomalyLabels {
 		anomalies[k] = float64(C.proxy_get_fc_anomaly(C.int(k)))
 	}
