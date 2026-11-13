@@ -45,6 +45,17 @@ Endpoints:
                               X-Loxilb-Admission-Inflight: 999 of the backend's
                               own: the gateway's families, which a backend may
                               not hand a client. One answer, then back to normal
+  GET  /admin/split-head/<n>/<delay_ms>
+                              the NEXT inference answer (any port), plain or
+                              SSE, leaves the backend with its head (status
+                              line through the blank line) cut into <n> writes
+                              of equal size, <delay_ms> apart; <n> 0 means one
+                              byte a write. The body follows the last piece as
+                              usual. One answer, then back to normal; the arm
+                              can be combined with the two above
+  GET  /__split/<nonce>       how the head of the last answer to that nonce
+                              left: {"pieces": <writes>, "head_bytes": <n>},
+                              0 pieces when it was not split
 
 Request headers that shape the answer:
   X-Test-Nonce: <n>       counted as a receipt and tracked for its peak
@@ -64,6 +75,10 @@ Request headers that shape the answer:
                           the answer carries
                           X-Loxilb-Admission-Objective-Requested: forged of its
                           own, which the gateway must not relay
+  X-Test-Head-Pad: <bytes>
+                          the answer's head carries that many extra bytes, as
+                          X-Test-Pad-<i> lines of 1000 "p" each (the last one
+                          shorter): a head larger than a proxy assembles
   X-Test-Engine: vllm|sglang|trtllm
                           answer as that engine would a top-level body key
                           it does not know: vllm allows it, sglang ignores
@@ -117,6 +132,10 @@ WAITING = 0          # vllm:num_requests_waiting reported by /metrics
 METRICS_ON = True    # /metrics answers; off: 503, the scrape fails
 ARM_429_OBJECT = False   # /admin/answer-429-object: the next inference request
 ARM_SPOOF_HEADERS = False  # /admin/echo-spoof-headers: the next inference answer
+ARM_SPLIT_HEAD = None    # /admin/split-head/<n>/<delay_ms>: (n, delay_ms) for the next inference answer
+SPLIT_SEEN = {}          # nonce -> how the head of its last answer left the backend
+SPLIT_PIECES_MAX = 64    # <n> above this is refused: the arm is for a few cuts or for every byte
+SPLIT_DELAY_MAX_MS = 2000
 
 # What an OpenAI-compatible engine answers when it refuses on its own.
 BACKEND_429_BODY = {"error": {"message": "the engine is overloaded",
@@ -157,8 +176,42 @@ class Handler(BaseHTTPRequestHandler):
         for k, v in extra:
             self.send_header(k, v)
         self._spoof_header()
+        self._pad_header()
         self.end_headers()
         self.wfile.write(payload)
+
+    def _pad_header(self):
+        left, i = getattr(self, "head_pad", 0), 0
+        while left > 0:
+            self.send_header("X-Test-Pad-%d" % i, "p" * min(left, 1000))
+            left -= 1000
+            i += 1
+
+    def flush_headers(self):
+        # The one place a head leaves this server: an armed split cuts it
+        # here. An interim head (100 Continue) is never the armed answer.
+        split = getattr(self, "split_head", None)
+        buf = getattr(self, "_headers_buffer", None)
+        if not split or not buf or buf[0].startswith(b"HTTP/1.1 1"):
+            super().flush_headers()
+            return
+        self.split_head = None
+        head = b"".join(buf)
+        self._headers_buffer = []
+        n, delay_ms = split
+        size = 1 if n == 0 else max(1, -(-len(head) // n))
+        pieces = [head[i:i + size] for i in range(0, len(head), size)]
+        # Each piece is a segment of its own: no coalescing on this side.
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        for i, piece in enumerate(pieces):
+            if i:
+                time.sleep(delay_ms / 1000.0)
+            self.wfile.write(piece)
+            self.wfile.flush()
+        nonce = self.headers.get("X-Test-Nonce", "") if self.headers else ""
+        if nonce:
+            with LOCK:
+                SPLIT_SEEN[nonce] = {"pieces": len(pieces), "head_bytes": len(head)}
 
     def _spoof_header(self):
         if getattr(self, "spoof", False):
@@ -229,7 +282,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.spoof = False
         self.spoof_stage = False
-        global WAITING, METRICS_ON, ARM_429_OBJECT, ARM_SPOOF_HEADERS
+        self.split_head = None
+        self.head_pad = 0
+        global WAITING, METRICS_ON, ARM_429_OBJECT, ARM_SPOOF_HEADERS, ARM_SPLIT_HEAD
         path = urlparse(self.path).path
         nonce = self.headers.get("X-Test-Nonce", "")
         if path == "/health":
@@ -269,6 +324,24 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 ARM_SPOOF_HEADERS = True
             self._send_json({"armed": "echo-spoof-headers"})
+            return
+        if path.startswith("/admin/split-head/"):
+            try:
+                n, delay_ms = (int(x) for x in path[len("/admin/split-head/"):].split("/"))
+            except ValueError:
+                n = delay_ms = -1
+            if not (0 <= n <= SPLIT_PIECES_MAX and n != 1 and 0 <= delay_ms <= SPLIT_DELAY_MAX_MS):
+                self._send_json({"error": "split-head/<n>/<delay_ms>: n 0 (byte-wise) or 2..%d, "
+                                          "delay_ms 0..%d" % (SPLIT_PIECES_MAX, SPLIT_DELAY_MAX_MS)}, 400)
+                return
+            with LOCK:
+                ARM_SPLIT_HEAD = (n, delay_ms)
+            self._send_json({"armed": "split-head", "pieces": n, "delay_ms": delay_ms})
+            return
+        if path.startswith("/__split/"):
+            n = path[len("/__split/"):]
+            with LOCK:
+                self._send_json({"nonce": n, **SPLIT_SEEN.get(n, {"pieces": 0, "head_bytes": 0})})
             return
         if path == "/v1/models":
             # A non-inference request: counted like any other arrival so a
@@ -342,12 +415,16 @@ class Handler(BaseHTTPRequestHandler):
         self.spoof = self.headers.get("X-Test-Spoof-Admission", "") == "1"
         self.spoof_objective = self.headers.get("X-Test-Spoof-Objective", "") == "1"
         engine = self.headers.get("X-Test-Engine", "")
-        # The two admin arms are taken by the next inference request, whichever
+        self.head_pad = min(int(self.headers.get("X-Test-Head-Pad") or 0), 64000)
+        # The admin arms are taken by the next inference request, whichever
         # port it arrives on, and by that one only.
-        global ARM_429_OBJECT, ARM_SPOOF_HEADERS
+        global ARM_429_OBJECT, ARM_SPOOF_HEADERS, ARM_SPLIT_HEAD
         with LOCK:
             answer_429, ARM_429_OBJECT = ARM_429_OBJECT, False
             spoof_next, ARM_SPOOF_HEADERS = ARM_SPOOF_HEADERS, False
+            self.split_head, ARM_SPLIT_HEAD = ARM_SPLIT_HEAD, None
+            if nonce:
+                SPLIT_SEEN.pop(nonce, None)
         self.spoof_stage = spoof_next
         if spoof_next:
             self.spoof = True
@@ -408,6 +485,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Transfer-Encoding", "chunked")
         self._spoof_header()
+        self._pad_header()
         self.end_headers()
 
         def chunk(payload):
