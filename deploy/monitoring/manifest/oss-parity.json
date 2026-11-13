@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-10T20:40:10+00:00",
-  "source_revision": "dac5bc40ae99ea8a200b7ba15f7df27e52a6fe23",
+  "generated_at": "2026-11-12T02:45:43+00:00",
+  "source_revision": "5e229cd0d36725aa656f65db7164700bf0d069ec",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "4fa515f08017e845470218990a0a8961f5426e7e"
  },
  "contract": {
-  "gateway_families": 356,
+  "gateway_families": 358,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 321,
+  "absent": 323,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -2050,6 +2050,28 @@
      "endpoint",
      "service"
     ]
+   }
+  },
+  {
+   "name": "loxilb_bgp_adoption_dropped_attributes",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_bgp_daemon_config_pending",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
    }
   },
   {

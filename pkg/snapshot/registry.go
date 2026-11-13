@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -1317,6 +1318,28 @@ func getBGP(hooks Hooks, doc *Document) error {
 
 func applyBGP(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
 	n, skipped := 0, 0
+	if tolerateExists {
+		// Boot overlays may already be present in static YAML. GoBGP rejects
+		// duplicate AddPeer/AddPolicy calls; treating that as an apply failure
+		// would roll back (wipe) YAML and lose attributes outside our model.
+		// An identical supported projection needs no mutation. Different
+		// projections continue through the existing boot overlay/verification.
+		live := &Document{}
+		if err := getBGP(hooks, live); err != nil {
+			return 0, 0, err
+		}
+		wantCount, wantDigest, err := DomainContent(DomainBGP, &doc.Domains)
+		if err != nil {
+			return 0, 0, err
+		}
+		gotCount, gotDigest, err := DomainContent(DomainBGP, &live.Domains)
+		if err != nil {
+			return 0, 0, err
+		}
+		if wantCount == gotCount && wantDigest == gotDigest && reflect.DeepEqual(doc.Domains.BGP.GlobalConfig, live.Domains.BGP.GlobalConfig) {
+			return 0, wantCount, nil
+		}
+	}
 	// Global config FIRST: pushing it is what STARTS the BGP speaker, and
 	// every other item (AddPeer above all) is refused with "bgp server
 	// hasn't started yet" until then. With global config applied last, a

@@ -2069,9 +2069,13 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 			}
 		}
 
-		C.llb_del_map_elem_wval(C.LL_DP_NAT_MAP,
+		ret := C.llb_del_map_elem_wval(C.LL_DP_NAT_MAP,
 			unsafe.Pointer(key),
 			unsafe.Pointer(dat))
+		if ret != 0 {
+			tk.LogIt(tk.LogError, "[DP] native LB delete failed VIP=%s port=%d proto=%d errno=%d (%v)\n",
+				w.ServiceIP.String(), w.L4Port, w.Proto, -int(ret), syscall.Errno(-int(ret)))
+		}
 		return 0
 	}
 

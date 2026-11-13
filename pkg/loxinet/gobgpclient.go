@@ -42,8 +42,6 @@ import (
 	nlp "github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	apb "google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -68,7 +66,7 @@ type goBgpEvent struct {
 	EventType goBgpEventType
 	Src       string
 	Data      goBgpRouteInfo
-	conn      *grpc.ClientConn
+	session   uint64
 }
 
 // goBGP connected status
@@ -92,7 +90,6 @@ type GoBgpH struct {
 	fTicker     *time.Ticker
 	tDone       chan bool
 	host        string
-	conn        *grpc.ClientConn
 	client      api.GobgpApiClient
 	mtx         sync.RWMutex
 	state       goBgpState
@@ -108,8 +105,17 @@ type GoBgpH struct {
 	daemonDone  chan struct{}
 	// bootRolePending is protected by mtx. Boot replay may install LB rules
 	// before saved BFD activates requireRole; both loaders must settle first.
-	bootRolePending bool
-	ciBootReady     atomic.Bool
+	bootRolePending     bool
+	ciBootReady         atomic.Bool
+	daemonConfigPending atomic.Bool
+	startupReady        atomic.Bool
+	connecting          bool
+	connectGeneration   uint64
+	connectCancel       context.CancelFunc
+	watchCancel         context.CancelFunc
+	recoveryMu          sync.Mutex
+	recoveryCancel      context.CancelFunc
+	session             atomic.Uint64
 }
 
 func (gbh *GoBgpH) getGlobalConfig() error {
@@ -269,7 +275,7 @@ func (gbh *GoBgpH) syncRoute(p *goBgpRouteInfo) error {
 	return nil
 }
 
-func (gbh *GoBgpH) processRoute(pathList []*api.Path) {
+func (gbh *GoBgpH) processRoute(ctx context.Context, pathList []*api.Path, session uint64) {
 
 	for _, p := range pathList {
 		if !p.GetIsWithdraw() {
@@ -290,42 +296,49 @@ func (gbh *GoBgpH) processRoute(pathList []*api.Path) {
 
 		data := goBgpRouteInfo{nlri: nlri, attrs: attrs, withdraw: p.GetIsWithdraw(), pathID: p.GetIdentifier()}
 
-		gbh.eventCh <- goBgpEvent{
+		select {
+		case gbh.eventCh <- goBgpEvent{
 			EventType: bgpRtRecvd,
+			session:   session,
 			Src:       "",
 			Data:      data,
-			conn:      &grpc.ClientConn{},
+		}:
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
 // GetgoBGPRoutesEvents - get routes in goBGP
 func (gbh *GoBgpH) GetgoBGPRoutesEvents(client api.GobgpApiClient) int {
+	return gbh.watchRoutes(bgpOperationContext(), client, gbh.session.Load())
+}
+
+func (gbh *GoBgpH) watchRoutes(ctx context.Context, client api.GobgpApiClient, session uint64) int {
 
 	processRoutes := func(recver interface {
 		Recv() (*api.WatchEventResponse, error)
 	}) {
 		for {
 			r, err := recver.Recv()
-			if err == io.EOF {
-
-			} else if err != nil {
+			if err != nil {
 				tk.LogIt(tk.LogCritical, "processRoutes failed : %v\n", err)
 
-				gbh.eventCh <- goBgpEvent{
-					EventType: bgpDisconnected,
+				select {
+				case gbh.eventCh <- goBgpEvent{EventType: bgpDisconnected, session: session}:
+				case <-ctx.Done():
 				}
 
 				break
 			}
 			if t := r.GetTable(); t != nil {
-				gbh.processRoute(t.Paths)
+				gbh.processRoute(ctx, t.Paths, session)
 			}
 		}
 	}
 
 	// the change of the peer state and path
-	routes, err := client.WatchEvent(bgpOperationContext(),
+	routes, err := client.WatchEvent(ctx,
 		&api.WatchEventRequest{
 			Table: &api.WatchEventRequest_Table{
 				Filters: []*api.WatchEventRequest_Table_Filter{
@@ -462,12 +475,22 @@ func (gbh *GoBgpH) DelAdvertiseRoute(rtPrefix string, pLen int, nh string, pref 
 
 // GoBgpInit - initialize goBGP client subsystem
 func GoBgpInit(bgpPeerMode bool) *GoBgpH {
+	snapshot.EnableBGPIntentRecovery()
 	//gbh = new(GoBgpH)
 	gbh := new(GoBgpH)
 
 	gbh.eventCh = make(chan goBgpEvent, cmn.RuWorkQLen)
 	gbh.daemonDone = make(chan struct{})
 	gbh.host = "127.0.0.1:50052"
+	// gRPC reconnects this transport itself. Keep one immutable client for
+	// API calls, recovery and monitors instead of racing a client swap on
+	// every daemon restart.
+	conn, err := newBGPClientConn(gbh.host)
+	if err != nil {
+		panic(err)
+	}
+	gbh.client = api.NewGobgpApiClient(conn)
+	go func() { <-bgpOperationContext().Done(); conn.Close() }()
 	if gbh.ciMap = make(map[string]*goCI); gbh.ciMap == nil {
 		panic("gbh.ciMap alloc failure")
 	}
@@ -499,28 +522,35 @@ func (gbh *GoBgpH) goBgpSpawn(bgpPeerMode bool) {
 	begin := time.Now()
 	ctx := bgpOperationContext()
 	for ctx.Err() == nil {
+		staticFile := bgpStaticConfigFile()
 		cfgOpts := ""
-		confFile := fmt.Sprintf("%s%s.conf", "/etc/gobgp/gobgp", os.Getenv("HOSTNAME"))
-		if _, err := os.Stat(confFile); errors.Is(err, os.ErrNotExist) {
-			if _, err := os.Stat("/etc/gobgp/gobgp.conf"); errors.Is(err, os.ErrNotExist) {
-				if _, err := os.Stat("/etc/gobgp/gobgp_loxilb.yaml"); errors.Is(err, os.ErrNotExist) {
-					tk.LogIt(tk.LogError, "No BGP conf file found. Run without it\n")
-				} else {
-					cfgOpts = "-t yaml -f /etc/gobgp/gobgp_loxilb.yaml"
-				}
-			} else {
-				cfgOpts = "-f /etc/gobgp/gobgp.conf"
+		if staticFile != "" && !snapshot.BGPIntentOwnsSpeaker(opts.Opts.ConfigPath, true) {
+			cfgOpts = "-f " + staticFile
+			if strings.HasSuffix(staticFile, ".yaml") {
+				cfgOpts = "-t yaml " + cfgOpts
 			}
-		} else {
-			cfgOpts = "-f " + confFile
 		}
-
 		command := fmt.Sprintf("exec gobgpd %s --api-hosts=127.0.0.1:50052", cfgOpts)
 		tk.LogIt(tk.LogInfo, "BGP stage=daemon-start elapsed=%s ha_wait=independent\n", time.Since(begin))
 		cmd := newBGPDaemonCommand(ctx, command)
 		err := cmd.Run()
 		if err != nil {
 			fmt.Println(err)
+		}
+		if ctx.Err() == nil {
+			// Close the advertisement gate before a YAML-backed replacement
+			// can become connectable. Recovery never holds the GoBGP mutex.
+			gbh.setDaemonConfigPending(true)
+			select {
+			case gbh.eventCh <- goBgpEvent{EventType: bgpDisconnected, session: gbh.session.Load()}:
+			case <-ctx.Done():
+				return
+			}
+			engine := snapshot.NewEngine(&NetAPIStruct{}, cmn.Version, os.Getenv("HOSTNAME"), opts.Opts.ConfigPath)
+			gbh.startDaemonRecovery(ctx, func(retryCtx context.Context) (bool, error) {
+				return engine.RecoverBGPAfterRestart(retryCtx, bgpStaticConfigFile() != "")
+			})
+
 		}
 		select {
 		case <-ctx.Done():
@@ -531,57 +561,110 @@ func (gbh *GoBgpH) goBgpSpawn(bgpPeerMode bool) {
 }
 
 func (gbh *GoBgpH) goBgpConnect(host string) {
-	lifetime := bgpOperationContext()
-	begin := time.Now()
-	for lifetime.Err() == nil {
+	token := gbh.session.Load()
+	gbh.mtx.Lock()
+	if token != gbh.session.Load() || gbh.state == BGPConnected || (gbh.connecting && gbh.connectGeneration == token) {
+		gbh.mtx.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(bgpOperationContext())
+	gbh.connecting = true
+	gbh.connectGeneration = token
+	gbh.connectCancel = cancel
+	gbh.mtx.Unlock()
+	defer func() {
+		cancel()
 		gbh.mtx.Lock()
-		conn, err := grpc.DialContext(lifetime, host, grpc.WithInsecure())
-		if err != nil {
-			tk.LogIt(tk.LogNotice, "BGP session %s not alive. Will Retry!\n", gbh.host)
-			gbh.mtx.Unlock()
-			waitBGPDelay(lifetime, 2*time.Second)
-		} else {
-			gbh.client = api.NewGobgpApiClient(conn)
-			gbh.mtx.Unlock()
-			for lifetime.Err() == nil {
-				ctx, cancel := context.WithTimeout(bgpOperationContext(), time.Second*5)
-				gbh.mtx.Lock()
-				r, err := gbh.client.GetBgp(ctx, &api.GetBgpRequest{})
-				if err != nil {
-					tk.LogIt(tk.LogInfo, "BGP session %s not ready. Will Retry!\n", gbh.host)
-					gbh.mtx.Unlock()
-					cancel()
-					waitBGPDelay(lifetime, 2*time.Second)
-					continue
-				}
-				cancel()
-				tk.LogIt(tk.LogNotice, "BGP server %s UP!\n", gbh.host)
-				if r.Global.Asn == 0 {
-					tk.LogIt(tk.LogInfo, "BGP Global Config %s not done. Will wait!\n", gbh.host)
-					gbh.mtx.Unlock()
-					waitBGPDelay(lifetime, 2*time.Second)
-					continue
-				}
-				tk.LogIt(tk.LogNotice, "BGP session %s ready! Attributes[%v]\n", gbh.host, r)
-				tk.LogIt(tk.LogInfo, "BGP stage=config-ready elapsed=%s\n", time.Since(begin))
+		if gbh.connectGeneration == token {
+			gbh.connecting = false
+			gbh.connectCancel = nil
+		}
+		gbh.mtx.Unlock()
+	}()
+	begin := time.Now()
+	for ctx.Err() == nil {
+		probe, stop := context.WithTimeout(ctx, 5*time.Second)
+		r, err := gbh.client.GetBgp(probe, &api.GetBgpRequest{}, grpc.WaitForReady(true))
+		stop()
+		if err == nil {
+			gbh.startupReady.Store(true)
+		}
+		if err != nil || r.GetGlobal().GetAsn() == 0 {
+			waitBGPDelay(ctx, 2*time.Second)
+			continue
+		}
+		tk.LogIt(tk.LogInfo, "BGP stage=config-ready elapsed=%s\n", time.Since(begin))
+		select {
+		case gbh.eventCh <- goBgpEvent{EventType: bgpConnected, Src: host, session: token}:
+		case <-ctx.Done():
+		}
+		return
+	}
+}
 
-				gbh.mtx.Unlock()
-				break
-			}
-			if lifetime.Err() != nil {
-				conn.Close()
-				return
-			}
-			select {
-			case gbh.eventCh <- goBgpEvent{
-				EventType: bgpConnected,
-				Src:       host,
-				conn:      conn,
-			}:
-			case <-lifetime.Done():
-				conn.Close()
+// REST and advertisement calls fail fast on an unavailable transport. Only
+// the explicit readiness probe opts into WaitForReady at its call site.
+func newBGPClientConn(host string) (*grpc.ClientConn, error) {
+	return grpc.NewClient(host, grpc.WithInsecure())
+}
+
+func bgpStaticConfigFile() string {
+	for _, path := range []string{"/etc/gobgp/gobgp" + os.Getenv("HOSTNAME") + ".conf", "/etc/gobgp/gobgp.conf", "/etc/gobgp/gobgp_loxilb.yaml"} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			return path
+		}
+	}
+	return ""
+}
+
+func (gbh *GoBgpH) setDaemonConfigPending(pending bool) {
+	gbh.daemonConfigPending.Store(pending)
+	snapshot.SetBGPDaemonConfigPending(pending)
+}
+
+func (gbh *GoBgpH) cancelDaemonRecovery() {
+	gbh.recoveryMu.Lock()
+	defer gbh.recoveryMu.Unlock()
+	if gbh.recoveryCancel != nil {
+		gbh.recoveryCancel()
+		gbh.recoveryCancel = nil
+	}
+}
+
+func (gbh *GoBgpH) startDaemonRecovery(parent context.Context, prepare func(context.Context) (bool, error)) {
+	gbh.recoveryMu.Lock()
+	if gbh.recoveryCancel != nil {
+		gbh.recoveryCancel()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	gbh.recoveryCancel = cancel
+	gbh.recoveryMu.Unlock()
+	go gbh.retryDaemonRecovery(ctx, prepare)
+}
+
+// Preparation can fail before a pending worker exists. Retry independently
+// of process spawning so a healthy replacement is also available to an
+// interactive restore. Each delay is bounded and shutdown/restore cancels it.
+func (gbh *GoBgpH) retryDaemonRecovery(ctx context.Context, prepare func(context.Context) (bool, error)) {
+	delay := 2 * time.Second
+	for ctx.Err() == nil {
+		pending, err := prepare(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			if !pending {
+				gbh.setDaemonConfigPending(false)
 			}
 			return
+		}
+		tk.LogIt(tk.LogError, "BGP stage=daemon-recovery prepare_error=%v retry_in=%s\n", err, delay)
+		waitBGPDelay(ctx, delay)
+		if delay < 30*time.Second {
+			delay *= 2
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
 		}
 	}
 }
@@ -625,7 +708,7 @@ func (gbh *GoBgpH) releaseBootRoleGate(configSettled bool) {
 // recovery. A standalone gateway has no HA election and keeps its old policy.
 // Configured HA never uses an undefined/conflicting role as an advertisement.
 func (gbh *GoBgpH) roleAllowsAdvertisement(ci *goCI) bool {
-	if gbh.bootRolePending {
+	if gbh.bootRolePending || gbh.daemonConfigPending.Load() {
 		return false
 	}
 	if ci.hastate == cmn.CIStateMaster || ci.hastate == cmn.CIStateBackup {
@@ -752,6 +835,7 @@ func (gbh *GoBgpH) AddCurrBgpRoutesToIPRoute() error {
 	if err != nil {
 		gbh.eventCh <- goBgpEvent{
 			EventType: bgpDisconnected,
+			session:   gbh.session.Load(),
 		}
 		return err
 	}
@@ -867,7 +951,7 @@ func (gbh *GoBgpH) advertiseAllVIPs(instance string) {
 	}
 }
 
-func (gbh *GoBgpH) initBgpClient() {
+func (gbh *GoBgpH) initBgpClient(watchCtx context.Context, token uint64) {
 
 	gbh.mtx.Lock()
 	defer gbh.mtx.Unlock()
@@ -894,31 +978,44 @@ func (gbh *GoBgpH) initBgpClient() {
 		tk.LogIt(tk.LogError, "[GoBGP] AddCurrentBgpRoutesToIpRoute() return err: %s\n", err.Error())
 	}
 
-	go gbh.GetgoBGPRoutesEvents(gbh.client)
+	go gbh.watchRoutes(watchCtx, gbh.client, token)
 }
 
 func (gbh *GoBgpH) processBgpEvent(e goBgpEvent) {
-
+	gbh.mtx.Lock()
+	if e.session != gbh.session.Load() {
+		gbh.mtx.Unlock()
+		return
+	}
 	switch e.EventType {
 	case bgpDisconnected:
-		gbh.mtx.Lock()
-		tk.LogIt(tk.LogNotice, "******************* BGP %s disconnected *******************\n", gbh.host)
-		if gbh.conn != nil {
-			gbh.conn.Close()
+		if gbh.watchCancel != nil {
+			gbh.watchCancel()
+			gbh.watchCancel = nil
 		}
-		gbh.conn = nil
+		if gbh.connectCancel != nil {
+			gbh.connectCancel()
+			gbh.connectCancel = nil
+		}
 		gbh.state = BGPDisconnected
+		gbh.session.Add(1)
 		gbh.mtx.Unlock()
 		go gbh.goBgpConnect(gbh.host)
 	case bgpConnected:
-		gbh.mtx.Lock()
-		tk.LogIt(tk.LogNotice, "******************* BGP %s connected *******************\n", gbh.host)
-		gbh.conn = e.conn
+		if gbh.state == BGPConnected {
+			gbh.mtx.Unlock()
+			return
+		}
 		gbh.state = BGPConnected
+		watchCtx, cancel := context.WithCancel(bgpOperationContext())
+		gbh.watchCancel = cancel
 		gbh.mtx.Unlock()
-		gbh.initBgpClient()
+		gbh.initBgpClient(watchCtx, e.session)
 	case bgpRtRecvd:
+		gbh.mtx.Unlock()
 		gbh.processRouteSingle(&e.Data, bgp.BGP_ADD_PATH_RECEIVE)
+	default:
+		gbh.mtx.Unlock()
 	}
 }
 
@@ -1115,58 +1212,19 @@ func (gbh *GoBgpH) BGPNeighMod(add bool, neigh net.IP, ras uint32, rPort uint32,
 		}
 	}
 
-	err = bgpRetryUnavailable(func() error {
-		ctx, cancel := context.WithTimeout(bgpOperationContext(), time.Second*5)
-		defer cancel()
-		var rerr error
-		if add {
-			_, rerr = gbh.client.AddPeer(ctx,
-				&api.AddPeerRequest{
-					Peer: peer,
-				})
-		} else {
-			_, rerr = gbh.client.DeletePeer(ctx,
-				&api.DeletePeerRequest{
-					Address: neigh.String(),
-				})
-		}
-		return rerr
-	})
+	// Readiness and recovery own their retries. REST mutations must return an
+	// unavailable transport immediately rather than sleeping under write gates.
+	ctx, cancel := context.WithTimeout(bgpOperationContext(), time.Second*5)
+	defer cancel()
+	if add {
+		_, err = gbh.client.AddPeer(ctx, &api.AddPeerRequest{Peer: peer})
+	} else {
+		_, err = gbh.client.DeletePeer(ctx, &api.DeletePeerRequest{Address: neigh.String()})
+	}
 	if err != nil {
 		return -1, err
 	}
 	return 0, nil
-}
-
-// bgpRetryWait bounds how long a neighbor operation waits for gobgpd.
-// gobgpd is spawned seconds after the gateway starts and is respawned
-// when it exits, so a neighbor change in that window would otherwise
-// fail on a refused connection that a moment later succeeds.
-var (
-	bgpRetryWait  = 30 * time.Second
-	bgpRetrySleep = time.Sleep
-)
-
-// bgpRetryUnavailable runs op until it succeeds, fails with anything other
-// than gRPC Unavailable, or bgpRetryWait has passed.
-func bgpRetryUnavailable(op func() error) error {
-	delay := 250 * time.Millisecond
-	waited := time.Duration(0)
-	for {
-		err := op()
-		if status.Code(err) != codes.Unavailable || waited >= bgpRetryWait {
-			return err
-		}
-		if waited+delay > bgpRetryWait {
-			delay = bgpRetryWait - waited
-		}
-		tk.LogIt(tk.LogInfo, "[GoBGP] gobgpd not reachable yet, retrying in %v: %v\n", delay, err)
-		bgpRetrySleep(delay)
-		waited += delay
-		if delay < 4*time.Second {
-			delay *= 2
-		}
-	}
 }
 
 // createSelfNHpolicy - Routine to create policy statement
@@ -1999,8 +2057,6 @@ func (gbh *GoBgpH) BGPGlobalConfigAdd(config cmn.GoBGPGlobalConfig) (int, error)
 		tk.LogIt(tk.LogError, "[GoBGP] Error to start BGP %s \n", err.Error())
 		return -1, err
 	}
-
-	gbh.localAs = uint32(config.LocalAs)
 
 	if config.SetNHSelf {
 		// Create the set-next-hop-self policy statement

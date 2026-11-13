@@ -141,7 +141,9 @@ import (
 // default: the switches inherit the process default, the triples and the
 // reserve are none (strict wake, no floor, no reserve, the queue's window
 // and depth for every band).
-const SchemaVersion = "1.12"
+// 1.13: bgp_api_adopted explicitly transfers a static speaker to API intent.
+// An absent marker never adopts YAML; migration is restamp-only.
+const SchemaVersion = "1.13"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -325,6 +327,7 @@ type Domains struct {
 // /config/restore -- task G-3) and persisted to disk (snapshot.json --
 // task G-5/G-9).
 type Document struct {
+	BGPAPIAdopted bool `json:"bgp_api_adopted,omitempty"`
 	// Pending boot intent retains the original JSON values only in memory.
 	// Persist preserves these values verbatim; no schema or second file is used.
 	pendingBGPRaw map[string]json.RawMessage
