@@ -1269,6 +1269,81 @@ chk OBJ10a "HTTP/2, denied, non-strict: served"                      200 "$(obj_
 chk OBJ10b "the default applied and what was asked for, on the head" "obj-base obj-gold" "$(obj_h2 "$OBJ2_DEN" '"\(.headers["x-loxilb-admission-objective"] // "absent") \(.headers["x-loxilb-admission-objective-requested"] // "absent")"')"
 chk OBJ10c "HTTP/2, allowed: served with its objective and no requested header" "200 obj-gold absent" "$(obj_h2 "$OBJ2_MAY" '"\(.status) \(.headers["x-loxilb-admission-objective"] // "absent") \(.headers["x-loxilb-admission-objective-requested"] // "absent")"')"
 
+# ── SH: a response head that reaches the gateway in pieces ─────────────────
+# On :PORT_OBJ (admission headers on, a tenant with a class) the backend is
+# told to cut the head of its NEXT answer into separate writes
+# (/admin/split-head/<n>/<delay_ms>; n 0 = one byte a write). The gateway
+# puts the head together before it adds its headers, so the client reads the
+# same head a whole one would have given; a head that outgrows 16 KiB while
+# it is being put together is relayed as it came, without the headers, and
+# counted. __split/<nonce> is the backend's own account of how the head left
+# it. Nothing is held on the pool: the request itself is the one in flight.
+# The row lives here because it needs row OBJ's rule, objectives and key.
+echo ""
+echo "SH: a split HTTP/1.1 response head is assembled before the admission headers are added"
+SH_HEAD="1 0 $FC_XH_MAX obj-gold critical"       # inflight queued limit objective class
+SH_BODY="cmpl-cap ok 15"
+SH_OVF='kind="expose_head_overflow"'
+sh_arm() { be "admin/split-head/$1/$2" | jq -r '"\(.armed // "refused") \(.pieces // "-")"'; }
+sh_send() { # sh_send <name> <body> [curl args...]: one request by the tenant that may name obj-gold; its code
+  local name=$1 body=$2; shift 2
+  obj_send "sh$name" "$OBJ_URL" "$KEY_OM" "$body" "${ASK[@]}" "$@"
+}
+sh_split() { be "__split/capOBJsh$1" | jq -r "${2:-.pieces} // \"unreadable\""; }
+sh_head() { echo "$(xh_vals "$DOBJ/sh$1.hdr") $(obj_h "sh$1" X-Loxilb-Admission-Objective) $(obj_h "sh$1" X-Loxilb-Admission-Class)"; }
+sh_dups() { grep -i '^x-loxilb-admission-' "$DOBJ/sh$1.hdr" 2>/dev/null | cut -d: -f1 | tr 'A-Z' 'a-z' | sort | uniq -d | wc -l | tr -d ' '; }
+sh_body() { jq -r '"\(.id) \(.choices[0].message.content) \(.usage.total_tokens)"' "$DOBJ/sh$1.body" 2>/dev/null; }
+
+# SH1: the plain answer, its head in two writes, in three, and byte by byte.
+for cut in "2 100" "3 100" "0 5"; do
+  read -r n d <<< "$cut"; t="p$n"
+  chk "SH1-$t-a" "the backend is armed to cut its next head ($n; 0 = byte-wise)" "split-head $n" "$(sh_arm $n $d)"
+  chk "SH1-$t-b" "the answer is relayed"                                200 "$(sh_send $t "$BODY")"
+  if [ "$n" -eq 0 ]; then
+    chk_ge "SH1-$t-c" "the head left the backend one byte a write"      100 "$(sh_split $t)"
+  else
+    chk "SH1-$t-c" "the head left the backend in that many writes"      "$n" "$(sh_split $t)"
+  fi
+  chk "SH1-$t-d" "its head carries the triple, the objective and the class" "$SH_HEAD" "$(sh_head $t)"
+  chk "SH1-$t-e" "each of them once"                                    0 "$(sh_dups $t)"
+  chk "SH1-$t-f" "the body is the backend's, whole"                     "$SH_BODY" "$(sh_body $t)"
+done
+
+# SH2: the streamed answer, its head in three writes.
+chk SH2a "the backend is armed to cut its next head (3)"                "split-head 3" "$(sh_arm 3 100)"
+chk SH2b "a streamed request is relayed"                                200 "$(sh_send sse "$SSE_BODY" -N)"
+chk SH2c "the head left the backend in three writes"                    3 "$(sh_split sse)"
+chk SH2d "its head carries the triple, the objective and the class"     "$SH_HEAD" "$(sh_head sse)"
+chk SH2e "each of them once"                                            0 "$(sh_dups sse)"
+chk_has SH2f "the head is still an event stream"                        text/event-stream "$(cat "$DOBJ/shsse.hdr" 2>/dev/null)"
+chk SH2g "every event arrived, the terminator last"                     "t0 t1 t2 [DONE]" "$(grep -o '"content": "t[0-9]\|\[DONE\]' "$DOBJ/shsse.body" 2>/dev/null | sed 's/.*"t/t/' | tr '\n' ' ' | sed 's/ $//')"
+chk SH2h "nothing follows the terminator"                               "data: [DONE]" "$(grep -a '^data: ' "$DOBJ/shsse.body" 2>/dev/null | tail -n1 | tr -d '\r')"
+
+# SH3: a head of more than 16 KiB (18 padding lines of 1000 bytes), in three
+# writes: the third takes it past what the gateway puts together.
+chk SH3a "the scrape exports the anomaly kind"                          1 "$(metrics_raw | grep -c "^loxilb_ai_admission_anomalies_total{$SH_OVF}")"
+ovf0=$(msum loxilb_ai_admission_anomalies_total "$SH_OVF")
+chk SH3b "the backend is armed to cut its next head (3)"                "split-head 3" "$(sh_arm 3 100)"
+chk SH3c "the answer with the large head is relayed"                    200 "$(sh_send big "$BODY" -H 'X-Test-Head-Pad: 18000')"
+chk SH3d "the head left the backend in three writes"                    3 "$(sh_split big)"
+chk_ge SH3e "and was larger than 16 KiB"                                16385 "$(sh_split big .head_bytes)"
+chk SH3f "no admission header on it: it was relayed as it came"         0 "$(xh_lines "$DOBJ/shbig.hdr")"
+chk SH3g "all of the backend's head arrived (18 padding lines, 18000 bytes)" "18 18000" "$(grep -ci '^x-test-pad-' "$DOBJ/shbig.hdr" 2>/dev/null) $(grep -i '^x-test-pad-' "$DOBJ/shbig.hdr" 2>/dev/null | cut -d: -f2- | tr -d ' \r\n' | wc -c | tr -d ' ')"
+chk SH3h "the body is the backend's, whole"                             "$SH_BODY" "$(sh_body big)"
+chk SH3i "expose_head_overflow moved by exactly one"                    1 "$(echo $(( $(wait_metric loxilb_ai_admission_anomalies_total $((ovf0 + 1)) 25 "$SH_OVF") - ovf0 )))"
+chk SH3j "the next answer, whole, carries the headers again"            "200 $SH_HEAD" "$(sh_send after "$BODY") $(sh_head after)"
+chk SH3k "and was not counted"                                          "$((ovf0 + 1))" "$(sleep 11; msum loxilb_ai_admission_anomalies_total "$SH_OVF")"
+
+# SH4: a split head in which the backend claims the gateway's own headers.
+be admin/echo-spoof-headers >/dev/null
+chk SH4a "the backend is armed to cut its next head (3)"                "split-head 3" "$(sh_arm 3 100)"
+chk SH4b "the answer that claims X-Loxilb-Admission-Inflight: 999 and X-Loxilb-Refusal-Stage: capacity is relayed" 200 "$(sh_send spoof "$BODY")"
+chk SH4c "the head left the backend in three writes"                    3 "$(sh_split spoof)"
+chk SH4d "no X-Loxilb-Refusal-* reaches the client"                     0 "$(mark_lines "$DOBJ/shspoof.hdr")"
+chk SH4e "one X-Loxilb-Admission-Inflight line"                         1 "$(grep -ci '^x-loxilb-admission-inflight:' "$DOBJ/shspoof.hdr" 2>/dev/null)"
+chk SH4f "the gateway's values, not the backend's 999"                  "$SH_HEAD" "$(sh_head spoof)"
+chk SH4g "the body is the backend's, whole"                             "$SH_BODY" "$(sh_body spoof)"
+
 # This row's rules and objectives go: the rows below count listeners, and
 # with no objective left the class stage has nothing to apply.
 chk_has OBJ11a "the row's three rules are deleted" "Success Success Success" "$(for p in $PORT_OBJ $PORT_OBJS $PORT_OBJ2; do lb_delete $p | grep -o Success | head -n1; done | tr '\n' ' ')"

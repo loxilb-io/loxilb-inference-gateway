@@ -96,6 +96,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_h2dleak
 
+      - name: "test_resp_head_assemble (an HTTP/1.1 response head that arrives split is put together, up to 16 KiB, before the admission, class and refusal-mark edits; nothing is kept past its answer; source invariant)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_resphead
+
       - name: "OpenAI JSON regression oracle and fixture identities"
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s cicd/ai-json-parser -p 'test_*.py'

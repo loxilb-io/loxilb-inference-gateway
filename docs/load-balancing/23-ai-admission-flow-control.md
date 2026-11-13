@@ -480,8 +480,9 @@ is safe to retry, and the HTTP/1.1 and HTTP/2 differences are in the
 ### The same headers on admitted responses
 
 With `fc_expose_headers` `on` (or `LLB_FC_EXPOSE_HEADERS=on` and the rule
-declaring nothing), every admitted inference response carries the three
-admission headers too, so a client can slow down before it is refused:
+declaring nothing), every admitted HTTP/1.1 and HTTP/2 response whose head
+is ≤ 16 KiB carries the three admission headers too, so a client can slow
+down before it is refused:
 `X-Loxilb-Admission-Inflight` and `X-Loxilb-Admission-Queued` are the pool's
 executing and waiting requests as the response head goes out (the request
 itself counted), and `X-Loxilb-Admission-Limit` the service ceiling in force
@@ -490,8 +491,16 @@ go on the response head on HTTP/1.1 and HTTP/2, streamed (`text/event-stream`,
 chunked) responses included; the body is never touched. Fields of those
 names sent by the backend are replaced. A pool in `observe` mode reports
 them too, since it counts its requests; requests the gate does not count
-(non-inference paths, a pool in `off` mode) carry none. On HTTP/1.1 a
-response head the backend split across several reads is sent without them.
+(non-inference paths, a pool in `off` mode) carry none.
+
+An HTTP/1.1 response head that reaches the gateway in several pieces is put
+together first, up to 16 KiB, and then gets the headers like a head that
+arrived whole; nothing a client could act on is held back, since part of a
+head is of no use to it. A head that arrives in pieces and grows past 16 KiB
+is relayed as the backend sent it, without the headers and with the backend's
+own fields of those names, and is counted in
+`loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"}` (one log
+line per connection).
 
 A rule refuses `fc_expose_headers` `on` with a `sockMapMode` of `both` or
 `response` (`400`): those responses go from the backend to the client in the
@@ -531,7 +540,7 @@ pool key) and are emitted for every AI-gateway pool in every mode.
 | `loxilb_ai_admission_warming_endpoints` | gauge | endpoints inside their warm-up window |
 | `loxilb_ai_admission_tenants_active` | gauge | tenants holding a unit or waiting, while the pool has a tenant share |
 | `loxilb_ai_fc_tenant_slots{service, kind}` | gauge | the tenant table, per service: `kind="max"` is the table size (`LLB_FC_TENANT_SLOTS`), `kind="used"` the tenants on the service's fullest pool right now. `used` above `max` means tenants past the table share one budget; alert before that, for example on `used / max > 0.8` |
-| `loxilb_ai_admission_anomalies_total{kind}` | counter | process-wide: `underflow` and `unknown_permit` are bookkeeping faults and `h2_deny_headers` an HTTP/2 refusal whose headers did not fit its frame (the stream is reset instead): any increase of these three is a defect, not load; `tenant_table_full` counts requests whose tenant shared the overflow slot |
+| `loxilb_ai_admission_anomalies_total{kind}` | counter | process-wide: `underflow` and `unknown_permit` are bookkeeping faults and `h2_deny_headers` an HTTP/2 refusal whose headers did not fit its frame (the stream is reset instead): any increase of these three is a defect, not load; `tenant_table_full` counts requests whose tenant shared the overflow slot; `expose_head_overflow` counts HTTP/1.1 response heads that arrived in pieces and grew past 16 KiB, relayed without the admission headers |
 | `loxilb_ai_fc_band_total{service, band, outcome}` | counter | per service (its pools summed), by priority band (`critical`, `standard`, `sheddable`: the request's class) and outcome; fifteen series per service, zero included. The per-band split of five decisions above, counted where they are counted |
 
 A request's band is its class ([AI gateway controls](19-ai-gateway-controls.md)). `priority_class` is a cap, not a default: to run a tenant's un-hinted requests above `standard`, set its `default_objective` to an objective with a positive priority; `priority_class` only bounds what its requests may be raised to.
@@ -599,7 +608,8 @@ by reason.
 | `queued` near `limit{role="queue"}` for minutes | the queue absorbs a sustained, not a burst, overload | add capacity; a deeper queue parks more client memory (depth × 1 MiB) |
 | `warming_endpoints` above 0 after every health flap | an endpoint flaps between down and up | fix the endpoint; its ramp restarts on every return |
 | `proxy_context_inflight` at `proxy_accept_bound`, or `proxy_accept_blocked_total` rising | the node is at its connection-context bound; new connections wait in the listen backlog | raise `LLB_PD_MAX_TOTAL_INFLIGHT` if memory allows, else add gateway instances |
-| `anomalies_total` above 0 | a bookkeeping defect | report it with the gateway log |
+| `anomalies_total{kind=~"underflow\|unknown_permit\|h2_deny_headers"}` above 0 | a bookkeeping defect | report it with the gateway log |
+| `anomalies_total{kind="expose_head_overflow"}` rising | a backend sends HTTP/1.1 response heads larger than 16 KiB, in pieces; those responses go out without the admission headers | shrink the backend's response head (large cookies or debug headers), or accept that these responses carry no admission headers |
 | `decisions_total{reason="tenant_share"}` rising while `inflight` is below the limit | one tenant is at its share; the rest of the ceiling is left for others, as intended | raise `fc_tenant_max_share_pct` if one tenant should be allowed more of an idle pool |
 | `anomalies_total{kind="tenant_table_full"}` rising | more tenants active on one pool at once than `fc_effective.tenant_slots`; the ones past the table share one budget | raise `LLB_FC_TENANT_SLOTS` (up to 4096) and restart the gateway, or split the pool |
 

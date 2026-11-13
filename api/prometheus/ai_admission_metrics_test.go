@@ -58,7 +58,7 @@ func TestSortAndDedupeAdmissionSamples(t *testing.T) {
 	}
 }
 
-func withAdmissionStore(t *testing.T, samples []admissionSample, anomalies [4]float64) {
+func withAdmissionStore(t *testing.T, samples []admissionSample, anomalies [5]float64) {
 	t.Helper()
 	admissionStoreMutex.Lock()
 	savedStore, savedAnomalies := admissionStore, admissionAnomalies
@@ -72,20 +72,42 @@ func withAdmissionStore(t *testing.T, samples []admissionSample, anomalies [4]fl
 }
 
 func TestAdmissionCollectorEmptyStore(t *testing.T) {
-	withAdmissionStore(t, nil, [4]float64{})
+	withAdmissionStore(t, nil, [5]float64{})
 
 	// No pool: only the process-wide anomaly counters, at zero, so "never
 	// anomalous" and "not exported" are distinguishable.
-	if n := testutil.CollectAndCount(admissionCollector{}); n != 4 {
-		t.Errorf("empty store emitted %d metrics, want 4 (the anomaly counters)", n)
+	if n := testutil.CollectAndCount(admissionCollector{}); n != 5 {
+		t.Errorf("empty store emitted %d metrics, want 5 (the anomaly counters)", n)
 	}
 	want := `
-# HELP loxilb_ai_admission_anomalies_total Accounting anomalies in the capacity gate, process-wide: underflow (a release found its counter at zero), unknown_permit (an executing permit with no pool), tenant_table_full (a request whose tenant found the pool's tenant table full and shared the last slot with the other tenants past it) and h2_deny_headers (an HTTP/2 refusal had more headers than its frame holds; the stream was reset instead). underflow, unknown_permit and h2_deny_headers are defects; tenant_table_full means more tenants than the table holds are active on one pool.
+# HELP loxilb_ai_admission_anomalies_total Accounting anomalies in the capacity gate, process-wide: underflow (a release found its counter at zero), unknown_permit (an executing permit with no pool), tenant_table_full (a request whose tenant found the pool's tenant table full and shared the last slot with the other tenants past it), h2_deny_headers (an HTTP/2 refusal had more headers than its frame holds; the stream was reset instead) and expose_head_overflow (an HTTP/1.1 response head arrived in pieces and grew past 16 KiB before it ended; it was relayed as it came, without the admission headers). underflow, unknown_permit and h2_deny_headers are defects; tenant_table_full means more tenants than the table holds are active on one pool; expose_head_overflow means a backend sends response heads larger than the gateway assembles.
 # TYPE loxilb_ai_admission_anomalies_total counter
+loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"} 0
 loxilb_ai_admission_anomalies_total{kind="h2_deny_headers"} 0
 loxilb_ai_admission_anomalies_total{kind="tenant_table_full"} 0
 loxilb_ai_admission_anomalies_total{kind="underflow"} 0
 loxilb_ai_admission_anomalies_total{kind="unknown_permit"} 0
+`
+	if err := testutil.CollectAndCompare(admissionCollector{}, strings.NewReader(want),
+		"loxilb_ai_admission_anomalies_total"); err != nil {
+		t.Errorf("anomaly series mismatch: %v", err)
+	}
+}
+
+// Each anomaly kind is exported under its own label, in the order of the
+// gate's enum fc_anomaly: the fifth, expose_head_overflow, is a split
+// HTTP/1.1 response head that outgrew the assembly bound.
+func TestAdmissionCollectorExportsEveryAnomalyKind(t *testing.T) {
+	withAdmissionStore(t, nil, [5]float64{1, 2, 3, 4, 5})
+
+	want := `
+# HELP loxilb_ai_admission_anomalies_total Accounting anomalies in the capacity gate, process-wide: underflow (a release found its counter at zero), unknown_permit (an executing permit with no pool), tenant_table_full (a request whose tenant found the pool's tenant table full and shared the last slot with the other tenants past it), h2_deny_headers (an HTTP/2 refusal had more headers than its frame holds; the stream was reset instead) and expose_head_overflow (an HTTP/1.1 response head arrived in pieces and grew past 16 KiB before it ended; it was relayed as it came, without the admission headers). underflow, unknown_permit and h2_deny_headers are defects; tenant_table_full means more tenants than the table holds are active on one pool; expose_head_overflow means a backend sends response heads larger than the gateway assembles.
+# TYPE loxilb_ai_admission_anomalies_total counter
+loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"} 5
+loxilb_ai_admission_anomalies_total{kind="h2_deny_headers"} 4
+loxilb_ai_admission_anomalies_total{kind="tenant_table_full"} 3
+loxilb_ai_admission_anomalies_total{kind="underflow"} 1
+loxilb_ai_admission_anomalies_total{kind="unknown_permit"} 2
 `
 	if err := testutil.CollectAndCompare(admissionCollector{}, strings.NewReader(want),
 		"loxilb_ai_admission_anomalies_total"); err != nil {
@@ -115,7 +137,7 @@ func TestAdmissionCollectorEmitsLabelledSeries(t *testing.T) {
 		warmingEps:     1,
 		tenantsActive:  2,
 		tenantSlots:    256,
-	}}, [4]float64{0, 1, 0, 0})
+	}}, [5]float64{0, 1, 0, 0, 0})
 
 	want := `
 # HELP loxilb_ai_admission_inflight Capacity units held right now. role="service" is the pool-wide count, one per executing inference request; the other roles sum the endpoint units held across the pool's endpoints for that role. Zero with the gate off.
@@ -288,9 +310,9 @@ loxilb_ai_fc_tenant_slots{kind="used",service="192.168.1.10:8080"} 2
 	// Per pool: 1 mode + 4 inflight + 5 limit + 1 queued + 1 wait histogram
 	// + 14 decisions + 1 effective limit + 4 adapt states + 5 adapt reasons
 	// + 2 adapt moves + 1 warming + 1 tenants = 40, plus the 2 tenant-table
-	// series of its service and the 4 process-wide anomaly counters.
-	if n := testutil.CollectAndCount(admissionCollector{}); n != 46 {
-		t.Errorf("collected %d metrics for one pool, want 46", n)
+	// series of its service and the 5 process-wide anomaly counters.
+	if n := testutil.CollectAndCount(admissionCollector{}); n != 47 {
+		t.Errorf("collected %d metrics for one pool, want 47", n)
 	}
 }
 
@@ -305,7 +327,7 @@ func TestAdmissionTenantSlotsArePerService(t *testing.T) {
 		{service: "10.0.0.1:2020", pool: "*", tenantsActive: 0, tenantSlots: 256},
 		{service: "10.0.0.2:2021", pool: "llama", tenantsActive: 65, tenantSlots: 64},
 		{service: "10.0.0.3:2022", pool: "llama", tenantsActive: 0, tenantSlots: 4096},
-	}, [4]float64{})
+	}, [5]float64{})
 
 	want := `
 # HELP loxilb_ai_fc_tenant_slots The tenant table of the capacity gate, per service: kind="max" is how many tenants a model pool tracks by name at once (LLB_FC_TENANT_SLOTS, fixed when the pool is created), kind="used" is how many hold a unit or wait right now on the service's fullest pool. used above max means tenants past the table are sharing one budget. used is zero while no pool of the service holds tenants to a share.
