@@ -57,6 +57,12 @@ jobs:
              ./rmconfig.sh
              cd -
       - run: |
+             cd cicd/tcplbconnlimit-reuse/
+             ./config.sh
+             ./validation.sh
+             ./rmconfig.sh
+             cd -
+      - run: |
              cd cicd/tcplbmark/
              ./config.sh
              ./validation.sh

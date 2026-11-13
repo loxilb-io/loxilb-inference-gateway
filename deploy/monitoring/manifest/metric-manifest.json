@@ -1,18 +1,18 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-12T05:26:20+00:00",
-  "source_revision": "aaad5a70cdc2976d904a7fabddb5d3e630e1bdca"
+  "generated_at": "2026-11-13T13:06:14+00:00",
+  "source_revision": "963b51baf7e71aeb48366e146140dc94af1b04af"
  },
  "contract": {
-  "total": 358,
+  "total": 359,
   "owners": {
-   "loxilb": 335,
+   "loxilb": 336,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 302,
+   "default": 303,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -21,11 +21,11 @@
   }
  },
  "coverage": {
-  "default_families": 302,
+  "default_families": 303,
   "default_referenced": 184,
-  "default_waived": 23,
+  "default_waived": 24,
   "default_unreferenced": 95,
-  "writer_classified": 302,
+  "writer_classified": 303,
   "writer_unclassified": 0,
   "writer_unverified": 80
  },
@@ -9392,6 +9392,47 @@
     }
    ],
    "verification_evidence": "pkg/snapshot/metrics_test.go TestMetricsLastRestoreTimestampAdvancesOnCommitNotDryRun asserts 0 after a dry-run and the exact fixed Unix time after a commit -- the dry-run arm is the red twin. Scenario M15 owns the runtime proof."
+  },
+  {
+   "name": "loxilb_lb_conn_count_corrections_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "desc",
+   "labels": [],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "Are the live connection count behind connectionLimit, or the per-endpoint session counts of a least-connections rule, drifting from the connections that exist? The counts are kept by increments and decrements; after every conntrack ageing run they are compared with the connections that exist, and a rule whose counts differ is corrected. Zero on an idle gateway. An occasional correction on a busy rule is expected when the gateway removes a connection (idle timeout, rule or endpoint change) while the data path counts another, and one correction per least-connections rule is expected after an HA failover, when the new master first verifies the connections it inherited; a steady increase without such events means a path that adds or removes connections is not counted. Every correction is also a WARN line in the data-plane log that names the rule index, the endpoint slot for a session count, and both values, and the corrected count is in effect from that moment. Operators can query the scalar directly; no dashboard or alert policy is introduced with the fix that adds the correction.",
+   "source": "api/prometheus/lb_conn_count_metrics.go:26",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "lbConnCountCorrectionsCollector",
+     "file": "api/prometheus/lb_conn_count_metrics.go",
+     "def_line": 48,
+     "writes": "lbConnCountCorrectionsDesc",
+     "note": "read at scrape time from the source pkg/loxinet sets (dpebpf_lbconncount_linux.go, llb_nat_conc_fixups: corrections the data plane made to a rule's live connection count or per-endpoint session counts after a conntrack ageing run, summed over all rules); reads zero until the data plane is up"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/lb_conn_count_metrics.go",
+     "def_line": 56,
+     "call_line": 57,
+     "calls": "lbConnCountCorrectionsCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/prometheus TestLBConnCountCorrectionsReadsZeroWithoutSource and TestLBConnCountCorrectionsReadsItsSourceAtScrape compare the collector's exposition with and without a source; cicd/tcplbconnlimit-reuse arm E overwrites a rule's count under two open connections and reads the family going from 0 to 1 when the data plane corrects it; arm H does the same with a per-endpoint session count of a least-connections rule and reads it going up by one."
   },
   {
    "name": "loxilb_lb_rule_interaction_bytes_total",
