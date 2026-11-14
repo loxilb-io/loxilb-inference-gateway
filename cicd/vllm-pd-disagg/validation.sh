@@ -1707,6 +1707,37 @@ J0C_T1=$(pd_metric loxilb_ai_pd_tier_selected_total 'tier="tier0"')
 pd_delta "TJ0c: JSON user reuse charges N-K = 4 hits" 4 "$J0C_H0" "$J0C_H1"
 pd_delta "TJ0c: tier0 selections move in lockstep with the hits" 4 "$J0C_T0" "$J0C_T1"
 
+# TJ0d / TJ0e — X-Request-Id is a correlation key, not a session key. A client
+# (or a gateway in front of this one) that sends a fresh X-Request-Id with
+# every request must still get its JSON `user` stickiness, and a request ID
+# that happens to repeat must not pin requests of different users together.
+# Same oracle as above; the two arms differ only in which field is constant.
+# pd_drive_rid <count> <rid-prefix or fixed rid> <user-prefix or fixed user> <which is fixed: user|rid>
+pd_drive_rid() {
+  local n="$1" rid="$2" user="$3" fixed="$4" i r u
+  for i in $(seq 1 "$n"); do
+    if [ "$fixed" = "user" ]; then r="${rid}-${i}"; u="$user"; else r="$rid"; u="${user}-${i}"; fi
+    $dexec l3h1 curl -sk --cacert /tmp/minica.pem \
+      -H "X-Request-Id: ${r}" \
+      https://10.10.10.254:2022/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "{\"model\":\"Qwen/Qwen3-0.6B\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"max_tokens\":8,\"user\":\"$u\"}" > /dev/null 2>&1
+    sleep 1
+  done
+  sleep 2
+}
+J0D_H0=$(pd_metric loxilb_ai_pd_session_hits_total)
+pd_drive_rid 5 "rid-fresh-${J_RUN}" "user-rid-${J_RUN}" user
+J0D_H1=$(pd_metric loxilb_ai_pd_session_hits_total)
+pd_delta "TJ0d: one JSON user, a fresh X-Request-Id each time: still N-K = 4 hits" 4 "$J0D_H0" "$J0D_H1"
+J0E_H0=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0E_AN0=$(pd_metric loxilb_ai_pd_tier_selected_total)
+pd_drive_rid 5 "rid-same-${J_RUN}" "user-solo-${J_RUN}" rid
+J0E_H1=$(pd_metric loxilb_ai_pd_session_hits_total)
+J0E_AN1=$(pd_metric loxilb_ai_pd_tier_selected_total)
+pd_delta "TJ0e: drive shape — 5 prefill selections happened" 5 "$J0E_AN0" "$J0E_AN1"
+pd_delta "TJ0e: 5 distinct users under one repeated X-Request-Id charge no hit" 0 "$J0E_H0" "$J0E_H1"
+
 # ── TN0: the converged normal-mode session-hit counter, scored per WRITER ────
 #
 # loxilb_ai_normal_session_hits_total is the non-P/D twin of the Tier-0 family

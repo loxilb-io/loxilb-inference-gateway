@@ -30,6 +30,7 @@ DEAD_TARGET=8099
 PORT_OBJ=2038         # the same two backends: a denied objective is served at the default
 PORT_OBJS=2039        # the same, strict: a denied objective is refused 403
 PORT_OBJ2=2040        # the two h2c backends, not strict
+PORT_HR=2041          # row HR: the same two backends behind a hash selector (CHWBL), created and deleted by the row
 FC_P_MAX=4
 FC_P_STALE_MS=45000
 FC_U_MAX=2
@@ -145,6 +146,7 @@ gw_wait_audit() {
 }
 
 # gw_add_rule <port> <extra-json> <target-port> [<target-port> ...]
+# The selector is round-robin (0) unless GW_SEL names another for this call.
 # mode 4 (full proxy) turns on the userspace HTTP path; sse_mode makes the
 # service an AI-gateway service, which is what the capacity gate keys on. No
 # API key: the gate refuses on capacity alone, and the refusal is recorded
@@ -161,7 +163,7 @@ gw_add_rule() {
         \"externalIP\":      \"$VIP\",
         \"port\":             $port,
         \"protocol\":        \"tcp\",
-        \"sel\":              0,
+        \"sel\":              ${GW_SEL:-0},
         \"mode\":             4,
         \"host\":            \"$VIP\",
         \"path_prefix\":     \"/\",
