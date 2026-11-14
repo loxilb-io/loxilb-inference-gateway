@@ -100,6 +100,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_resphead
 
+      - name: "test_request_id_join (the request-ID snapshot ends with its response; a forwarded request's 502 names it by the ID it was forwarded under; source invariants)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_ridjoin
+
+      - name: "test_conv_hdr (X-Request-Id is not a conversation ID on HTTP/1.1: no session or hash affinity from it; X-Conversation-ID, X-Session-ID and X-Trace-ID are; source invariant)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_convhdr
+
+      - name: "test_epp_immediate (an Endpoint Picker's immediate answer carries exactly one X-Request-Id, the request's own)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_eppimm
+
       - name: "OpenAI JSON regression oracle and fixture identities"
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s cicd/ai-json-parser -p 'test_*.py'

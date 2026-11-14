@@ -80,6 +80,16 @@ inference-gateway delta is enumerated in detail.
   against the current body's limit. The legacy `loxilb_pd_fallback_to_normal_total` metric is
   deprecated and remains zero after removal of the role-0 fallback.
 
+- AI gateway, HTTP/1.1: a `502` written for a request whose backend went away
+  before answering no longer echoes, or is recorded under, the ID of the next
+  request when the client had already sent the start of one; a refusal of a
+  request that has no ID of its own (one that cannot be parsed) is no longer
+  recorded under the ID of the request served before it on the same
+  connection; an Endpoint Picker's immediate answer carries one
+  `X-Request-Id`, the request's own, where a picker that set the header left
+  two (and an immediate answer longer than 1024 bytes carried none of the
+  gateway's).
+
 ### Changed
 
 - When a snapshot is selected at boot, a stale `BFDconfig.txt` is no longer
@@ -102,6 +112,29 @@ inference-gateway delta is enumerated in detail.
   header is absent when the request has no ID of its own at that moment, and it
   is never another request's on a keep-alive connection. A relayed backend
   response keeps the backend's own header.
+
+- **OWNER REVIEW PENDING. Behaviour change.** AI gateway, HTTP/1.1:
+  `X-Request-Id` is no longer read as a conversation ID. It used to be a
+  session and affinity key: on a prefill/decode rule a client-supplied request
+  ID was the session key ahead of the JSON `user` field, and on a CHWBL,
+  GPU-aware or WRR-hash rule a request with no prompt prefix was placed by a
+  hash of it. A client that sent a new request ID with every request therefore
+  got no `user` stickiness; one that repeated an ID was pinned by it. Now the
+  request ID is the correlation key only, as it always was on HTTP/2.
+  `X-Conversation-ID`, `X-Session-ID`, `X-Trace-ID`, a rule's configured
+  session header and the JSON `user` field work as before. **A deployment that
+  relied on a repeated `X-Request-Id` to keep requests on one endpoint has to
+  send `X-Conversation-ID` instead.** The request trace event's
+  `conversation_id` no longer shows the request ID.
+
+- **OWNER REVIEW PENDING.** AI gateway, HTTP/1.1: the two `502
+  backend_unreachable` answers written after a request was handed to a backend
+  connection now carry the request's own `X-Request-Id`: the one for an
+  endpoint that refused the connection (which also gains `Content-Length`),
+  and the one for a backend that went away without answering (not when the
+  client pipelined a further request under the unanswered one: the gateway
+  cannot tell which of the two it answers and names neither). Additive for a
+  client that reads the header as optional.
 
 - **OWNER REVIEW PENDING.** AI gateway: `X-Loxilb-Refusal-*` fields sent by a
   backend are removed from every relayed response head, with or without

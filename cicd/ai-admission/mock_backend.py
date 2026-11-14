@@ -66,6 +66,10 @@ Request headers that shape the answer:
                           event, the time to first token)
   X-Test-Fail: <status>   answer with that status and an error body
   X-Test-Reset: 1         drop the connection with a TCP RST, no answer
+  X-Test-Close-After-Ms: <ms>
+                          answer as usual, keep the connection, and close it
+                          (FIN) that long after the answer was written: a
+                          backend whose idle timeout ends a kept connection
   X-Test-Forever: 1       with "stream": true, keep sending SSE chunks until
                           the connection dies
   X-Test-Spoof-Admission: 1
@@ -411,6 +415,7 @@ class Handler(BaseHTTPRequestHandler):
         delay_ms = int(self.headers.get("X-Test-Delay-Ms") or 0)
         fail = int(self.headers.get("X-Test-Fail") or 0)
         reset = self.headers.get("X-Test-Reset", "") == "1"
+        close_after_ms = int(self.headers.get("X-Test-Close-After-Ms") or 0)
         forever = self.headers.get("X-Test-Forever", "") == "1"
         self.spoof = self.headers.get("X-Test-Spoof-Admission", "") == "1"
         self.spoof_objective = self.headers.get("X-Test-Spoof-Objective", "") == "1"
@@ -466,8 +471,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._stream(model, forever)
             else:
                 self._complete(model)
+            if close_after_ms > 0:
+                self._close_later(close_after_ms)
         finally:
             self._leave()
+
+    def _close_later(self, ms):
+        conn = self.connection
+
+        def shut():
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        t = threading.Timer(ms / 1000.0, shut)
+        t.daemon = True
+        t.start()
 
     def _complete(self, model):
         self._send_json({

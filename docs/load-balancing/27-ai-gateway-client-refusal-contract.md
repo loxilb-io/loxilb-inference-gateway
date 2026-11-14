@@ -67,18 +67,33 @@ with stage `auth` or `ratelimit`: the gateway refused before dispatch, and it is
 
 - the request had no ID yet: it could not be parsed, or (HTTP/2) it was refused while its headers were still
   being read — three early HTTP/2 refusals carry the stage alone;
-- the answer was written after the request had been handed to a backend connection (HTTP/1.1): the `502` for an
-  endpoint that refused the connection on a plain rule, and the `502` for a backend that closed without
-  answering. The gateway keeps the ID for the audit records, not for the answer; the `503 no_healthy_backend`
-  written while the request is still being placed does carry it;
 - the ID cannot be one header value (a control byte, a blank at either end): it is left out, never rewritten;
 - the queue endings' plain form (below, under the capacity stage);
 - the answers listed under "Unmarked" and everything else the prefill/decode path writes (its leg-failure and
-  timeout answers), the reaper's Endpoint-Picker timeout, the in-stream events, and an L7-policy redirect.
+  timeout answers), the reaper's Endpoint-Picker timeout, the in-stream events, and an L7-policy redirect;
+- the gateway cannot tell which request the answer belongs to (HTTP/1.1: a client that pipelines, or a
+  connection whose response accounting has fallen behind; below).
 
-The echo is the request's own ID, never the previous request's on a keep-alive connection. The gateway's read
-path assumes a client does not send request N+1 before N is answered; a client that pipelines can find N+1's ID
-on a `502` written for N when the backend fails before answering.
+The echo is the request's own ID: never the previous request's on a keep-alive connection, and never the next
+one's. The two `502 backend_unreachable` answers written after a request was handed to a backend connection
+(HTTP/1.1) — an endpoint that refused the connection, and a backend that went away without answering — name
+that request; the second does so even when the client has already sent the start of its next request, and
+when the backend's kept connection ends while the next request is still being read it names that next request,
+whose answer it is.
+
+Pipelining is not supported for the echo. The gateway's read path assumes a client does not send request N+1
+before N is answered. A client that does, and whose backend then goes away without answering, gets that `502`
+**without** `X-Request-Id`: the answer is positionally N's, the gateway has handed both requests on and cannot
+tell which of them it answers, so it names neither. The header stays off such an answer on that connection
+until a request begins with no earlier answer owed.
+
+The same `502` is also written **without** `X-Request-Id` where the gateway's count of answered requests on the
+connection is behind the count of requests it handed on: after an answer relayed from the prefill leg of a
+prefill/decode rule, or a response the gateway could not frame, for the rest of that connection; and for a
+client that sends the start of its next request while an answer is still in flight, when the backend's kept
+connection then ends before that request is handed on. The gateway cannot be sure there whose answer it is, and
+an absent ID is preferred to another request's. Read a missing `X-Request-Id` on a `502 backend_unreachable` as
+"not named", not as "the request had none".
 
 **Unmarked: refusals with neither header.** The refusals written by the prefill/decode code itself — the six
 `pd_*` codes and the P/D `invalid_json_body` of the framing stage — carry no stage and no request ID; classify
@@ -274,7 +289,7 @@ request still has its ID (the rules above), on HTTP/1.1 and HTTP/2, and no stage
 | `503` | `no_route` with a `detail` naming a listener "kept open after its last rule was deleted" | the rule was deleted; see [doc 26](26-endpoint-picker-epp.md). **Carries `X-Loxilb-Refusal-Stage: route`** although it is recorded as an outage completion: the one stage header with no deny record | none | no, until a rule takes the address |
 | `503` | `epp_unavailable` | the rule's Endpoint Picker did not decide in time | none | cond. |
 | `429` | `epp_evicted` | the Endpoint Picker shed the request | none | cond. — the picker's decision, not the capacity gate's; no `Retry-After` |
-| the picker's | the picker's own immediate response, with the picker's headers and the gateway's `X-Request-Id` (a picker that sets `X-Request-Id` itself leaves two) | an Endpoint Picker answered instead of choosing an endpoint | none | as the picker says |
+| the picker's | the picker's own immediate response, with the picker's headers and one `X-Request-Id`, the request's own (a picker's own `X-Request-Id` is left out in its favour; it stays only when the request has no ID that can be echoed) | an Endpoint Picker answered instead of choosing an endpoint | none | as the picker says |
 | `503` | `mcp_backend_unavailable` | no MCP backend could take the stream | none | cond. |
 | `503` | `pd_pool_unavailable` with `detail` `no healthy prefill or decode endpoint` or `no healthy decode endpoint accepted the request` | a P/D rule has no usable pair | none | cond. |
 
@@ -307,20 +322,19 @@ An in-stream event is a `data: {"error":"…"}` SSE event written into an answer
 - The ID is forwarded to the backend, and it is the `request_id` of every audit record of the request: its
   refusal (`sec.ai.deny`), its completion (`data.ai.complete`) and its token settlement. A client that supplies
   its own ID can therefore find the record of any answer on this page without help from the gateway.
+  A request refused before it has an ID (one that cannot be parsed) is recorded without one, not under the ID
+  of the request served before it on the connection. One configuration still records it under that earlier ID,
+  as every configuration did before: an HTTP/1.1 AI rule whose responses go by the kernel (`sockmap_en` `1` or
+  `3`) and that has neither SSE mode, an L7 policy nor prefill/decode. The gateway does not see those responses
+  end, so it cannot tell that the earlier request is over.
 - A gateway-written answer carries the ID back as `X-Request-Id`
   ([the rules, and when it is absent](#the-two-headers-on-a-gateway-written-answer)). A client that did not
   supply an ID learns the minted one from the refusal and can find the `sec.ai.deny` record by it.
 - A relayed backend response keeps whatever `X-Request-Id` the backend sent; that echo is the backend's.
-- **The request ID as a routing key.** On HTTP/2 the request ID never influences which endpoint serves a
-  request. On HTTP/1.1 it does in two cases, because the gateway also reads `X-Request-Id` as a conversation ID:
-  - on a prefill/decode (`pd_disagg`) rule, a client-supplied ID is the session key and takes precedence over the
-    JSON `user` field, so a client that sends a new ID with every request gets no `user` stickiness;
-  - on a rule whose `sel` is CHWBL (`8`), GPU-aware (`9`) or WRR-hash (`10`), a request with no extractable prompt prefix
-    (no body, or a body the prefix reader cannot use) is placed by a hash of the ID.
-
-  On a round-robin (`sel` `0`) or weighted (`2`) rule that is not prefill/decode it has no effect. A deployment that
-  needs the request ID to be correlation-only should use such a rule, or send `X-Conversation-ID` deliberately
-  for stickiness and treat `X-Request-Id` as described here.
+- **The request ID is not a routing key.** `X-Request-Id` names one request and never influences which endpoint
+  serves it, on HTTP/1.1 or HTTP/2. A client that wants its requests kept together says so with
+  `X-Conversation-ID` (HTTP/1.1 also reads `X-Session-ID` and `X-Trace-ID`), with the rule's configured session
+  header, or, on a prefill/decode rule, with the JSON `user` field.
 
 ## Admission metadata on responses
 
@@ -391,7 +405,6 @@ gateway answers from backend answers:
 | Detail field on route and framing answers | `detail` | `message` |
 | `Content-Length` | on gate and capacity answers; missing on several route, framing and P/D answers | always (as `content-length`) |
 | Admission triple on admitted responses | when the head arrives whole | always |
-| Request ID as a routing key | on P/D and hash-selected rules (above) | never |
 | `X-Loxilb-Refusal-Stage` | a header line after the status line | the field `x-loxilb-refusal-stage`, after the existing fields |
 | `X-Request-Id` on a gateway-written answer | the connection's current request | the stream's own request; absent on three refusals written while the stream's headers are read |
 | A refusal by the queue reaper from another thread | the plain form: stage `queue`, no request ID | — |

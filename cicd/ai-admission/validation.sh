@@ -1128,23 +1128,23 @@ chk OS13 "its body still the backend's object"                 rate_limit_error 
 # The strip does not depend on the admission headers being on (:PORT_H1 is off).
 be admin/echo-spoof-headers >/dev/null
 chk OS14 "on a pool without admission headers the claim is removed too" "200 0" "$(os_send spoofoff "$H1_URL") $(mark_lines "$DOS/spoofoff.hdr")"
-# An outage is not a refusal: no stage, ever. Whether it names the request
-# depends on who writes it. The 502 for an endpoint that refuses the
-# connection is written from the connect event, after the request was handed
-# to the connect: it carries no X-Request-Id (a documented residual; the
-# trail has the request, as a completion). The 503 for a pool with no
-# healthy endpoint is written while the request is still being placed, and
-# names it (OS23 on).
+# An outage is not a refusal: no stage, ever. It names the request like
+# every answer the gateway writes: the 502 for an endpoint that refuses the
+# connection (written from the connect event), the 502 for a backend that
+# goes away after it took the request (OS20 on), and the 503 for a pool with
+# no healthy endpoint (OS23 on).
 chk OS15 "a request whose only endpoint refuses the connection is answered 502" 502 "$(os_send dead "http://$VIP:$PORT_DEAD/v1/chat/completions")"
 chk_has OS16 "naming the outage"                               backend_unreachable "$(cat "$DOS/dead.body" 2>/dev/null)"
 chk OS17 "no stage on an outage"                               0 "$(mark_lines "$DOS/dead.hdr")"
-chk OS18 "and no X-Request-Id on this one (written from the connect event)" 0 "$(rid_lines "$DOS/dead.hdr")"
+chk OS18 "and the request's own X-Request-Id, once" "1 capOSdead" "$(rid_lines "$DOS/dead.hdr") $(mark_rid "$DOS/dead.hdr")"
+chk OS18b "its Content-Length is the body's" "$(wc -c < "$DOS/dead.body" 2>/dev/null | tr -d ' ')" "$(hdr_val "$(hdr_of "$DOS/dead.hdr")" Content-Length)"
 chk OS19 "an outage is recorded as a completion, not a refusal" 0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOSdead")' | wc -l | tr -d ' ')"
-# After the request was forwarded the gateway no longer holds its ID for the
-# answer: a backend that resets without answering gives a 502 with neither.
+# After the request was forwarded the gateway answers for it from the ID it
+# kept for the response: a backend that resets without answering gives a 502
+# with no stage and the request's own ID.
 chk OS20 "a backend that resets after taking the request: 502" 502 "$(os_send reset "$H1_URL" -H 'X-Test-Reset: 1')"
 chk OS21 "it had reached the backend"                          1 "$(receipts capOSreset)"
-chk OS22 "no stage, and no X-Request-Id (the documented post-dispatch case)" "0 0" "$(mark_lines "$DOS/reset.hdr") $(rid_lines "$DOS/reset.hdr")"
+chk OS22 "no stage, and the request's own X-Request-Id, once" "0 1 capOSreset" "$(mark_lines "$DOS/reset.hdr") $(rid_lines "$DOS/reset.hdr") $(mark_rid "$DOS/reset.hdr")"
 # The outage that does name the request: the pool's only endpoint marked down
 # through the API, so the request is answered while it is being placed.
 dead_state() { $hexec l3h1 curl -s -m 8 -X POST "$API/config/endpointhoststate" -H 'Content-Type: application/json' \
@@ -1157,6 +1157,83 @@ chk OS26 "no stage on an outage"                               0 "$(mark_lines "
 chk OS27 "and the request's own X-Request-Id"                  capOSdown "$(mark_rid "$DOS/down.hdr")"
 chk OS28 "recorded as a completion, not a refusal"             0 "$(trail | jq -c 'select(.event_type=="sec.ai.deny" and .request_id=="capOSdown")' | wc -l | tr -d ' ')"
 chk_has OS29 "the endpoint is marked up again"                 Success "$(dead_state green)"
+
+# ── RG: the request ID at the edges of a connection's life ──────────────────
+echo ""
+echo "RG: a refusal is never recorded under an earlier request's ID; a 502 names the request it answers"
+count_for() { trail | jq -c "select(.event_type==\"$2\" and .request_id==\"$1\")" | wc -l | tr -d ' '; }
+wait_count_for() { # wait_count_for <request id> <event type> <want> <secs>
+  local got i
+  for i in $(seq 1 "$4"); do got=$(count_for "$1" "$2"); [ "$got" == "$3" ] && break; sleep 1; done
+  echo "$got"
+}
+bad_denies() { trail | jq -c 'select(.event_type=="sec.ai.deny" and .detail.decision=="bad_request")' | wc -l | tr -d ' '; }
+# One kept connection: a request with its own ID, served; then a request the
+# parser cannot frame, with no ID. Its refusal is recorded, and not under the
+# first request's ID.
+RG_BAD0=$(bad_denies)
+$hexec l3h1 python3 "$(pwd)/h1_client.py" kept_bad $VIP $PORT_H1 --nonce-prefix capRGk > /tmp/ai-admission-RGk.out 2>&1
+RGK2=$(grep '"nonce": "capRGk-second"' /tmp/ai-admission-RGk.out 2>/dev/null | head -n1)
+chk RG1 "first request served, the unframeable second refused on the same connection" "200 400" "$(grep '"summary": "kept_bad"' /tmp/ai-admission-RGk.out | jq -r '"\(.first) \(.second)"')"
+chk RG2 "the refusal: framing stage, bad_request, and no X-Request-Id to echo" "framing absent" "$(printf '%s' "$RGK2" | jq -r '"\(.headers["x-loxilb-refusal-stage"] // "absent") \(.headers["x-request-id"] // "absent")"')"
+for i in $(seq 1 20); do [ "$(bad_denies)" -gt "$RG_BAD0" ] 2>/dev/null && break; sleep 1; done
+chk RG3 "its deny record is written" 1 "$(( $(bad_denies) - RG_BAD0 ))"
+chk RG4 "and not under the first request's ID" 0 "$(count_for capRGk-first sec.ai.deny)"
+# One connection, a request the backend takes and then resets without
+# answering, and the first lines of the next request already sent: the 502
+# is the first request's answer and names it, on the wire and in the trail.
+$hexec l3h1 python3 "$(pwd)/h1_client.py" pipelined $VIP $PORT_H1 --nonce-prefix capRGp --after-s 1 --timeout 40 > /tmp/ai-admission-RGp.out 2>&1 &
+chk RG5 "the first request reached the backend and is held" 1 "$(wait_receipts capRGp-first 1 15)"
+for i in $(seq 1 10); do grep -q 'partial-head-sent' /tmp/ai-admission-RGp.out 2>/dev/null && break; sleep 1; done
+sleep 1; release capRGp-first; wait
+RGP=$(grep '"nonce": "capRGp-first"' /tmp/ai-admission-RGp.out 2>/dev/null | head -n1)
+chk RG6 "the backend reset under it: 502, no stage" "502 absent" "$(printf '%s' "$RGP" | jq -r '"\(.status) \(.headers["x-loxilb-refusal-stage"] // "absent")"')"
+chk RG7 "X-Request-Id is the answered request's, not the next one's" capRGp-first "$(printf '%s' "$RGP" | jq -r '.headers["x-request-id"] // "absent"')"
+chk RG8 "its completion is recorded under that ID" 1 "$(wait_count_for capRGp-first data.ai.complete 1 20)"
+chk RG9 "and nothing under the next request's ID" 0 "$(trail | jq -c 'select(.request_id=="capRGp-next")' | wc -l | tr -d ' ')"
+# The same, with the next request sent WHOLE: the gateway hands it to the
+# backend under the first one's pending answer (a pipelining client, which
+# the read path does not support). The one 502 is positionally the first
+# request's and the gateway cannot tell which of the two it answers: it
+# carries no X-Request-Id, never the next request's.
+$hexec l3h1 python3 "$(pwd)/h1_client.py" pipelined_full $VIP $PORT_H1 --nonce-prefix capRGq --after-s 1 --timeout 40 > /tmp/ai-admission-RGq.out 2>&1 &
+chk RG10 "pipelined: the first request reached the backend and is held" 1 "$(wait_receipts capRGq-first 1 15)"
+for i in $(seq 1 10); do grep -q 'next-request-sent' /tmp/ai-admission-RGq.out 2>/dev/null && break; sleep 1; done
+sleep 1; release capRGq-first; wait
+RGQ=$(grep '"answer": 1' /tmp/ai-admission-RGq.out 2>/dev/null | head -n1)
+chk RG11 "the backend reset under both: one 502, no stage" "502 absent" "$(printf '%s' "$RGQ" | jq -r '"\(.status) \(.headers["x-loxilb-refusal-stage"] // "absent")"')"
+chk RG12 "it carries no X-Request-Id: not the next request's" absent "$(printf '%s' "$RGQ" | jq -r '.headers["x-request-id"] // "absent"')"
+# One kept connection: a request served, then the first lines of the next
+# one, and the backend closes its kept connection (an idle timeout) while
+# that request is still being read. The 502 is the next request's answer and
+# carries its own ID.
+$hexec l3h1 python3 "$(pwd)/h1_client.py" kept_partial $VIP $PORT_H1 --nonce-prefix capRGs --close-after-ms 2000 --timeout 20 > /tmp/ai-admission-RGs.out 2>&1
+RGS=$(grep '"nonce": "capRGs-next", "status"' /tmp/ai-admission-RGs.out 2>/dev/null | head -n1)
+chk RG13 "first request served; the kept backend connection closed under the next one's head: 502" "200 502" "$(grep '"summary": "kept_partial"' /tmp/ai-admission-RGs.out | jq -r '"\(.first) \(.second)"')"
+chk RG14 "no stage, and the next request's own X-Request-Id" "absent capRGs-next" "$(printf '%s' "$RGS" | jq -r '"\(.headers["x-loxilb-refusal-stage"] // "absent") \(.headers["x-request-id"] // "absent")"')"
+
+# ── HR: the request ID is not an affinity key ───────────────────────────────
+# A rule with a hash selector (CHWBL, sel 8) of this row's own. A request
+# with no prompt to hash (a body of the model alone) is placed by its
+# conversation ID when it has one, and in turn otherwise. X-Conversation-ID,
+# X-Session-ID and X-Trace-ID are conversation IDs; X-Request-Id is not.
+echo ""
+echo "HR: on a hash-selected rule X-Request-Id does not place a request"
+HR_URL="http://$VIP:$PORT_HR/v1/chat/completions"
+hr_ports() { # hr_ports <n> [curl args...]: how many backends served n prompt-less requests
+  local n=$1 i; shift
+  for i in $(seq 1 "$n"); do
+    $hexec l3h1 curl -s --max-time 10 "${HDRS[@]}" "$@" -d "{\"model\":\"$MODEL\"}" "$HR_URL" | jq -r '.backend_port // "none"'
+  done | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+chk_has HR0 "the hash-selected rule :$PORT_HR" Success "$(GW_SEL=8 gw_add_rule $PORT_HR "" 8080 8081)"
+sleep 2
+chk HR1 "with no ID at all the requests take both backends in turn" "8080 8081" "$(hr_ports 12)"
+chk HR2 "one X-Conversation-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Conversation-ID: capHR-conv' | wc -w | tr -d ' ')"
+chk HR3 "one X-Session-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Session-ID: capHR-sess' | wc -w | tr -d ' ')"
+chk HR4 "one X-Trace-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Trace-ID: capHR-trace' | wc -w | tr -d ' ')"
+chk HR5 "one X-Request-Id does not: both backends serve" "8080 8081" "$(hr_ports 12 -H 'X-Request-Id: capHR-rid')"
+chk_has HR6 "the row's rule is deleted" Success "$(lb_delete $PORT_HR | grep -o Success | head -n1)"
 
 # ── OBJ: the objective a request asks for and may not use ───────────────────
 # Two objectives, two tenants (one may name obj-gold, one may not), a key
