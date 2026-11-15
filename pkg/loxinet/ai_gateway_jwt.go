@@ -19,7 +19,7 @@ package loxinet
 import (
 	"errors"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	"github.com/loxilb-io/loxilb/pkg/jwtauth"
 )

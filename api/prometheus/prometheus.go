@@ -33,8 +33,8 @@ import (
 	"github.com/go-openapi/errors"
 	"github.com/loxilb-io/loxilb/common"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/options"
-	tk "github.com/loxilb-io/loxilib"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )

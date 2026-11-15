@@ -24,7 +24,7 @@ import (
 
 	"github.com/loxilb-io/ipvs"
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 const (

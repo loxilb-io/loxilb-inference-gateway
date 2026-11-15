@@ -20,9 +20,9 @@ import (
 	"database/sql"
 	"time"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/pgstore"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // PasswordEnv is the environment variable the management store password may

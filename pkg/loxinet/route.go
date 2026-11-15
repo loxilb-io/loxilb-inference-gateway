@@ -22,8 +22,8 @@ import (
 	"net"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // error codes

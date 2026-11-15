@@ -45,6 +45,7 @@ import (
 	prometheus "github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/aikey"
 	"github.com/loxilb-io/loxilb/pkg/llamafirewall"
@@ -55,7 +56,6 @@ import (
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	"github.com/loxilb-io/loxilb/pkg/user"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // string constant representing root security zone

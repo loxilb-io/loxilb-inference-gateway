@@ -69,7 +69,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )

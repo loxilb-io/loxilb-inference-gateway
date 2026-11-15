@@ -22,8 +22,8 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 func ConfigGetBGPNeigh(params operations.GetConfigBgpNeighAllParams, principal interface{}) middleware.Responder {

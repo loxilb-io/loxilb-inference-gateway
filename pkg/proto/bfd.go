@@ -27,7 +27,7 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 type SessionState uint8

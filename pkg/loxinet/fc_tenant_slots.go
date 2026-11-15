@@ -23,7 +23,7 @@ import (
 	"strconv"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // fcTenantSlotsFromEnv is the tenant-table size a model pool is created

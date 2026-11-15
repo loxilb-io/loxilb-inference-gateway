@@ -33,9 +33,9 @@ import (
 	"time"
 
 	"github.com/loxilb-io/loxilb/api/models"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // The management audit gate is the two-phase middleware that makes a

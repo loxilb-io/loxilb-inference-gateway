@@ -24,10 +24,10 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/audit"
 	ln "github.com/loxilb-io/loxilb/pkg/loxinet"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // var version string = "0.9.7-beta"

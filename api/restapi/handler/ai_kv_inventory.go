@@ -32,7 +32,7 @@ import (
 	"net/http"
 	"strconv"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // KvInventoryBlock is one block entry in the AdminDumpKvInventory response.

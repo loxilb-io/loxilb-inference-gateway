@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // HwCounterEntry is a per-flow hardware counter entry in the hwcounters response.

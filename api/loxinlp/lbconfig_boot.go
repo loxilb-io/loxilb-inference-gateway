@@ -18,7 +18,7 @@ package loxinlp
 
 import (
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // replaySavedLbRule hands one rule of the saved lbconfig.txt to the rule

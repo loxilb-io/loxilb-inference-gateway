@@ -51,9 +51,9 @@ import (
 	"runtime/debug"
 	"unsafe"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/aikey"
-	tk "github.com/loxilb-io/loxilib"
 	"google.golang.org/grpc"
 	grpcpeer "google.golang.org/grpc/peer"
 )

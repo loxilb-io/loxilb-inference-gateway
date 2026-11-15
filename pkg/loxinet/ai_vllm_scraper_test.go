@@ -19,8 +19,8 @@ package loxinet
 import (
 	"testing"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/aimetrics"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // The decode KV-pressure argument the sink hands to the C bridge: presence of

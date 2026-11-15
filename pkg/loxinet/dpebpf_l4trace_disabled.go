@@ -11,7 +11,7 @@
 package loxinet
 
 import (
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // initL4TraceRingBuffer is a no-op when L4 tracing is disabled

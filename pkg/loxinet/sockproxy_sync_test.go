@@ -40,8 +40,8 @@ import (
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
-	loxilib "github.com/loxilb-io/loxilib"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -824,12 +824,12 @@ func (b *syncBuffer) String() string {
 // from other fixtures. This test also stops its coordinator on assertion failure.
 func TestPeerConsumerRespawnOnMasterPromotion(t *testing.T) {
 	logBuf := &syncBuffer{}
-	captureLogger, err := loxilib.NewLogger(logBuf, loxilib.LogInfo, false)
+	captureLogger, err := tk.NewLogger(logBuf, tk.LogInfo, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	origLogger := loxilib.SwapDefaultLogger(captureLogger)
-	defer loxilib.SwapDefaultLogger(origLogger)
+	origLogger := tk.SwapDefaultLogger(captureLogger)
+	defer tk.SwapDefaultLogger(origLogger)
 
 	// Step 2: Bufconn mock server for the receiving side.
 	mock := &mockSockproxyServer{}

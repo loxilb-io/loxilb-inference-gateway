@@ -21,7 +21,7 @@ import (
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/swag"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	"github.com/loxilb-io/loxilb/api/models"
 	aiops "github.com/loxilb-io/loxilb/api/restapi/operations/ai"

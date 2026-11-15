@@ -20,7 +20,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/loxinlp"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 func ConfigPostVxLAN(params operations.PostConfigTunnelVxlanParams, principal interface{}) middleware.Responder {

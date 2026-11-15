@@ -60,8 +60,8 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/tracing"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // OtlpConfig holds OTLP endpoint configuration

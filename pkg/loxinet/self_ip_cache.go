@@ -44,7 +44,7 @@ import (
 	"strings"
 	"sync"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/vishvananda/netlink"
 )
 

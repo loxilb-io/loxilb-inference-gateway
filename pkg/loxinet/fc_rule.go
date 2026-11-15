@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // fcRuleCfg is a rule's declared admission gate beyond the queue pair, as

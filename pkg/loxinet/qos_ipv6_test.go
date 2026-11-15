@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 func qosTestRules(entries ...*ruleEnt) *RuleH {

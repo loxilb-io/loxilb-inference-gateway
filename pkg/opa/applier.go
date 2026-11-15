@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	cmn "github.com/loxilb-io/loxilb/common"
 )

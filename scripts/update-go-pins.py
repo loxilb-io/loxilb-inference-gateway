@@ -29,7 +29,7 @@ SHARED_VENDOR_BUILDS = {
 GO_ONLY = ["Dockerfile.aictrl", "Dockerfile.kv-agent", "packaging/Dockerfile.build",
            "cicd/common/reflect-echo/Dockerfile", *SHARED_VENDOR_BUILDS]
 RECIPES = list(GOBGP) + GRPC + GO_ONLY
-MODULES = ["go.mod", "cicd/common/reflect-echo/go.mod", "third_party/loxilib/go.mod"]
+MODULES = ["go.mod", "cicd/common/reflect-echo/go.mod"]
 VERSION = re.compile(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\Z")
 
 

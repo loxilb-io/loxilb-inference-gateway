@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	logrus "github.com/sirupsen/logrus"
 
 	cmn "github.com/loxilb-io/loxilb/common"

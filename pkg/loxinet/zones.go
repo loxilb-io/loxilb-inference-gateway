@@ -20,7 +20,7 @@ import (
 	"errors"
 	"sync"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // This file implements self-contained network security zones

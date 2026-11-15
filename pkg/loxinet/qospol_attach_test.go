@@ -75,6 +75,27 @@ func TestPolEntryAttachedTruthTable(t *testing.T) {
 	}
 }
 
+func TestPolicerCreateRemainsPendingUntilDatapathCompletion(t *testing.T) {
+	previous := mh.dp
+	queue := make(chan interface{}, 1)
+	mh.dp = &DpH{ToDpCh: queue}
+	t.Cleanup(func() { mh.dp = previous })
+
+	entry := &PolEntry{PObjs: []PolObjInfo{{}}}
+	entry.DP(DpCreate)
+	work, ok := (<-queue).(*PolDpWorkQ)
+	if !ok || work.Work != DpCreate || work.Status != &entry.Sync {
+		t.Fatal("expected datapath create with the policer's completion status")
+	}
+	if entry.attached() {
+		t.Fatal("queued create was reported attached before completion")
+	}
+	work.setStatus(0)
+	if !entry.attached() {
+		t.Fatal("completed create was not reported attached")
+	}
+}
+
 // The datapath worker completes independently of the routine lock. Its status
 // publication must be safe while GET/metrics evaluate attachment truth.
 func TestPolicerConcurrentDatapathCompletion(t *testing.T) {

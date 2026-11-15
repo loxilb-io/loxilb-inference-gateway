@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // CPU utilization is measured from one of three sources. Which one applies is

@@ -37,10 +37,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/loxilb-io/loxilb/api/loxinlp"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/enginecontract"
 	ecschema "github.com/loxilb-io/loxilb/pkg/enginecontract/schema"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 	probing "github.com/prometheus-community/pro-bing"
 )
 

@@ -56,8 +56,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	pb "github.com/loxilb-io/loxilb/pkg/loxinet/llamafirewall_pb"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // LlamaFirewallClient manages connection to LlamaFirewall gRPC service

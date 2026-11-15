@@ -28,7 +28,7 @@ import (
 	"time"
 	"unsafe"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"golang.org/x/sync/singleflight"
 )
 

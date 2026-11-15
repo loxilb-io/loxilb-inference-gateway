@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // PluginRegistry manages all payload parsers

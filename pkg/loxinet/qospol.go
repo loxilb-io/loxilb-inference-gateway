@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"

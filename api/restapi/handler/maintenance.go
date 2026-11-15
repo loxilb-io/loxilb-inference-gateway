@@ -22,9 +22,9 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/maintenance"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // maintenanceStatusModel renders a maintenance snapshot as the wire

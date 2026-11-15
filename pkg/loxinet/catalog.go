@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"gopkg.in/yaml.v3"
 )
 

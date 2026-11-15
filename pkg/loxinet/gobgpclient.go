@@ -32,10 +32,10 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 	api "github.com/osrg/gobgp/v3/api"
 	"github.com/osrg/gobgp/v3/pkg/apiutil"
 	"github.com/osrg/gobgp/v3/pkg/packet/bgp"

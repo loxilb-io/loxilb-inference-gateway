@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	bfd "github.com/loxilb-io/loxilb/pkg/proto"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // Exercise real ticker LogIt readers while the next fixture publishes/restores

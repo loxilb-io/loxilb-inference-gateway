@@ -13,7 +13,7 @@ package loxinet
 import (
 	"fmt"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // initL4Tracing is a no-op when L4 tracing is not compiled in

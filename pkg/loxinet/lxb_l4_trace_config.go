@@ -31,7 +31,7 @@ import (
 	"unsafe"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // L4TraceConfig - Runtime configuration for L4 tracing

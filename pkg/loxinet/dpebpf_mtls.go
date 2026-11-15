@@ -27,7 +27,7 @@ import "C"
 import (
 	"unsafe"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // DpLBRuleSetMTLS sets mTLS fields directly in the dp_proxy_tacts struct (dat)

@@ -31,11 +31,11 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/maintenance"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // snapshotGate serializes the snapshot-family operations (capture, export,

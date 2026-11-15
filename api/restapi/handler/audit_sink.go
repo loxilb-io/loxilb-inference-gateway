@@ -29,9 +29,9 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/models"
 	auditops "github.com/loxilb-io/loxilb/api/restapi/operations/audit"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/audit/syslog"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // auditComplianceSink names the sink /audit/sink configures: the one that

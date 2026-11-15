@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // CleanupStaleRingFiles removes ring buffer files from dead/crashed processes

@@ -30,7 +30,7 @@ import (
 	"net"
 	"unsafe"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // feConnStats - what a fullproxy listener reports about its client
