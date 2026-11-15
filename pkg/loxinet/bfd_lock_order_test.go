@@ -66,6 +66,25 @@ func TestBFDAddDoesNotHoldGlobalMutexAcrossTable(t *testing.T) {
 	item := cmn.BFDMod{Instance: cmn.CIDefault, RemoteIP: net.ParseIP("127.0.0.2"),
 		SourceIP: net.ParseIP("127.0.0.1"), Interval: 1000000, RetryCount: 5}
 	added := make(chan error, 1)
+	joined, deleted := false, false
+	var addResult error
+	t.Cleanup(func() {
+		release()
+		if !joined {
+			select {
+			case addResult = <-added:
+				joined = true
+			case <-time.After(5 * time.Second):
+				t.Error("BFD add worker did not join")
+				return
+			}
+		}
+		if addResult == nil && !deleted {
+			if err := ch.Bs.BFDDeleteRemote(bfd.ConfigArgs{RemoteIP: item.RemoteIP.String()}); err != nil {
+				t.Errorf("join BFD lock-order fixture: %v", err)
+			}
+		}
+	})
 	go func() {
 		_, err := (&NetAPIStruct{}).NetBFDAdd(&item)
 		added <- err
@@ -88,10 +107,13 @@ func TestBFDAddDoesNotHoldGlobalMutexAcrossTable(t *testing.T) {
 	}
 
 	release()
-	if err := <-added; err != nil {
-		t.Fatal(err)
+	addResult = <-added
+	joined = true
+	if addResult != nil {
+		t.Fatal(addResult)
 	}
 	if _, err := (&NetAPIStruct{}).NetBFDDel(&item); err != nil {
 		t.Fatal(err)
 	}
+	deleted = true
 }

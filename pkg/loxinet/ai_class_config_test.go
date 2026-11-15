@@ -52,9 +52,9 @@ func TestAIObjectiveStrictResolve(t *testing.T) {
 // keyStoreFor stands a key store in for the process's until the test ends.
 func keyStoreFor(t *testing.T, svc *aikey.Service) {
 	t.Helper()
-	prev := mh.AIKeyService
-	mh.AIKeyService = svc
-	t.Cleanup(func() { mh.AIKeyService = prev })
+	prev := mh.AIKeyService.Load()
+	mh.AIKeyService.Store(svc)
+	t.Cleanup(func() { mh.AIKeyService.Store(prev) })
 }
 
 // The source of the class configuration, and the count of intervals served

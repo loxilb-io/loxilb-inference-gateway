@@ -95,7 +95,7 @@ func TestEppFailOpenStreamingKeepsChwblLoadBalanced(t *testing.T) {
 	addr, stop := epptest.Start(t, f, false)
 	defer stop()
 	serv := eppTestRuleSel(t, 28180, addr, cmn.EppFailureModeFailOpen, 3000, cmn.LbSelCHWBL, eps...)
-	ruleNum := mh.zr.Rules.GetLBRuleMarkByKey(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
+	ruleNum := eppTestRuleMark(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
 	if ruleNum == 0 {
 		t.Fatal("rule number not found")
 	}

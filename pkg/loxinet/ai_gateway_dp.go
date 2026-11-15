@@ -557,7 +557,7 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	// Guard: the key store must exist before data-plane calls arrive. The
 	// verdict itself is decided in keyStoreVerdict, which is plain Go and
 	// therefore unit-testable; only the reporting stays here.
-	us := mh.AIKeyService
+	us := mh.AIKeyService.Load()
 	if decision, errorCode, haveStore := keyStoreVerdict(us); !haveStore {
 		noKeyStoreOnce.Do(func() {
 			tk.LogIt(tk.LogCritical,
@@ -934,7 +934,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, userID *C.char, svc
 	modelStr := C.GoString(model)
 
 	var svc rateLimitService
-	if us := mh.AIKeyService; us != nil {
+	if us := mh.AIKeyService.Load(); us != nil {
 		svc = us
 	}
 
@@ -1339,7 +1339,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.c
 	}
 
 	var svc rateLimitService
-	if us := mh.AIKeyService; us != nil {
+	if us := mh.AIKeyService.Load(); us != nil {
 		svc = us
 	}
 
@@ -1439,7 +1439,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.c
 	}
 
 	var svc rateLimitService
-	if us := mh.AIKeyService; us != nil {
+	if us := mh.AIKeyService.Load(); us != nil {
 		svc = us
 	}
 

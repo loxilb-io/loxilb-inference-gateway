@@ -385,7 +385,7 @@ func (xs *XSync) ApiKeyInvalidate(ctx context.Context, m *ApiKeyInvalidation) (*
 		}
 	default:
 		tk.LogIt(tk.LogDebug, "RPC - ApiKeyInvalidate plane=aikey key=%s\n", m.KeyId)
-		mh.AIKeyService.ApplyInvalidation(aikey.KeyInvalidation{KeyHash: m.KeyHash, KeyID: m.KeyId})
+		mh.AIKeyService.Load().ApplyInvalidation(aikey.KeyInvalidation{KeyHash: m.KeyHash, KeyID: m.KeyId})
 	}
 	return &XSyncReply{Response: 0}, nil
 }

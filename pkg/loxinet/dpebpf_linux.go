@@ -521,7 +521,7 @@ type GPUMonitoringStatus struct {
 }
 
 // dpEbpfTicker - this ticker routine runs every DpEbpfLinuxTiVal seconds
-func dpEbpfTicker() {
+func dpEbpfTicker(dp *DpEbpfH) {
 
 	// Stack trace logger
 	defer func() {
@@ -543,22 +543,19 @@ func dpEbpfTicker() {
 	tLen := uint(len(tbls))
 
 	for {
-		if mh.dpEbpf == nil {
-			continue
-		}
 		select {
-		case <-mh.dpEbpf.stop:
+		case <-dp.stop:
 			return
-		case <-mh.dpEbpf.ctBcast:
+		case <-dp.ctBcast:
 			tk.LogIt(tk.LogDebug, "CT Bcast\n")
 			dpCTMapBcast()
 			continue
-		case <-mh.dpEbpf.trigGC:
+		case <-dp.trigGC:
 			C.llb_age_map_entries(C.LL_DP_CT_MAP)
 			C.llb_age_map_entries(C.LL_DP_FCV4_MAP)
-			mh.dpEbpf.gcTS = time.Now()
-		case <-mh.dpEbpf.ticker.C:
-			sel := mh.dpEbpf.tbN % tLen
+			dp.gcTS = time.Now()
+		case <-dp.ticker.C:
+			sel := dp.tbN % tLen
 
 			// For every tick collect stats for an eBPF map
 			// This routine caches stats in a local statsDB
@@ -569,15 +566,15 @@ func dpEbpfTicker() {
 			/* No need to fetch all stats in this fashion */
 			//C.llb_collect_map_stats(C.int(C.LL_DP_CT_STATS_MAP))
 			/* Per entry stats will be fetched in C.ll_ct_map_ent_has_aged */
-			if mh.dpEbpf.gcTiVal == 0 || time.Duration(time.Since(mh.dpEbpf.gcTS).Seconds()) > time.Duration(mh.dpEbpf.gcTiVal) {
+			if dp.gcTiVal == 0 || time.Duration(time.Since(dp.gcTS).Seconds()) > time.Duration(dp.gcTiVal) {
 				C.llb_age_map_entries(C.LL_DP_CT_MAP)
 				C.llb_age_map_entries(C.LL_DP_FCV4_MAP)
-				mh.dpEbpf.gcTS = time.Now()
+				dp.gcTS = time.Now()
 			}
 
 			// Hello, connect and initial requests run independently of this ticker.
 			dpCTMapChkUpdates()
-			mh.dpEbpf.tbN++
+			dp.tbN++
 		}
 	}
 }
@@ -787,7 +784,7 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 	ne.initL4TraceRingBuffer()
 	ne.initL4TraceConfig()
 
-	go dpEbpfTicker()
+	go dpEbpfTicker(ne)
 	for i := 0; i < mapNotifierWorkers; i++ {
 		go dpMapNotifierWorker(ne.stop, ne.ToMapCh)
 	}
@@ -3284,11 +3281,11 @@ func (e *DpEbpfH) DpPolMod(w *PolDpWorkQ) int {
 			unsafe.Pointer(dat))
 
 		if ret != 0 {
-			*w.Status = 1
+			w.setStatus(1)
 			return EbpfErrPolAdd
 		}
 
-		*w.Status = 0
+		w.setStatus(0)
 
 	} else if w.Work == DpRemove {
 		// Array map types need to be zeroed out first
@@ -3306,9 +3303,9 @@ func (e *DpEbpfH) DpPolMod(w *PolDpWorkQ) int {
 func (e *DpEbpfH) DpPolAdd(w *PolDpWorkQ) int {
 	ec := e.DpPolMod(w)
 	if ec != 0 {
-		*w.Status = DpCreateErr
+		w.setStatus(DpCreateErr)
 	} else {
-		*w.Status = 0
+		w.setStatus(0)
 		// shadow meter offload after eBPF success (non-blocking, non-fatal)
 		if mh.dpuMgr != nil {
 			mh.dpuMgr.ShadowPolAdd(w)

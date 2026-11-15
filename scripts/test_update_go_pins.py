@@ -118,6 +118,13 @@ class PinChecks(unittest.TestCase):
         path.write_text(path.read_text().replace("go 1.26.0", "go 1.25.0"))
         self.assertTrue(any("below vendored x/net" in e for e in pins.check(self.root, self.config)))
 
+    def test_local_loxilib_module_is_managed(self):
+        module = "third_party/loxilib/go.mod"
+        self.assertIn(module, pins.MODULES)
+        path = self.root / module
+        path.write_text(path.read_text().replace(self.config["x_net"], "v0.10.0"))
+        self.assertIn("stale x/net requirement: " + module, pins.check(self.root, self.config))
+
     def test_failed_go_update_does_not_publish_new_recipe_pins(self):
         path = self.root / "Dockerfile"
         before = path.read_bytes()

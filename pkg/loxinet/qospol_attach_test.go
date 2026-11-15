@@ -16,7 +16,10 @@
 
 package loxinet
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 // attached() is the datapath truth behind both the policy GET's "attached"
 // field and the loxilb_policer_attached gauge: a policer counts as attached
@@ -69,5 +72,33 @@ func TestPolEntryAttachedTruthTable(t *testing.T) {
 				t.Fatalf("attached() = %v, want %v", got, tc.attached)
 			}
 		})
+	}
+}
+
+// The datapath worker completes independently of the routine lock. Its status
+// publication must be safe while GET/metrics evaluate attachment truth.
+func TestPolicerConcurrentDatapathCompletion(t *testing.T) {
+	entry := &PolEntry{Sync: 1, PObjs: []PolObjInfo{{}}}
+	work := &PolDpWorkQ{Status: &entry.Sync}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10000; i++ {
+			work.setStatus(DpCreateErr)
+			work.setStatus(0)
+		}
+	}()
+	for i := 0; i < 10000; i++ {
+		entry.attached()
+	}
+	wg.Wait()
+	work.setStatus(DpCreateErr)
+	if entry.attached() {
+		t.Fatal("failed policer was reported attached")
+	}
+	work.setStatus(0)
+	if !entry.attached() {
+		t.Fatal("completed policer attachment was not published")
 	}
 }

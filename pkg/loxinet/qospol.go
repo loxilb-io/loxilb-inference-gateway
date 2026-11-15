@@ -19,6 +19,7 @@ package loxinet
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	tk "github.com/loxilb-io/loxilib"
 
@@ -75,7 +76,7 @@ type PolEntry struct {
 	Zone  *Zone
 	HwNum uint64
 	Stats PolStats
-	Sync  DpStatusT
+	Sync  uint32 // asynchronous datapath result; access atomically
 	PObjs []PolObjInfo
 }
 
@@ -152,7 +153,7 @@ func validatePolObj(pObj *cmn.PolObj) error {
 // the datapath. A policer with no attachment object shapes nothing and is
 // therefore not attached.
 func (p *PolEntry) attached() bool {
-	if p.Sync != 0 || len(p.PObjs) == 0 {
+	if atomic.LoadUint32(&p.Sync) != 0 || len(p.PObjs) == 0 {
 		return false
 	}
 	for idx := range p.PObjs {
@@ -390,7 +391,7 @@ func (P *PolH) PolDestructAll() {
 // PolTicker - a ticker routine for policers
 func (P *PolH) PolTicker() {
 	for _, p := range P.PolMap {
-		if p.Sync != 0 {
+		if atomic.LoadUint32(&p.Sync) != 0 {
 			p.DP(DpCreate)
 			for idx := range p.PObjs {
 				_, _ = p.PObjs[idx].PolObj2DP(DpCreate)
@@ -545,6 +546,9 @@ func (p *PolEntry) DP(work DpWorkT) int {
 	pwq.Cbs = p.Info.CommittedBlkSize
 	pwq.Ebs = p.Info.ExcessBlkSize
 	pwq.Status = &p.Sync
+	if work == DpCreate {
+		atomic.StoreUint32(&p.Sync, 1)
+	}
 	pwq.Name = p.Key.PolName
 
 	// resolve LB rule mark + VIP match info for DOCA meter pipe

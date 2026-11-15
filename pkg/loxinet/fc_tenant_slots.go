@@ -86,7 +86,7 @@ func (na *NetAPIStruct) NetFcTenantSlotsWarning(lm *cmn.LbRuleMod) string {
 	if lm == nil || fcTenantShareWanted(&lm.Serv) == 0 {
 		return ""
 	}
-	store := mh.AIKeyService
+	store := mh.AIKeyService.Load()
 	if store == nil {
 		return ""
 	}

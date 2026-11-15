@@ -1,0 +1,6 @@
+github.com/loxilb-io/sctp v0.0.0-20241217032220-301b591b9ced h1:XRB++1zTq2epcR8c8K+OK0+8RnEg/Rf6a73qs+rJ0fE=
+github.com/loxilb-io/sctp v0.0.0-20241217032220-301b591b9ced/go.mod h1:g3xKRvSWoeijv487mRGw3sLDacD9bC+wRQ4QebiafiQ=
+golang.org/x/net v0.62.0 h1:18ELalfM5+XNRwzM2nYqXsZQ9ByS1uhj2O/U7+5jqRY=
+golang.org/x/net v0.62.0/go.mod h1:WgDCOTH8iwtB66T4/GfI94AHo/hhdb7Hah9NDseQfiI=
+golang.org/x/sys v0.49.0 h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=
+golang.org/x/sys v0.49.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=

@@ -139,3 +139,6 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+// Keep the logger synchronization fix local until an upstream release includes it.
+replace github.com/loxilb-io/loxilib => ./third_party/loxilib

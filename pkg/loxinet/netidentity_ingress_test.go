@@ -853,18 +853,18 @@ func TestNetIdentityBindingAndSockmapRuleEitherOrder(t *testing.T) {
 // A binding stored on a gateway with no key store says so: the requests it
 // gives a tenant would be refused.
 func TestNetIdentityWarnsWithoutAKeyStore(t *testing.T) {
-	savedH, savedK := mh.NetIdentity, mh.AIKeyService
-	t.Cleanup(func() { mh.NetIdentity, mh.AIKeyService = savedH, savedK })
+	savedH, savedK := mh.NetIdentity, mh.AIKeyService.Load()
+	t.Cleanup(func() { mh.NetIdentity = savedH; mh.AIKeyService.Store(savedK) })
 	h, _ := newNidHolder(nidIfs{})
 	mh.NetIdentity = h
 	pm := nidCIDR("a", "t", []string{"10.1.0.0/16"}, nidSvcA)
 	mustAdd(t, h, pm)
 	na := &NetAPIStruct{}
-	mh.AIKeyService = nil
+	mh.AIKeyService.Store(nil)
 	if got := na.NetAINetIdentityWarning(pm); got != netidNoKeyStoreWarning {
 		t.Errorf("no key store: %q", got)
 	}
-	mh.AIKeyService = &aikey.Service{}
+	mh.AIKeyService.Store(&aikey.Service{})
 	if got := na.NetAINetIdentityWarning(pm); got != "" {
 		t.Errorf("with a key store: %q", got)
 	}

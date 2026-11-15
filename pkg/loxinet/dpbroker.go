@@ -23,6 +23,7 @@ import (
 	"os"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -226,12 +227,18 @@ type PolDpWorkQ struct {
 	Ebs          uint64
 	Color        bool
 	Srt          bool
-	Status       *DpStatusT
+	Status       *uint32
 	DscpRemark   uint8  // DSCP remark value for YELLOW traffic (if HW supports it)
 	TargetLBMark int    // target LB rule's HwNum for policer-to-LB association
 	MeterDstIP   uint32 // meter pipe match dst IP (network byte order)
 	MeterDstPort uint16 // meter pipe match dst port (network byte order)
 	MeterProto   uint8  // meter pipe match protocol (6=TCP, 17=UDP, 0=any)
+}
+
+// setStatus publishes policer completion to management-plane readers. Other
+// work queues retain their existing status contracts.
+func (w *PolDpWorkQ) setStatus(status DpStatusT) {
+	atomic.StoreUint32(w.Status, uint32(status))
 }
 
 // PeerDpWorkQ - work queue entry for peer association

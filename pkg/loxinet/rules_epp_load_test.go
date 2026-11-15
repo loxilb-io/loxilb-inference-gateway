@@ -28,10 +28,10 @@ func eppTestRuleSel(t *testing.T, port uint16, eppAddr, failureMode string, time
 		ServIP: eppTestVIP, ServPort: port, Proto: "tcp", Mode: cmn.LBModeFullProxy, Sel: sel,
 		EppEndpoint: eppAddr, EppFailureMode: failureMode, EppTimeoutMs: timeoutMs, EppPlaintext: true,
 	}
-	if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, eps); err != nil {
+	if _, err := eppTestAddRule(serv, eps); err != nil {
 		t.Fatalf("add rule on :%d: %v", port, err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(serv) })
+	t.Cleanup(func() { eppTestDeleteRule(serv) })
 	return serv
 }
 
@@ -90,7 +90,7 @@ func TestEppPinHoldsChwblLoadUnit(t *testing.T) {
 			addr, stop := epptest.Start(t, f, false)
 			defer stop()
 			serv := eppTestRuleSel(t, 28170, addr, cmn.EppFailureModeFailClose, 3000, sel.sel, epA, epB)
-			ruleNum := mh.zr.Rules.GetLBRuleMarkByKey(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
+			ruleNum := eppTestRuleMark(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
 			if ruleNum == 0 {
 				t.Fatal("rule number not found")
 			}
@@ -191,7 +191,7 @@ func TestEppBackendCloseReleasesChwblUnitOnce(t *testing.T) {
 	addr, stop := epptest.Start(t, f, false)
 	defer stop()
 	serv := eppTestRuleSel(t, 28172, addr, cmn.EppFailureModeFailClose, 3000, cmn.LbSelCHWBL, epA, epB)
-	ruleNum := mh.zr.Rules.GetLBRuleMarkByKey(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
+	ruleNum := eppTestRuleMark(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
 	if ruleNum == 0 {
 		t.Fatal("rule number not found")
 	}

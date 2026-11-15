@@ -36,7 +36,7 @@ func aiObjectiveStrictResolve(eRule *ruleEnt, serv *cmn.LbServiceArg) bool {
 // from: the key store, the last-known-good file, or nowhere (no store, or
 // nothing read yet).
 func aiClassConfigSource() string {
-	svc := mh.AIKeyService
+	svc := mh.AIKeyService.Load()
 	if svc == nil {
 		return cmn.AIClassSourceNone
 	}
@@ -47,7 +47,7 @@ func aiClassConfigSource() string {
 // aiClassStoreHealth fills the key store's reachability into a read-back:
 // nothing without a key store.
 func aiClassStoreHealth(eff *cmn.FcEffectiveArg) {
-	svc := mh.AIKeyService
+	svc := mh.AIKeyService.Load()
 	if svc == nil {
 		return
 	}
@@ -61,7 +61,7 @@ func aiClassStoreHealth(eff *cmn.FcEffectiveArg) {
 // aiClassLKGIntervals is what loxilb_ai_class_config_lkg_intervals_total
 // reports: the refresh intervals served from the last-known-good file.
 func aiClassLKGIntervals() uint64 {
-	svc := mh.AIKeyService
+	svc := mh.AIKeyService.Load()
 	if svc == nil {
 		return 0
 	}

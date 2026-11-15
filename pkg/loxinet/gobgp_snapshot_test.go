@@ -89,7 +89,11 @@ func TestSnapshotBFDConfigurationVisibleBeforeAddReturns(t *testing.T) {
 	if _, err := ch.CIBFDSessionAdd(item); err != nil {
 		t.Fatal(err)
 	}
-	defer ch.CIBFDSessionDel(item)
+	t.Cleanup(func() {
+		if _, err := ch.CIBFDSessionDel(item); err != nil {
+			t.Errorf("join snapshot BFD fixture: %v", err)
+		}
+	})
 	got, err := ch.CIBFDSessionGet()
 	if err != nil || len(got) != 1 {
 		t.Fatalf("acknowledged BFD configuration missing: %+v %v", got, err)
