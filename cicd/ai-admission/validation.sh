@@ -1128,6 +1128,35 @@ chk OS13 "its body still the backend's object"                 rate_limit_error 
 # The strip does not depend on the admission headers being on (:PORT_H1 is off).
 be admin/echo-spoof-headers >/dev/null
 chk OS14 "on a pool without admission headers the claim is removed too" "200 0" "$(os_send spoofoff "$H1_URL") $(mark_lines "$DOS/spoofoff.hdr")"
+# IC: an interim head and the final head in one read. The backend writes
+# "100 Continue" and its own head in one segment, the final head claiming
+# X-Loxilb-Refusal-Stage: the family is removed from the final head as it is
+# when that head comes alone (rows OS8, OS14), on a pool with admission
+# headers and on one without. __joined/<nonce> is the backend's account of
+# the one write; the interim head the client receives shows it was relayed.
+ic_seen() { be "__joined/capOS$1" | jq -r '"\(.interim) \(.writes)"'; }
+for ic in "xh $XH_URL" "h1 $H1_URL"; do
+  read -r t u <<< "$ic"
+  be admin/echo-spoof-headers >/dev/null
+  chk "IC-$t-a" "the backend is armed to join 100 Continue and its next head in one write" interim-joined "$(be admin/interim-joined | jq -r '.armed // "refused"')"
+  chk "IC-$t-b" "the answer is relayed (:$t)"                    200 "$(os_send "ic$t" "$u")"
+  chk "IC-$t-c" "the two heads left the backend in one write"    "1 1" "$(ic_seen "ic$t")"
+  chk "IC-$t-d" "the client received the interim head, once"     1 "$(grep -c '^HTTP/1.1 100' "$DOS/ic$t.hdr" 2>/dev/null)"
+  chk "IC-$t-e" "no X-Loxilb-Refusal-* reaches the client, on either head" 0 "$(mark_lines "$DOS/ic$t.hdr")"
+  chk "IC-$t-f" "the body is the backend's, whole"               "cmpl-cap ok 15" "$(jq -r '"\(.id) \(.choices[0].message.content) \(.usage.total_tokens)"' "$DOS/ic$t.body" 2>/dev/null)"
+done
+chk IC-xh-g "on the pool with admission headers: the gateway's values, one of each" "3 1 0 $FC_XH_MAX" "$(xh_lines "$DOS/icxh.hdr") $(xh_vals "$DOS/icxh.hdr")"
+# The same two heads in two writes: the final head, whole, is a read of its own.
+for ic in "xh $XH_URL" "h1 $H1_URL"; do
+  read -r t u <<< "$ic"
+  be admin/echo-spoof-headers >/dev/null
+  chk "IC2-$t-a" "the backend is armed to send 100 Continue and its next head 150 ms apart" interim-apart "$(be admin/interim-apart | jq -r '.armed // "refused"')"
+  chk "IC2-$t-b" "the answer is relayed (:$t)"                   200 "$(os_send "ia$t" "$u")"
+  chk "IC2-$t-c" "the two heads left the backend in two writes"  "1 2" "$(ic_seen "ia$t")"
+  chk "IC2-$t-d" "the client received the interim head, once"    1 "$(grep -c '^HTTP/1.1 100' "$DOS/ia$t.hdr" 2>/dev/null)"
+  chk "IC2-$t-e" "no X-Loxilb-Refusal-* reaches the client"      0 "$(mark_lines "$DOS/ia$t.hdr")"
+  chk "IC2-$t-f" "the body is the backend's, whole"              "cmpl-cap ok 15" "$(jq -r '"\(.id) \(.choices[0].message.content) \(.usage.total_tokens)"' "$DOS/ia$t.body" 2>/dev/null)"
+done
 # An outage is not a refusal: no stage, ever. It names the request like
 # every answer the gateway writes: the 502 for an endpoint that refuses the
 # connection (written from the connect event), the 502 for a backend that
@@ -1234,6 +1263,32 @@ chk HR3 "one X-Session-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Session-I
 chk HR4 "one X-Trace-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Trace-ID: capHR-trace' | wc -w | tr -d ' ')"
 chk HR5 "one X-Request-Id does not: both backends serve" "8080 8081" "$(hr_ports 12 -H 'X-Request-Id: capHR-rid')"
 chk_has HR6 "the row's rule is deleted" Success "$(lb_delete $PORT_HR | grep -o Success | head -n1)"
+
+# ── NR: a listener kept after its last rule was deleted answers no_route ────
+# :PORT_HR has no rule now and its listener stays (a client gets an HTTP
+# answer, not a refused connection). A connection made now is answered 503
+# no_route, with the stage `route` once and the request's ID, like every
+# other no_route. It leaves no audit record and no request count: the
+# connection has no AI service (it takes one from its listener's rule when it
+# is accepted, and there is no rule). That is the documented exception to
+# "every stage header has its deny record" (doc 27); the row holds the answer
+# and the absence as they are, so a change to either is seen.
+echo ""
+echo "NR: the 503 no_route of a kept listener names its stage and the request; no record (documented)"
+DNR=$(mktemp -d)
+sleep 2
+nr_den0=$(denied 503); nr_cmp0=$(completed 503)
+nr_code=$($hexec l3h1 curl -s -o "$DNR/kept.body" -D "$DNR/kept.hdr" -w '%{http_code}' --max-time 10 \
+  "${HDRS[@]}" -H "X-Request-Id: capNRkept" -d "$BODY" "$HR_URL" 2>/dev/null)
+chk NR1 "a request on the listener kept after its last rule was deleted is answered 503" 503 "$nr_code"
+chk NR2 "naming it: no_route"                                  no_route "$(jq -r '.error // "unreadable"' "$DNR/kept.body" 2>/dev/null)"
+chk NR3 "one X-Loxilb-Refusal-Stage line: route"               "1 route" "$(mark_lines "$DNR/kept.hdr") $(mark_stage "$DNR/kept.hdr")"
+chk NR4 "and the request's own X-Request-Id, once"             "1 capNRkept" "$(rid_lines "$DNR/kept.hdr") $(mark_rid "$DNR/kept.hdr")"
+sleep 12   # one collector pull, and the trail's flush
+chk NR5 "no audit record of any type under that ID (a listener without a rule has no AI service)" 0 "$(trail | jq -c 'select(.request_id=="capNRkept")' | wc -l | tr -d ' ')"
+chk NR6 "not counted with the refused requests (denied, status 503: +0)" 0 "$(( $(denied 503) - nr_den0 ))"
+chk NR7 "nor with the completed ones (completed, status 503: +0)" 0 "$(( $(completed 503) - nr_cmp0 ))"
+rm -rf "$DNR"
 
 # ── OBJ: the objective a request asks for and may not use ───────────────────
 # Two objectives, two tenants (one may name obj-gold, one may not), a key
