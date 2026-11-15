@@ -372,7 +372,7 @@ J_RESP=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
   "https://$VIP:2030/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "X-Request-Id: $RUN-leg-j-1" \
-  -H "Expect:" --data-binary @/tmp/leg-j.json \
+  -H "Expect:" --data-binary @/tmp/leg-j.json -D /tmp/leg-j.hdr \
   -w "\nHTTPSTATUS:%{http_code}" 2>&1)
 J_CURL_RC=$?
 [ "$J_CURL_RC" = 0 ]
@@ -398,6 +398,30 @@ $(eplog l3ep2 sglang-prefill2.log)
 $(eplog l3ep3 sglang-decode3.log)"
 ! echo "$J_ALL_LOGS" | grep -q "$RUN-leg-j-1"
 check "J3: no engine observed the oversize request (refused pre-dispatch)" $?
+
+# The refusal is the gateway's own, recorded at stage `framing`: like every
+# refusal it writes, the answer names that stage and the request's own ID.
+j_hdr_count() { $dexec l3h1 cat "$1" 2>/dev/null | tr -d '\r' | grep -ci "^$2\$"; }
+[ "$(j_hdr_count /tmp/leg-j.hdr 'x-loxilb-refusal-stage: framing')" = "1" ]
+check "J4: the 413 names its stage once (X-Loxilb-Refusal-Stage: framing)" $?
+[ "$(j_hdr_count /tmp/leg-j.hdr "x-request-id: $RUN-leg-j-1")" = "1" ] &&
+  [ "$(j_hdr_count /tmp/leg-j.hdr 'x-request-id: .*')" = "1" ]
+check "J5: and the request's own X-Request-Id, once" $?
+
+# A body that is not JSON is refused the same way, 415, before any dispatch.
+JM_RESP=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
+  "https://$VIP:2030/v1/chat/completions" \
+  -H "Content-Type: text/plain" \
+  -H "X-Request-Id: $RUN-leg-j-2" \
+  --data-binary 'not json' -D /tmp/leg-jm.hdr \
+  -w "\nHTTPSTATUS:%{http_code}" 2>&1)
+JM_ST=$(status_of "$JM_RESP")
+[ "$JM_ST" = "415" ] && printf '%s\n' "$JM_RESP" | sed '/^HTTPSTATUS:/d' | python3 -c 'import json,sys; b=json.load(sys.stdin); sys.exit(0 if b.get("error")=="pd_body_unsupported_media" else 1)'
+check "J6: a text/plain body refused 415 pd_body_unsupported_media (got $JM_ST)" $?
+[ "$(j_hdr_count /tmp/leg-jm.hdr 'x-loxilb-refusal-stage: framing')" = "1" ] &&
+  [ "$(j_hdr_count /tmp/leg-jm.hdr "x-request-id: $RUN-leg-j-2")" = "1" ] &&
+  [ "$(j_hdr_count /tmp/leg-jm.hdr 'x-request-id: .*')" = "1" ]
+check "J7: it names its stage and the request's own X-Request-Id, once each" $?
 
 ############################################################################
 echo "Leg K: consecutive prefill 5xx -> origin-error demotion (breaker opens)"

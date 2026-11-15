@@ -53,6 +53,20 @@ Endpoints:
                               byte a write. The body follows the last piece as
                               usual. One answer, then back to normal; the arm
                               can be combined with the two above
+  GET  /admin/interim-joined  the NEXT inference answer (any port) leaves the
+                              backend as "HTTP/1.1 100 Continue" and its own
+                              head in ONE write: an interim head and the final
+                              head in one segment. The body follows as usual.
+                              One answer, then back to normal; it can be
+                              combined with echo-spoof-headers, and not with
+                              split-head (the split wins)
+  GET  /admin/interim-apart   the same two heads in TWO writes, 150 ms apart:
+                              the interim head in a read of its own, the
+                              final head whole in the next. One answer
+  GET  /__joined/<nonce>      how the head of the last answer to that nonce
+                              left when it was joined or sent apart:
+                              {"interim": 1, "writes": 1 or 2, "bytes": <n>};
+                              zeros when it was neither
   GET  /__split/<nonce>       how the head of the last answer to that nonce
                               left: {"pieces": <writes>, "head_bytes": <n>},
                               0 pieces when it was not split
@@ -137,6 +151,8 @@ METRICS_ON = True    # /metrics answers; off: 503, the scrape fails
 ARM_429_OBJECT = False   # /admin/answer-429-object: the next inference request
 ARM_SPOOF_HEADERS = False  # /admin/echo-spoof-headers: the next inference answer
 ARM_SPLIT_HEAD = None    # /admin/split-head/<n>/<delay_ms>: (n, delay_ms) for the next inference answer
+ARM_INTERIM_JOINED = False  # /admin/interim-joined: the next inference answer
+JOINED_SEEN = {}         # nonce -> how the joined head of its last answer left the backend
 SPLIT_SEEN = {}          # nonce -> how the head of its last answer left the backend
 SPLIT_PIECES_MAX = 64    # <n> above this is refused: the arm is for a few cuts or for every byte
 SPLIT_DELAY_MAX_MS = 2000
@@ -196,6 +212,29 @@ class Handler(BaseHTTPRequestHandler):
         # here. An interim head (100 Continue) is never the armed answer.
         split = getattr(self, "split_head", None)
         buf = getattr(self, "_headers_buffer", None)
+        if (getattr(self, "interim_joined", False) and not split and buf
+                and not buf[0].startswith(b"HTTP/1.1 1")):
+            # An interim head and the final head in one write, one segment.
+            apart = self.interim_joined == "apart"
+            self.interim_joined = False
+            interim = b"HTTP/1.1 100 Continue\r\n\r\n"
+            head = b"".join(buf)
+            self._headers_buffer = []
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if apart:
+                self.wfile.write(interim)
+                self.wfile.flush()
+                time.sleep(0.15)
+                self.wfile.write(head)
+            else:
+                self.wfile.write(interim + head)
+            self.wfile.flush()
+            nonce = self.headers.get("X-Test-Nonce", "") if self.headers else ""
+            if nonce:
+                with LOCK:
+                    JOINED_SEEN[nonce] = {"interim": 1, "writes": 2 if apart else 1,
+                                          "bytes": len(interim) + len(head)}
+            return
         if not split or not buf or buf[0].startswith(b"HTTP/1.1 1"):
             super().flush_headers()
             return
@@ -287,8 +326,9 @@ class Handler(BaseHTTPRequestHandler):
         self.spoof = False
         self.spoof_stage = False
         self.split_head = None
+        self.interim_joined = False
         self.head_pad = 0
-        global WAITING, METRICS_ON, ARM_429_OBJECT, ARM_SPOOF_HEADERS, ARM_SPLIT_HEAD
+        global WAITING, METRICS_ON, ARM_429_OBJECT, ARM_SPOOF_HEADERS, ARM_SPLIT_HEAD, ARM_INTERIM_JOINED
         path = urlparse(self.path).path
         nonce = self.headers.get("X-Test-Nonce", "")
         if path == "/health":
@@ -341,6 +381,16 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 ARM_SPLIT_HEAD = (n, delay_ms)
             self._send_json({"armed": "split-head", "pieces": n, "delay_ms": delay_ms})
+            return
+        if path in ("/admin/interim-joined", "/admin/interim-apart"):
+            with LOCK:
+                ARM_INTERIM_JOINED = "apart" if path.endswith("apart") else True
+            self._send_json({"armed": path[len("/admin/"):]})
+            return
+        if path.startswith("/__joined/"):
+            n = path[len("/__joined/"):]
+            with LOCK:
+                self._send_json({"nonce": n, **JOINED_SEEN.get(n, {"interim": 0, "writes": 0, "bytes": 0})})
             return
         if path.startswith("/__split/"):
             n = path[len("/__split/"):]
@@ -423,13 +473,15 @@ class Handler(BaseHTTPRequestHandler):
         self.head_pad = min(int(self.headers.get("X-Test-Head-Pad") or 0), 64000)
         # The admin arms are taken by the next inference request, whichever
         # port it arrives on, and by that one only.
-        global ARM_429_OBJECT, ARM_SPOOF_HEADERS, ARM_SPLIT_HEAD
+        global ARM_429_OBJECT, ARM_SPOOF_HEADERS, ARM_SPLIT_HEAD, ARM_INTERIM_JOINED
         with LOCK:
             answer_429, ARM_429_OBJECT = ARM_429_OBJECT, False
             spoof_next, ARM_SPOOF_HEADERS = ARM_SPOOF_HEADERS, False
             self.split_head, ARM_SPLIT_HEAD = ARM_SPLIT_HEAD, None
+            self.interim_joined, ARM_INTERIM_JOINED = ARM_INTERIM_JOINED, False
             if nonce:
                 SPLIT_SEEN.pop(nonce, None)
+                JOINED_SEEN.pop(nonce, None)
         self.spoof_stage = spoof_next
         if spoof_next:
             self.spoof = True

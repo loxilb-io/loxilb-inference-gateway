@@ -89,6 +89,22 @@ inference-gateway delta is enumerated in detail.
   `X-Request-Id`, the request's own, where a picker that set the header left
   two (and an immediate answer longer than 1024 bytes carried none of the
   gateway's).
+- AI gateway, prefill/decode rules: seven refusals the prefill/decode code
+  writes before it sends anything to an engine (`400 pd_pipelining_unsupported`,
+  `415 pd_body_unsupported_media`, `413 pd_body_too_large`,
+  `413 pd_body_unbufferable`, `400 invalid_json_body`, `500 pd_prepare_failed`,
+  `503 pd_sg_oversize_unroutable`) now carry `X-Loxilb-Refusal-Stage: framing`
+  and the request's own `X-Request-Id` when it has one that can be echoed,
+  like every other refusal of that stage.
+  They carried neither. `400 pd_pipelining_unsupported` carries the stage
+  alone: it answers a connection with two requests in its buffer, and the
+  gateway does not name one of them. Status, body and audit record are
+  unchanged.
+- AI gateway, HTTP/1.1: a backend's `X-Loxilb-Refusal-*` fields are now also
+  removed from the final response head when the backend sends an interim head
+  (`100 Continue`, another `1xx`) and the final head in one read. Only the
+  interim head was cleaned, so a backend could put `X-Loxilb-Refusal-Stage` on
+  an answer that way. Nothing after a `101` is touched.
 
 ### Changed
 
@@ -101,8 +117,7 @@ inference-gateway delta is enumerated in detail.
   stage of its `sec.ai.deny` record (`auth`, `conflict`, `ratelimit`, `reserve`,
   `capacity`, `objective`, `route`, `framing`, `security`), or `queue` for a
   request that ended while it waited for capacity. Only `capacity` and `queue`
-  are congestion. Refusals written by the prefill/decode code itself stay
-  unmarked. Additive: no existing header, `error` code, body field, status or
+  are congestion. Additive: no existing header, `error` code, body field, status or
   audit field changes. See
   [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md).
 
