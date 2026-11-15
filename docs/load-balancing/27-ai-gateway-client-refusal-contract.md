@@ -41,7 +41,8 @@ unknown, and do not feed it to the congestion back-off.
 
 The same rule read from the header, without the code table: **`X-Loxilb-Refusal-Stage: capacity` or `queue` is
 congestion; any other value is not; no such header means the gateway did not refuse the request before dispatch**
-— it is a backend's answer, an outage, or one of the few refusals listed as unmarked below.
+— it is a backend's answer, or a gateway answer this page lists without a stage (the outages, and what the
+prefill/decode path writes beyond its seven framing refusals).
 
 ### The two headers on a gateway-written answer
 
@@ -50,7 +51,7 @@ neither; the `error` code and the tables below classify its refusals.
 
 | Header | Meaning | Present |
 |---|---|---|
-| `X-Loxilb-Refusal-Stage: <stage>` | the gateway refused this request **before any byte of it reached a backend**. The value is the Stage column of the refusal's row — the `stage` of its `sec.ai.deny` record — or `queue` for a request that ended while it waited for capacity (the rows written by the queue reaper; their audit record is at stage `capacity`) | on every refusal on this page, except the ones listed under "Unmarked" |
+| `X-Loxilb-Refusal-Stage: <stage>` | the gateway refused this request **before any byte of it reached a backend**. The value is the Stage column of the refusal's row — the `stage` of its `sec.ai.deny` record — or `queue` for a request that ended while it waited for capacity (the rows written by the queue reaper; their audit record is at stage `capacity`) | on every refusal on this page |
 | `X-Request-Id: <id>` | on an answer the gateway wrote: **the ID of that request**, the one the client sent or the one the gateway minted for it | on a gateway-written answer whenever the request has an ID of its own at that moment; on refusals and on outages alike |
 
 On HTTP/2 the two are the fields `x-loxilb-refusal-stage` and `x-request-id` of the response HEADERS.
@@ -69,8 +70,9 @@ with stage `auth` or `ratelimit`: the gateway refused before dispatch, and it is
   being read — three early HTTP/2 refusals carry the stage alone;
 - the ID cannot be one header value (a control byte, a blank at either end): it is left out, never rewritten;
 - the queue endings' plain form (below, under the capacity stage);
-- the answers listed under "Unmarked" and everything else the prefill/decode path writes (its leg-failure and
-  timeout answers), the reaper's Endpoint-Picker timeout, the in-stream events, and an L7-policy redirect;
+- everything else the prefill/decode path writes — its dispatch-failure, leg-failure and timeout answers
+  (`503 pd_pool_unavailable`, `502 pd_decode_backend_died` among them) — the reaper's Endpoint-Picker timeout,
+  the in-stream events, and an L7-policy redirect;
 - the gateway cannot tell which request the answer belongs to (HTTP/1.1: a client that pipelines, or a
   connection whose response accounting has fallen behind; below).
 
@@ -95,15 +97,21 @@ connection then ends before that request is handed on. The gateway cannot be sur
 an absent ID is preferred to another request's. Read a missing `X-Request-Id` on a `502 backend_unreachable` as
 "not named", not as "the request had none".
 
-**Unmarked: refusals with neither header.** The refusals written by the prefill/decode code itself — the six
-`pd_*` codes and the P/D `invalid_json_body` of the framing stage — carry no stage and no request ID; classify
-them by `error`. `pd_overloaded` and `pd_admission_park_timeout` are written elsewhere and carry both (stage
-`capacity` and `queue`).
+**The prefill/decode refusals are marked like the others.** The refusals the prefill/decode code writes before
+it sends anything to an engine — the six `pd_*` codes and the P/D `invalid_json_body` of the framing stage —
+carry `X-Loxilb-Refusal-Stage: framing` and, when the request has an ID that can be echoed, its
+`X-Request-Id`; their bodies are what they were. `400 pd_pipelining_unsupported` carries the stage alone: it is
+written when a second request is already in the connection's buffer behind the one being answered, and the
+gateway does not put either request's ID on it (pipelining, above).
+(Before this they carried neither header and had to be classified by `error`.) `pd_overloaded` and
+`pd_admission_park_timeout` carry stage `capacity` and `queue`.
 
 **One stage header without a deny record.** A listener kept open after its last rule was deleted answers
-`503 no_route` with `X-Loxilb-Refusal-Stage: route`, like every other `no_route`, but the gateway records it as
-an outage completion, not as a `sec.ai.deny` at `route`. It is the only answer whose stage header has no deny
-record of that stage behind it.
+`503 no_route` with `X-Loxilb-Refusal-Stage: route` and the request's `X-Request-Id`, like every other
+`no_route`. The gateway records nothing for it: a connection gets its AI service from the listener's rule, this
+listener has none, and so the request has no `sec.ai.deny` record, no completion record, and is in neither
+`loxilb_ai_requests_total{outcome="denied"}` nor `{outcome="completed"}`. It is the only answer whose stage
+header has no deny record of that stage behind it; the gateway's log has the line (`[PROXY_NO_ROUTE]`).
 
 **A backend cannot send the stage.** `X-Loxilb-Refusal-*` fields in a backend's response are removed from every
 relayed response head, on every service, whatever `fc_expose_headers` says. On HTTP/1.1 a head that arrives in
@@ -114,8 +122,12 @@ admitted response that takes the admission or class headers, up to 16 KiB. The r
   grows past 16 KiB (counted, `loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"}`), and one on a
   response that takes no admission or class headers (a rule without `fc_expose_headers`, a request the gate does
   not count);
-- an interim `1xx` and the final head arriving in one read: the `1xx` is cleaned, the final head is not;
 - HTTP/2 trailers are not a head and pass.
+
+Interim heads do not shield the final one: when a backend sends `100 Continue` (or another `1xx`) and the final
+head in one read, both are cleaned, and a final head that arrives whole in a read of its own after the interim
+one is cleaned as always. A final head cut across reads behind an interim head is the first residual above.
+Nothing after a `101` is looked at: what follows it is not HTTP.
 
 Backends are operator-controlled.
 
@@ -135,7 +147,7 @@ on as they came, then the close, as before.
 | Retry-safe | `yes` = the identical request may be sent again after `Retry-After`; `no` = it will be refused again until something else changes; `cond.` = see the note in the row |
 | `Retry-After` | present or not, and its value (always seconds) |
 | Body | the fields beside `error` |
-| Headers | gateway headers beside `Content-Type: application/json` and the two headers above (`X-Loxilb-Refusal-Stage`, `X-Request-Id`), which every row carries unless "Unmarked" lists it; `none` means none beside those |
+| Headers | gateway headers beside `Content-Type: application/json` and the two headers above (`X-Loxilb-Refusal-Stage`, `X-Request-Id`), which every row carries (the ID under the conditions above; `pd_pipelining_unsupported` never); `none` means none beside those |
 | Connection | what happens to an HTTP/1.1 connection (an HTTP/2 refusal always ends only its stream) |
 | H1 / H2 | differences between HTTP/1.1 and HTTP/2 |
 | Audit | the record on the audit trail: every refusal is stream `data`, class `security`, event `sec.ai.deny`, with `data.stage` = the Stage column and `data.decision` = the `error` code unless the row says otherwise; `outcome.reason` is given in the row |
@@ -257,9 +269,10 @@ These `503`s are not congestion: waiting does not create a pool or a rule.
 | `503` | `pd_sg_oversize_unroutable` | framing | P/D path | none | no (the body exceeds what a prefill/decode rule can inspect) | absent | `detail` | none | closed; no `Content-Length` | HTTP/1.1 only | reason `admission` | `sglang-pd-disagg` |
 
 The six `pd_*` codes and the P/D `invalid_json_body` in this table are written by the prefill/decode code
-itself (`pd_check_request_body`, `pd_prepare_failed`, `pd_sg_oversize_reject`). These are the refusals that carry
-neither `X-Loxilb-Refusal-Stage` nor `X-Request-Id` ("Unmarked", above); the two P/D codes of the capacity stage
-(`pd_overloaded`, `pd_admission_park_timeout`) are written elsewhere and carry both.
+itself (`pd_check_request_body`, `pd_prepare_failed`, `pd_sg_oversize_reject`). They carry
+`X-Loxilb-Refusal-Stage: framing` and the request's `X-Request-Id` like the other rows of this stage
+(`pd_pipelining_unsupported`: the stage alone), and so do
+the two P/D codes of the capacity stage (`pd_overloaded`, `pd_admission_park_timeout`), with their own stage.
 
 ### Stage `security` — a content scanner blocked the request
 
@@ -286,7 +299,7 @@ request still has its ID (the rules above), on HTTP/1.1 and HTTP/2, and no stage
 | `503` | `no_healthy_backend` | every endpoint of the pool (or of the route's subset) is down or circuit-broken | none | cond. — safe to send again, but only an endpoint coming back changes the answer; no `Retry-After` |
 | `503` | `service_unavailable` | every endpoint refused the connection | none | as above |
 | `502` (HTTP/1.1), `503` (HTTP/2) | `backend_unreachable` | the chosen endpoint, and every failover candidate, did not accept the connection | none | as above |
-| `503` | `no_route` with a `detail` naming a listener "kept open after its last rule was deleted" | the rule was deleted; see [doc 26](26-endpoint-picker-epp.md). **Carries `X-Loxilb-Refusal-Stage: route`** although it is recorded as an outage completion: the one stage header with no deny record | none | no, until a rule takes the address |
+| `503` | `no_route` with a `detail` naming a listener "kept open after its last rule was deleted" | the rule was deleted; see [doc 26](26-endpoint-picker-epp.md). **Carries `X-Loxilb-Refusal-Stage: route`** although the gateway writes no record for it (no rule, so no AI service to record under): the one stage header with no deny record | none | no, until a rule takes the address |
 | `503` | `epp_unavailable` | the rule's Endpoint Picker did not decide in time | none | cond. |
 | `429` | `epp_evicted` | the Endpoint Picker shed the request | none | cond. — the picker's decision, not the capacity gate's; no `Retry-After` |
 | the picker's | the picker's own immediate response, with the picker's headers and one `X-Request-Id`, the request's own (a picker's own `X-Request-Id` is left out in its favour; it stays only when the request has no ID that can be echoed) | an Endpoint Picker answered instead of choosing an endpoint | none | as the picker says |
