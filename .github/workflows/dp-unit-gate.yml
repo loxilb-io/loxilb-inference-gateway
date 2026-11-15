@@ -92,6 +92,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_stripinterim
 
+      - name: "test_resp_strip_api_key_interim (a backend's X-Api-Key removed from the final head when interim heads precede it in one read, on a service that declares api_key_auth; never past a final head or a 101; from the source)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_stripapikey
+
       - name: "test_pd_refusal, test_pd_sg_refusal_mark (the native P/D refusals carry X-Loxilb-Refusal-Stage and the request's X-Request-Id, the text otherwise byte-identical; the real writer, and the SGLang oversize refusal from the source)"
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_pd_refusal test_pdsgmark

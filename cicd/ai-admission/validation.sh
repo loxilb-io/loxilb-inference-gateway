@@ -1157,6 +1157,38 @@ for ic in "xh $XH_URL" "h1 $H1_URL"; do
   chk "IC2-$t-e" "no X-Loxilb-Refusal-* reaches the client"      0 "$(mark_lines "$DOS/ia$t.hdr")"
   chk "IC2-$t-f" "the body is the backend's, whole"              "cmpl-cap ok 15" "$(jq -r '"\(.id) \(.choices[0].message.content) \(.usage.total_tokens)"' "$DOS/ia$t.body" 2>/dev/null)"
 done
+# AK: X-Api-Key is the gateway's credential header on a service that
+# declares api_key_auth: a backend's copy is removed from its response head
+# (sp_resp_strip_api_key), also when the head follows an interim head in the
+# same read. :PORT_AK is the row's own rule, api_key_auth declared
+# "disabled" (strip only, no key store), created and deleted by the row. The
+# backend echoes X-Test-Echo-Api-Key as X-Api-Key of its own. AK-a holds
+# that the backend does send it (on :PORT_H1, which declares nothing, the
+# header is the service's own and passes); AK-b that it is removed from a
+# final head alone; AK-c behind "100 Continue" in one write; AK-d the same
+# two heads in two writes.
+ak_lines() { grep -ci '^x-api-key:' "$1" 2>/dev/null || true; }
+AK_URL="http://$VIP:$PORT_AK/v1/chat/completions"
+AKH=(-H 'X-Test-Echo-Api-Key: lxb_backend_minted_capAK')
+chk_has AK0 "the row's rule :$PORT_AK declares api_key_auth (disabled: strip only)" Success \
+  "$(gw_add_rule $PORT_AK ', "api_key_auth": "disabled"' 8080 8081)"
+chk AK0b "it reads back as declared" disabled "$(lb_get $PORT_AK | jq -r '.serviceArguments.api_key_auth // "absent"')"
+sleep 2
+chk AK-a1 "on :$PORT_H1 (no declaration) the backend's X-Api-Key is relayed" 200 "$(os_send aka "$H1_URL" "${AKH[@]}")"
+chk AK-a2 "and reaches the client, once (the backend does send it)" 1 "$(ak_lines "$DOS/aka.hdr")"
+chk AK-b1 "on :$PORT_AK the answer is relayed" 200 "$(os_send akb "$AK_URL" "${AKH[@]}")"
+chk AK-b2 "a final head alone: the backend's X-Api-Key is removed" 0 "$(ak_lines "$DOS/akb.hdr")"
+chk AK-c1 "the backend is armed to join 100 Continue and its next head in one write" interim-joined "$(be admin/interim-joined | jq -r '.armed // "refused"')"
+chk AK-c2 "the answer is relayed (:$PORT_AK)" 200 "$(os_send akc "$AK_URL" "${AKH[@]}")"
+chk AK-c3 "the two heads left the backend in one write" "1 1" "$(ic_seen akc)"
+chk AK-c4 "the client received the interim head, once" 1 "$(grep -c '^HTTP/1.1 100' "$DOS/akc.hdr" 2>/dev/null)"
+chk AK-c5 "behind the interim head: the backend's X-Api-Key is removed from the final head" 0 "$(ak_lines "$DOS/akc.hdr")"
+chk AK-c6 "the body is the backend's, whole" "cmpl-cap ok 15" "$(jq -r '"\(.id) \(.choices[0].message.content) \(.usage.total_tokens)"' "$DOS/akc.body" 2>/dev/null)"
+chk AK-d1 "the backend is armed to send 100 Continue and its next head 150 ms apart" interim-apart "$(be admin/interim-apart | jq -r '.armed // "refused"')"
+chk AK-d2 "the answer is relayed (:$PORT_AK)" 200 "$(os_send akd "$AK_URL" "${AKH[@]}")"
+chk AK-d3 "the two heads left the backend in two writes" "1 2" "$(ic_seen akd)"
+chk AK-d4 "the final head in a read of its own: the backend's X-Api-Key is removed" 0 "$(ak_lines "$DOS/akd.hdr")"
+chk_has AK9 "the row's rule is deleted" Success "$(lb_delete $PORT_AK | grep -o Success | head -n1)"
 # An outage is not a refusal: no stage, ever. It names the request like
 # every answer the gateway writes: the 502 for an endpoint that refuses the
 # connection (written from the connect event), the 502 for a backend that

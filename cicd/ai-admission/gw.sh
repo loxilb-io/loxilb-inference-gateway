@@ -31,6 +31,7 @@ PORT_OBJ=2038         # the same two backends: a denied objective is served at t
 PORT_OBJS=2039        # the same, strict: a denied objective is refused 403
 PORT_OBJ2=2040        # the two h2c backends, not strict
 PORT_HR=2041          # row HR: the same two backends behind a hash selector (CHWBL), created and deleted by the row
+PORT_AK=2042          # row AK: the same two backends, api_key_auth declared (strip only), created and deleted by the row
 FC_P_MAX=4
 FC_P_STALE_MS=45000
 FC_U_MAX=2
