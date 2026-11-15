@@ -402,7 +402,8 @@ gateway answers from backend answers:
 - A backend's `X-Loxilb-Refusal-*` fields are removed from every relayed response head, with or without
   `fc_expose_headers` (the residuals are [above](#the-two-headers-on-a-gateway-written-answer)). A backend's
   `429` therefore never reads as a gateway capacity refusal: it has no stage, and its `error` is an object.
-- A backend's `X-Api-Key` is removed on services that declare `api_key_auth`
+- A backend's `X-Api-Key` is removed on services that declare `api_key_auth`, on HTTP/1.1 also from a final head
+  that follows an interim head in the same read
   ([doc 19 §2.5](19-ai-gateway-controls.md#25-a-backends-x-api-key-and-x-auth--response-headers)).
 
 ## HTTP/1.1 and HTTP/2 at a glance
