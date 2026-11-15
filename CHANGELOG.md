@@ -105,6 +105,11 @@ inference-gateway delta is enumerated in detail.
   (`100 Continue`, another `1xx`) and the final head in one read. Only the
   interim head was cleaned, so a backend could put `X-Loxilb-Refusal-Stage` on
   an answer that way. Nothing after a `101` is touched.
+- AI gateway, HTTP/1.1: on a service that declares `api_key_auth`, a backend's
+  `X-Api-Key` is now also removed from the final response head when the backend
+  sends an interim head (`100 Continue`, another `1xx`) and the final head in
+  one read. Only the first head of the read was cleaned. Nothing after a final
+  head or a `101` is touched.
 
 ### Changed
 

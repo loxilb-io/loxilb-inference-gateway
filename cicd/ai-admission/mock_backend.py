@@ -89,6 +89,10 @@ Request headers that shape the answer:
   X-Test-Spoof-Admission: 1
                           the answer carries X-Loxilb-Admission-Inflight: 999
                           of its own, which the gateway must replace
+  X-Test-Echo-Api-Key: <v>
+                          the answer carries X-Api-Key: <v> of its own: the
+                          gateway's credential header, which a service that
+                          declares api_key_auth does not let out
   X-Test-Spoof-Objective: 1
                           the answer carries
                           X-Loxilb-Admission-Objective-Requested: forged of its
@@ -263,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("X-Loxilb-Refusal-Stage", "capacity")
         if getattr(self, "spoof_objective", False):
             self.send_header("X-Loxilb-Admission-Objective-Requested", "forged")
+        if getattr(self, "echo_api_key", ""):
+            self.send_header("X-Api-Key", self.echo_api_key)
 
     def _enter(self, nonce, body=None):
         global INFLIGHT
@@ -469,6 +475,7 @@ class Handler(BaseHTTPRequestHandler):
         forever = self.headers.get("X-Test-Forever", "") == "1"
         self.spoof = self.headers.get("X-Test-Spoof-Admission", "") == "1"
         self.spoof_objective = self.headers.get("X-Test-Spoof-Objective", "") == "1"
+        self.echo_api_key = self.headers.get("X-Test-Echo-Api-Key", "")
         engine = self.headers.get("X-Test-Engine", "")
         self.head_pad = min(int(self.headers.get("X-Test-Head-Pad") or 0), 64000)
         # The admin arms are taken by the next inference request, whichever

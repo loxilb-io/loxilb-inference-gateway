@@ -156,8 +156,10 @@ Limits:
 
 - On HTTP/1.1 the header is removed from the response head only, and only when the head
   arrives whole in one read from the backend. A head split across two reads is passed as it
-  is; so is the final head when an interim response (`100`, `103`) and the final one arrive
-  in the same read.
+  is. When interim responses (`100`, `103`) and the final one arrive in the same read, the
+  header is removed from each of those heads that is whole in the read; nothing after the
+  final head (the body), after a `101`, or after an interim head that is not followed by
+  another status line is read.
 - A rule accelerated with `sockMapMode` `response` or `both` does not see its responses, so
   nothing is removed there.
 - A response body is never edited, and neither are HTTP/2 trailers.
