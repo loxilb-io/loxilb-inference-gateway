@@ -111,6 +111,18 @@ inference-gateway delta is enumerated in detail.
   one read. Only the first head of the read was cleaned. Nothing after a final
   head or a `101` is touched.
 
+### Added
+
+- AI gateway: a request's refusal (`sec.ai.deny`), completion (`data.ai.complete`)
+  and token settlement (`data.ai.settle`) audit records carry its W3C `traceparent`
+  as `trace_id` and `parent_span_id` (new, add-only), and its `X-Client-Session-Id`
+  as `detail.session_id`, on HTTP/1.1 and HTTP/2. A field is recorded only when its
+  header is valid and received once. Otherwise it is absent, and the other header
+  is still recorded. Correlation only: neither header affects routing, affinity or
+  identity, and both reach the backend unchanged. Requires the datapath at
+  `97228aef`. See
+  [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md#trace-and-session-correlation).
+
 ### Changed
 
 - When a snapshot is selected at boot, a stale `BFDconfig.txt` is no longer

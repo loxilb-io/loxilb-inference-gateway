@@ -32,29 +32,22 @@
  * _cgo_export.h, and the first inclusion there of a header decides how it
  * is read for all of them.
  *
- * A Go export cannot spell a const pointer (cgo writes "uint32_t*" for a
- * *C.uint32_t parameter), and a qualifier does not change how arguments are
- * passed, so the text of sockproxy_ai_gw.h itself is read with const
- * removed (it has three, on llb_ai_kv_best_worker). Everything it includes
- * is read first, as written: dpebpf_linux.go declares
- * kv_compute_block_hashes from sockproxy_kv_exact.h with its const.
+ * The header is read as written. A Go export cannot spell a const pointer
+ * (cgo writes "uint32_t*" for a *C.uint32_t parameter), so no prototype of
+ * an export in it may carry one; until WP-D the header's text was read with
+ * const defined away for the three llb_ai_kv_best_worker had, which the
+ * datapath has since dropped (cicd/common/ai_gw_exports_includes.sh keeps
+ * the define from coming back).
  *
- * Compared: parameter count and order, and the return type, and each
- * parameter's type as C sees it -- a difference between two spellings of one
- * C type (C.int and int32_t) is not one. Not compared: const, and whether two
- * parameters of the same type are passed in the right order.
+ * Compared: parameter count and order, the return type, and each
+ * parameter's type as C sees it, qualifiers included -- a difference between
+ * two spellings of one C type (C.int and int32_t) is not one. Not compared:
+ * whether two parameters of the same type are passed in the right order.
  */
 
 #ifndef __LOXINET_AI_GW_EXPORTS_H__
 #define __LOXINET_AI_GW_EXPORTS_H__
 
-/* Read as written, before the define below; with their guards set, the
- * #includes inside sockproxy_ai_gw.h read nothing while const is removed. */
-#include <stdint.h>
-#include "sockproxy_kv_exact.h"
-
-#define const
 #include "sockproxy_ai_gw.h"
-#undef const
 
 #endif /* __LOXINET_AI_GW_EXPORTS_H__ */

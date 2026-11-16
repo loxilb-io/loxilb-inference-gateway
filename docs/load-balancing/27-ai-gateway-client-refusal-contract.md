@@ -349,6 +349,44 @@ An in-stream event is a `data: {"error":"…"}` SSE event written into an answer
   `X-Conversation-ID` (HTTP/1.1 also reads `X-Session-ID` and `X-Trace-ID`), with the rule's configured session
   header, or, on a prefill/decode rule, with the JSON `user` field.
 
+## Trace and session correlation
+
+A client can tie a request's audit records to its own trace and to an application session with two request
+headers. The gateway records them; it does not act on them.
+
+| Request header | Valid when | Recorded as |
+|---|---|---|
+| `traceparent` (W3C Trace Context) | version `00`: exactly `00-<32 hex>-<16 hex>-<2 hex>` in lower-case hex, the trace-id and the parent-id not all zeros; version `ff` is invalid; a higher version is 55 bytes, or longer after a `-` | `trace_id` (the trace-id) and `parent_span_id` (the client's parent-id) |
+| `X-Client-Session-Id` | 1–128 bytes of `A-Z a-z 0-9 . _ : -` | `detail.session_id` |
+
+- **Which records.** The request's refusal (`sec.ai.deny`), its completion (`data.ai.complete`) and its token
+  settlement (`data.ai.settle`), on HTTP/1.1 and HTTP/2, under the same `request_id` as
+  [above](#request-id).
+- **Recorded when valid, absent otherwise.** A value is never cut, rewritten, replaced or invented. Whitespace
+  around a value is not part of it. trace-flags and `tracestate` are not read, and the gateway writes no `span_id`
+  of its own.
+- **A header received twice voids that header only.** Two lines in any spelling (an empty one included) or one
+  comma-joined value leave that header's fields absent. The other header is still recorded: a duplicate
+  `traceparent` with a valid `X-Client-Session-Id` records the session, and the reverse records the trace.
+- **One request's values, or none.** A record carries the values of the request its `request_id` names. Where that
+  cannot be told for sure, it carries none:
+  - a request pipelined behind another in one read;
+  - a request that arrived while an earlier answer on the connection was still owed;
+  - a refusal written before the request's headers had all arrived.
+
+  On a connection whose response counters stay behind (a response the gateway could not frame, or responses relayed
+  by the kernel), later requests' completion and settle records carry no correlation. This is the same limit as the
+  [request ID's](#request-id): a missing value, never another request's.
+- **Correlation only.** Neither header chooses an endpoint, keeps requests together, enters the prefill/decode
+  session store, matches a rule or identifies a caller: a record's actor is the same with or without them.
+  `X-Client-Session-Id` is not one of the conversation headers above, and `X-Session-ID`, `X-Trace-ID` and
+  `X-Conversation-ID` keep their meaning. A client that wants requests kept together still uses those.
+- **Both headers reach the backend unchanged**, byte for byte, on HTTP/1.1 and HTTP/2, a duplicate as the two lines
+  or fields it was sent as. This was measured on the wire, with the gateway's capture in place.
+- For retries, send the same trace-id with a new parent-id and a new `X-Request-Id` on each attempt, and the same
+  `X-Client-Session-Id` across an application session's calls. Each attempt is then its own record, and the
+  trace-id joins them.
+
 ## Admission metadata on responses
 
 The admission triple appears on capacity refusals always, and on admitted responses when the rule has

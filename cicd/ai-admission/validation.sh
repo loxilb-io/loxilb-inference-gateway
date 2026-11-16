@@ -1294,6 +1294,9 @@ chk HR2 "one X-Conversation-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Conv
 chk HR3 "one X-Session-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Session-ID: capHR-sess' | wc -w | tr -d ' ')"
 chk HR4 "one X-Trace-ID stays on one backend" 1 "$(hr_ports 12 -H 'X-Trace-ID: capHR-trace' | wc -w | tr -d ' ')"
 chk HR5 "one X-Request-Id does not: both backends serve" "8080 8081" "$(hr_ports 12 -H 'X-Request-Id: capHR-rid')"
+# X-Client-Session-Id is read for the audit record alone (WP-D): it is not a
+# conversation ID, and its name does not start with one, so it places nothing.
+chk HR7 "one X-Client-Session-Id does not: both backends serve" "8080 8081" "$(hr_ports 12 -H 'X-Client-Session-Id: capHR-csid')"
 chk_has HR6 "the row's rule is deleted" Success "$(lb_delete $PORT_HR | grep -o Success | head -n1)"
 
 # ── NR: a listener kept after its last rule was deleted answers no_route ────
