@@ -34,7 +34,7 @@ func NewGetConfigSnapshot(ctx *middleware.Context, handler GetConfigSnapshotHand
 
 # Download a complete instance snapshot
 
-Returns a versioned, checksummed snapshot document using schema 1.5. Supported snapshot domains exclude some runtime-only state and externally stored secrets. Replaces deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.
+Returns a versioned, checksummed snapshot document using schema 1.13. Supported snapshot domains exclude some runtime-only state and externally stored secrets. Replaces deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.
 */
 type GetConfigSnapshot struct {
 	Context *middleware.Context

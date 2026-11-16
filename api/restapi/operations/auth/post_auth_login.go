@@ -34,7 +34,7 @@ func NewPostAuthLogin(ctx *middleware.Context, handler PostAuthLoginHandler) *Po
 
 # User login
 
-Authenticates a user and returns a JWT token if the credentials are valid.
+Authenticates a Gateway management user and returns an opaque, store-backed session token if the credentials are valid. Send the token as Authorization Bearer. It is separate from an OAM product-login JWT and from inference API keys or data-plane JWT admission profiles.
 */
 type PostAuthLogin struct {
 	Context *middleware.Context
