@@ -232,6 +232,11 @@ jobs:
           go-version-file: go.mod
       - run: sudo apt-get update
       - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev jq
+      - name: Install python h2 (the correlation rows' HTTP/2 backend)
+        # cicd/audit-data/h2c_backend.py imports h2, and config.sh fails
+        # closed when the backend does not answer. Install to the system
+        # site: the backend is launched as root through `ip netns exec`.
+        run: sudo python3 -m pip install h2 || sudo python3 -m pip install --break-system-packages h2
       - name: Install libtokenizers (cgo link dependency of the router)
         env:
           GH_TOKEN: ${{ github.token }}
