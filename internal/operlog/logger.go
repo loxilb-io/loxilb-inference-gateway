@@ -39,15 +39,11 @@ var prefixes = [Trace + 1]string{
 type Logger struct {
 	level   atomic.Int32
 	tty     atomic.Bool
-	ttyMu   sync.Mutex
 	writers [Trace + 1]*log.Logger
 
-	// LogTTY is the compatibility view for callers with exclusive access.
-	// Concurrent logging uses tty, which is updated by SetTTY.
-	LogTTY bool
-
-	// The compatibility writers are the same sinks used by Logf. Their
-	// pointers are fixed by New. Call SetOutput to configure a sink.
+	// These writer fields are read-only after New. Reassigning a field does
+	// not change the writer used by Logf. Use SetOutput on the writer to
+	// change its output.
 	LogItEmer, LogItAlert, LogItCrit  *log.Logger
 	LogItErr, LogItWarn, LogItNotice  *log.Logger
 	LogItInfo, LogItDebug, LogItTrace *log.Logger
@@ -57,7 +53,7 @@ func New(output io.Writer, level Level, tty bool) (*Logger, error) {
 	if output == nil || level < Emerg || level > Trace {
 		return nil, fmt.Errorf("operlog: invalid output or level %d", level)
 	}
-	l := &Logger{LogTTY: tty}
+	l := &Logger{}
 	l.level.Store(int32(level))
 	l.tty.Store(tty)
 	for n, prefix := range prefixes {
@@ -81,11 +77,11 @@ func (l *Logger) SetLevel(level Level) error {
 
 // SetTTY enables terminal mirroring and returns its previous setting.
 func (l *Logger) SetTTY(enabled bool) bool {
-	l.ttyMu.Lock()
-	defer l.ttyMu.Unlock()
-	l.LogTTY = enabled
 	return l.tty.Swap(enabled)
 }
+
+// TTY reports whether terminal mirroring is enabled.
+func (l *Logger) TTY() bool { return l.tty.Load() }
 
 func (l *Logger) enabled(level Level) bool {
 	return level >= Emerg && level <= l.Level()

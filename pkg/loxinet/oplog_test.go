@@ -90,7 +90,7 @@ func TestOpLogInstallRoutesEveryLevelThroughTheQueue(t *testing.T) {
 	out := &oplogBuf{}
 
 	opLogInstall(lg, out)
-	if lg.LogTTY {
+	if lg.TTY() {
 		t.Fatal("the logger still writes its own terminal copy")
 	}
 	for l := tk.LogEmerg; l <= tk.LogTrace; l++ {

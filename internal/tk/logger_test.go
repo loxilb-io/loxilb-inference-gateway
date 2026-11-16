@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/loxilb-io/loxilib"
@@ -48,6 +49,33 @@ func TestLogItMatchesPinnedLoxilib(t *testing.T) {
 	}
 	if !bytes.Equal(got.Bytes(), want.Bytes()) {
 		t.Fatalf("log output = %q, want %q", got.Bytes(), want.Bytes())
+	}
+}
+
+func TestLoggerTTYRoundTrip(t *testing.T) {
+	l, err := NewLogger(io.Discard, LogInfo, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.TTY() || l.LogItSetTTY(true) || !l.TTY() {
+		t.Fatal("enabling TTY did not preserve and update the setting")
+	}
+	if !l.LogItSetTTY(false) || l.TTY() {
+		t.Fatal("disabling TTY did not preserve and update the setting")
+	}
+
+	var writer sync.WaitGroup
+	writer.Go(func() {
+		for i := range 1000 {
+			l.LogItSetTTY(i%2 == 0)
+		}
+	})
+	for range 1000 {
+		l.TTY()
+	}
+	writer.Wait()
+	if l.TTY() {
+		t.Fatal("the last write should leave TTY disabled")
 	}
 }
 

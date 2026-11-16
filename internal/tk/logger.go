@@ -28,12 +28,14 @@ const (
 )
 
 // Logger exposes the legacy level writers for log-ring configuration.
-// Read LogTTY only with exclusive access. Use the methods to update settings.
 type Logger operlog.Logger
 
 func (l *Logger) LogItSetLevel(level LogLevelT) error { return (*operlog.Logger)(l).SetLevel(level) }
 func (l *Logger) LogItGetLevel() LogLevelT            { return (*operlog.Logger)(l).Level() }
 func (l *Logger) LogItSetTTY(enabled bool) bool       { return (*operlog.Logger)(l).SetTTY(enabled) }
+
+// TTY reports whether terminal mirroring is enabled.
+func (l *Logger) TTY() bool { return (*operlog.Logger)(l).TTY() }
 
 func NewLogger(output io.Writer, level LogLevelT, tty bool) (*Logger, error) {
 	l, err := operlog.New(output, level, tty)
