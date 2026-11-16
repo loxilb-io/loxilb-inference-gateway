@@ -21,17 +21,8 @@ package loxinet
 #include <stdlib.h>
 #include <string.h>
 
-// What the resolver answers with (must match sockproxy_ai_gw.h).
-typedef struct ai_gw_netid {
-    int  matched;
-    int  enforce;
-    int  credential_network;
-    int  model_ok;
-    int  forward_identity;
-    char tenant_id[128];
-    char binding[64];
-} ai_gw_netid_t;
-_Static_assert(sizeof(ai_gw_netid_t) == 212, "ai_gw_netid_t size");
+// ai_gw_netid_t comes from the datapath header (see ai_gw_exports.h).
+#include "ai_gw_exports.h"
 */
 import "C"
 

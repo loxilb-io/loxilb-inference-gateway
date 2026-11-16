@@ -206,39 +206,33 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. The ai_gw_decision_t layout is twin-lockstep between C and Go.
+# 6. The ai_gw_decision_t layout has one source, the datapath's header.
 #
 # The struct crosses the CGO boundary by layout, not by name: the C gate
 # hands a pointer into the Go export, and Go writes through it at the
-# offsets ITS copy of the typedef declares. The two copies live in
-# sockproxy_ai_gw.h and the cgo preamble of ai_gateway_dp.go, and nothing
-# fails to compile when one grows a field the other lacks — the writes just
-# land inside (or past) the wrong bytes. That is how a widening lands in one
-# repo and silently corrupts the other.
-#
-# Compare the field lists literally, comments stripped.
+# offsets ITS view of the typedef declares. Go once kept its own copy in the
+# cgo preamble of ai_gateway_dp.go, and nothing failed to compile when one
+# copy grew a field the other lacked. The preambles now read the C typedef
+# itself through pkg/loxinet/ai_gw_exports.h, so the two cannot disagree --
+# provided no Go file declares its own copy again and the bridge preamble
+# still reads the header.
 # ---------------------------------------------------------------------------
 C_DECL="loxilb-ebpf/common/sockproxy_ai_gw.h"
 GO_DECL="pkg/loxinet/ai_gateway_dp.go"
-struct_fields() { # struct_fields <file> — field lines of ai_gw_decision_t, normalized
-  sed -n '/^typedef struct {/,/} ai_gw_decision_t;/p' "$1" \
-    | sed -e 's|/\*.*\*/||' -e 's|//.*||' \
-    | grep -E '^\s*(int|char|uint|int64_t|uint32_t)' \
-    | tr -s ' \t' ' ' | sed 's/^ //; s/ $//'
-}
-if [ ! -f "$C_DECL" ] || [ ! -f "$GO_DECL" ]; then
-  fail "decision-struct twin missing ($C_DECL / $GO_DECL)"
+GO_WRAP="pkg/loxinet/ai_gw_exports.h"
+c_fields="$(sed -n '/^typedef struct {/,/} ai_gw_decision_t;/p' "$C_DECL" 2>/dev/null \
+  | sed -e 's|/\*.*\*/||' -e 's|//.*||' | grep -E '^\s*(int|char|uint|int64_t|uint32_t)')"
+go_copies="$(grep -ln '} ai_gw_decision_t;' pkg/loxinet/*.go 2>/dev/null)"
+if [ -z "$c_fields" ] || ! grep -q '^} ai_gw_decision_t;' "$C_DECL"; then
+  fail "could not extract ai_gw_decision_t fields from $C_DECL -- did the typedef move or change shape?"
+elif [ -n "$go_copies" ]; then
+  fail "a Go preamble declares its own ai_gw_decision_t (it must read $C_DECL through $GO_WRAP):"
+  printf '          %s\n' $go_copies
+elif ! grep -q '^#include "ai_gw_exports.h"' "$GO_DECL" \
+  || ! grep -q '^#include "sockproxy_ai_gw.h"' "$GO_WRAP"; then
+  fail "$GO_DECL no longer reads ai_gw_decision_t from $C_DECL through $GO_WRAP"
 else
-  c_fields="$(struct_fields "$C_DECL")"
-  go_fields="$(struct_fields "$GO_DECL")"
-  if [ -z "$c_fields" ] || [ -z "$go_fields" ]; then
-    fail "could not extract ai_gw_decision_t fields — did the typedef move or change shape?"
-  elif [ "$c_fields" != "$go_fields" ]; then
-    fail "ai_gw_decision_t field lists disagree between C header and Go cgo preamble:"
-    diff <(printf '%s\n' "$c_fields") <(printf '%s\n' "$go_fields") | sed 's/^/          /'
-  else
-    pass "ai_gw_decision_t layout is identical in C header and Go preamble"
-  fi
+  pass "ai_gw_decision_t has one definition, $C_DECL, read by the Go preamble through $GO_WRAP"
 fi
 
 # ---------------------------------------------------------------------------

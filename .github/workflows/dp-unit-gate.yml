@@ -131,3 +131,7 @@ jobs:
       - name: "check_notify_arm (notify_add_ent is called from exactly one helper)"
         if: ${{ !cancelled() }}
         run: sh loxilb-ebpf/common/check_notify_arm.sh
+
+      - name: "ai_gw_exports_includes (pkg/loxinet/ai_gw_exports.h reads every header sockproxy_ai_gw.h reaches as written; only that header's own text with const removed)"
+        if: ${{ !cancelled() }}
+        run: bash cicd/common/ai_gw_exports_includes.sh
