@@ -69,10 +69,27 @@ for h in 10.10.10.1 31.31.31.1; do
     fi
 done
 
+# Redirect as the scenario runner so it owns the artifacts.
+# shellcheck disable=SC2024
+capture_e3_timeout() {
+    local dir=/tmp/ci-logs/qos-egrpol
+    mkdir -p "$dir" || return
+    echo "E3 timeout diagnostics for $VIP:2020 in $dir" >&2
+
+    sudo timeout --verbose --kill-after=1 3 ip netns exec l3h1 ss -antopi "dst $VIP and dport = :2020" \
+        >"$dir/e3-client-tcp.txt" 2>&1 &
+    sudo timeout --verbose --kill-after=1 3 ip netns exec l3ep1 ss -antopi 'sport = :8080' \
+        >"$dir/e3-backend-tcp.txt" 2>&1 &
+    # The REST listing triggers GC. Read both VIP and NAT reply tuples from the live map.
+    sudo timeout --verbose --kill-after=1 3 docker exec llb1 bpftool -jp map dump pinned /opt/loxilb/dp/bpf/ct_map \
+        >"$dir/e3-conntrack.txt" 2>&1 &
+    wait
+}
+
 # Transit Mbits/s through the VIP (iperf3 receiver side). A run with no
 # receiver summary yields "" and surfaces iperf3's own error on the console.
 run_bw() {
-    local secs=$1 raw; shift
+    local secs=$1 raw rc=0; shift
     # Two bounds, so a wedged datapath surfaces through the no-receiver-summary
     # branch below instead of hanging: --connect-timeout for a control
     # connection that never establishes, and a hard timeout for the nastier
@@ -98,7 +115,11 @@ run_bw() {
     # stdin is closed for a second, independent reason: -i holds stdin open on
     # the docker client, so an interactive run can stop on SIGTTIN, and a
     # stopped process cannot act on SIGTERM at all.
-    raw=$(sudo timeout $((secs+20)) docker exec -i l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1)
+    raw=$(sudo timeout $((secs+20)) docker exec -i l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1) || rc=$?
+    # E3 is the only reverse leg. Finish the capture before E5 starts.
+    if [[ $rc == 124 && ${1:-} == -R ]]; then
+        capture_e3_timeout || true
+    fi
     if ! echo "$raw" | grep -q receiver; then
         echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
     fi
