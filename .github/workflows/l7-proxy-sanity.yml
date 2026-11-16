@@ -51,7 +51,11 @@ jobs:
         with:
           go-version: '>=1.18.0'
       - run: sudo apt-get update
-      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev libssl-dev
+      - name: Native SNI client trust (ASan and LeakSanitizer)
+        run: |
+          make -C loxilb-ebpf/common test_sni_mtls
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 loxilb-ebpf/common/test_sni_mtls
       - name: Install libtokenizers (KV-router HF backend)
         env:
           GH_TOKEN: ${{ github.token }}

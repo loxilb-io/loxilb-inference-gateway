@@ -6,9 +6,12 @@ package operations
 // Editing this file might prove futile when you re-run the generate command
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/strfmt"
+	"github.com/go-openapi/swag"
 )
 
 // PostConfigSecurityrateHandlerFunc turns a function with the right signature into a post config securityrate handler
@@ -34,7 +37,7 @@ func NewPostConfigSecurityrate(ctx *middleware.Context, handler PostConfigSecuri
 
 # Configure unified security rate limiting
 
-Replace SYN, connection-SYN, and UDP rate configuration and the security-rate whitelist. Supply all required flags and thresholds; at least one protection must be enabled. Omitted whitelist clears the previous list. Numeric and relational limits are described on the configuration model. Programming is not atomic: errors can follow partial datapath changes. Explicit cookieThreshold zero becomes 50 in the datapath, and cookie telemetry does not implement a SYN-cookie exchange.
+Replace SYN, connection-SYN, and UDP rate configuration and the security-rate whitelist. Supply all required flags and thresholds; at least one per-source protection or positive aggregate budget must be enabled. Omitted whitelist clears the previous list. Numeric and relational limits are described on the configuration model. Programming is not atomic: errors can follow partial datapath changes. Explicit cookieThreshold zero becomes 50 in the datapath, and cookie telemetry does not implement a SYN-cookie exchange.
 */
 type PostConfigSecurityrate struct {
 	Context *middleware.Context
@@ -68,4 +71,44 @@ func (o *PostConfigSecurityrate) ServeHTTP(rw http.ResponseWriter, r *http.Reque
 	res := o.Handler.Handle(Params, principal) // actually handle the request
 	o.Context.Respond(rw, r, route.Produces, route, res)
 
+}
+
+// PostConfigSecurityrateUnprocessableEntityBody post config securityrate unprocessable entity body
+//
+// swagger:model PostConfigSecurityrateUnprocessableEntityBody
+type PostConfigSecurityrateUnprocessableEntityBody struct {
+
+	// code
+	Code int64 `json:"code,omitempty"`
+
+	// message
+	Message string `json:"message,omitempty"`
+}
+
+// Validate validates this post config securityrate unprocessable entity body
+func (o *PostConfigSecurityrateUnprocessableEntityBody) Validate(formats strfmt.Registry) error {
+	return nil
+}
+
+// ContextValidate validates this post config securityrate unprocessable entity body based on context it is used
+func (o *PostConfigSecurityrateUnprocessableEntityBody) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	return nil
+}
+
+// MarshalBinary interface implementation
+func (o *PostConfigSecurityrateUnprocessableEntityBody) MarshalBinary() ([]byte, error) {
+	if o == nil {
+		return nil, nil
+	}
+	return swag.WriteJSON(o)
+}
+
+// UnmarshalBinary interface implementation
+func (o *PostConfigSecurityrateUnprocessableEntityBody) UnmarshalBinary(b []byte) error {
+	var res PostConfigSecurityrateUnprocessableEntityBody
+	if err := swag.ReadJSON(b, &res); err != nil {
+		return err
+	}
+	*o = res
+	return nil
 }

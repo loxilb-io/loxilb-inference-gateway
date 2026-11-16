@@ -4186,6 +4186,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	if err := validateLBFixedCStringFields(serv); err != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
 	}
+	if err := prepareFrontendMTLS(&serv); err != nil {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
+	}
 	// A rule that asks for backend verification or a client certificate is
 	// installed with it or not at all, whichever way it arrived.
 	if err := cmn.ValidateBackendTLS(&serv); err != nil {

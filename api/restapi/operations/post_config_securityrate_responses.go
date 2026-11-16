@@ -193,6 +193,51 @@ func (o *PostConfigSecurityrateForbidden) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// PostConfigSecurityrateUnprocessableEntityCode is the HTTP code returned for type PostConfigSecurityrateUnprocessableEntity
+const PostConfigSecurityrateUnprocessableEntityCode int = 422
+
+/*
+PostConfigSecurityrateUnprocessableEntity Schema validation rejected the request before datapath mutation
+
+swagger:response postConfigSecurityrateUnprocessableEntity
+*/
+type PostConfigSecurityrateUnprocessableEntity struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *PostConfigSecurityrateUnprocessableEntityBody `json:"body,omitempty"`
+}
+
+// NewPostConfigSecurityrateUnprocessableEntity creates PostConfigSecurityrateUnprocessableEntity with default headers values
+func NewPostConfigSecurityrateUnprocessableEntity() *PostConfigSecurityrateUnprocessableEntity {
+
+	return &PostConfigSecurityrateUnprocessableEntity{}
+}
+
+// WithPayload adds the payload to the post config securityrate unprocessable entity response
+func (o *PostConfigSecurityrateUnprocessableEntity) WithPayload(payload *PostConfigSecurityrateUnprocessableEntityBody) *PostConfigSecurityrateUnprocessableEntity {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config securityrate unprocessable entity response
+func (o *PostConfigSecurityrateUnprocessableEntity) SetPayload(payload *PostConfigSecurityrateUnprocessableEntityBody) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigSecurityrateUnprocessableEntity) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(422)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigSecurityrateInternalServerErrorCode is the HTTP code returned for type PostConfigSecurityrateInternalServerError
 const PostConfigSecurityrateInternalServerErrorCode int = 500
 

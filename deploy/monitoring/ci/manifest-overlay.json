@@ -875,7 +875,7 @@
     { "symbol": "configPostOPAWatcher", "kind": "func", "file": "api/restapi/handler/opa_watcher.go", "def_line": 79, "call_line": 121, "calls": "Start", "entry_point": "http-handler" }
    ],
    "loxinet-nlp-boot": [
-    { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2230, "call_line": 2300, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
+    { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2237, "call_line": 2307, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 375, "call_line": 820, "calls": "NlpInit", "note": "guarded by !opts.Opts.NoNlp" },
     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1394, "call_line": 1395, "calls": "loxiNetInit", "entry_point": "main" }
    ],
@@ -1051,7 +1051,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5782,
+     "call_line": 5785,
      "calls": "syncVllmScraper",
      "note": "on create; the replace path calls it too (rules.go:5201), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
@@ -1059,7 +1059,7 @@
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1385, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5734, "calls": "KvSubscriberStartRank" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5737, "calls": "KvSubscriberStartRank" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-attest-controller-loop": [
@@ -1068,7 +1068,7 @@
     { "symbol": "KvAttestStart", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 331, "call_line": 356, "calls": "loop" },
     { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 955, "call_line": 962, "calls": "KvAttestStart" },
     { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 383, "call_line": 387, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5313, "calls": "kvDataplaneContractInstallAsync" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5316, "calls": "kvDataplaneContractInstallAsync" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-best-worker-cgo": [
@@ -1595,7 +1595,7 @@
     "status": "writer-mapped",
     "writer_sources": [
      { "symbol": "RecordBootLegacyFallback", "kind": "func", "file": "pkg/snapshot/bootstate.go", "def_line": 75, "writes": "bootLegacyFallbackTotal" },
-     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2067, "call_line": 2144, "calls": "RecordBootLegacyFallback", "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present" },
+     { "symbol": "LbSessionGet", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2067, "call_line": 2147, "calls": "RecordBootLegacyFallback", "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present" },
      { "tail": "loxinet-nlp-boot" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/loxinlp/nlp.go:2037 is the only call site. Needs a legacy-only boot to move; scenario M15 owns that arm."
@@ -4173,7 +4173,7 @@
     "writer_sources": [
      { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1519, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1279, "calls": "SetKvEpInfo" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5734, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5737, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1273. Scenario M08 owns the runtime proof."
@@ -4297,7 +4297,7 @@
     "writer_sources": [
      { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1525, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5777, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5780, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
@@ -4308,7 +4308,7 @@
     "writer_sources": [
      { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1531, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5777, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4174, "call_line": 5780, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:198. WP-5 owns the known-mismatch arm."

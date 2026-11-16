@@ -2122,6 +2122,9 @@ func LbSessionGet(done bool) int {
 
 		if useSnapshot {
 			if outcome := applySnapshotBoot(); outcome.handled() {
+				if outcome == bootComplete {
+					pruneBootFrontendClientCAs()
+				}
 				tk.LogIt(tk.LogInfo, "nlp: boot snapshot handled (complete or BGP pending); legacy *.txt replay skipped\n")
 				return 0
 			}
@@ -2158,12 +2161,13 @@ func LbSessionGet(done bool) int {
 		}
 		tk.LogIt(tk.LogInfo, "nlp: EndPoint config process done\n")
 
+		lbReplayOK := true
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/lbconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
 				tk.LogIt(tk.LogInfo, "nlp: Continuing without LB config file : %s \n", err.Error())
 			}
 		} else {
-			applyLoadBalancerConfig()
+			lbReplayOK = applyLoadBalancerConfig()
 		}
 		tk.LogIt(tk.LogInfo, "nlp: LoadBalancer config done\n")
 
@@ -2220,6 +2224,9 @@ func LbSessionGet(done bool) int {
 		// would destroy the operator's snapshot instead of surfacing the
 		// failure again next boot.
 		if !useSnapshot && txtExists {
+			if lbReplayOK {
+				pruneBootFrontendClientCAs()
+			}
 			bootWriteThrough()
 		}
 	}

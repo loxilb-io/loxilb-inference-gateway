@@ -62,7 +62,7 @@ func (o *PostConfigBfdOK) WriteResponse(rw http.ResponseWriter, producer runtime
 const PostConfigBfdBadRequestCode int = 400
 
 /*
-PostConfigBfdBadRequest Malformed arguments for API call
+PostConfigBfdBadRequest Malformed arguments for API call or BFD unavailable in BGP-only mode
 
 swagger:response postConfigBfdBadRequest
 */
@@ -332,7 +332,7 @@ func (o *PostConfigBfdInternalServerError) WriteResponse(rw http.ResponseWriter,
 const PostConfigBfdServiceUnavailableCode int = 503
 
 /*
-PostConfigBfdServiceUnavailable Maintenance mode
+PostConfigBfdServiceUnavailable Maintenance mode or BFD subsystem unavailable
 
 swagger:response postConfigBfdServiceUnavailable
 */

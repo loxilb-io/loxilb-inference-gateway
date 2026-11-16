@@ -33,7 +33,7 @@ l4() { # jq edit applied to the base rule
 # Its endpoint is not one of the L4 rule's: a probe two rules share keeps the
 # timing of the rule that registered it first, and stays while either has it.
 fp() {
-  jq -cn '{serviceArguments: {externalIP: "'$FP'", port: '$FPPORT', protocol: "tcp", sel: 0, mode: 4, name: "lbr-fp",
+  jq -cn '{serviceArguments: {externalIP: "'$FP'", port: '$FPPORT', protocol: "tcp", sel: 0, mode: 4, security: 1, name: "lbr-fp",
              backend_protocol: "http2", inactiveTimeOut: 60},
            endpoints: [{endpointIP: "31.31.31.3", targetPort: 8080, weight: 1}]} | '"${1:-.}"
 }
@@ -88,9 +88,13 @@ expect "a replace without backend_protocol and with another change is accepted" 
 expect "backend_protocol is as it was" "$(rule $FPPORT .serviceArguments.backend_protocol)" '"http2"'
 expect "a replace that names another backend_protocol is accepted" "$(post "$(fp '.serviceArguments.backend_protocol="both" | .serviceArguments.inactiveTimeOut=90')")" 200
 expect "it reads back" "$(rule $FPPORT .serviceArguments.backend_protocol)" '"both"'
-MT='.serviceArguments.backend_protocol="both" | .serviceArguments.inactiveTimeOut=90 | .serviceArguments.mtls_frontend={client_cert_mode: "optional"}'
+MT_NO_CA='.serviceArguments.backend_protocol="both" | .serviceArguments.inactiveTimeOut=90 | .serviceArguments.mtls_frontend={client_cert_mode: "optional"}'
+expect "a replace enabling frontend mTLS without a CA is refused" "$(post "$(fp "$MT_NO_CA")")" 400
+expect "the refused mTLS configuration is absent" "$(rule $FPPORT .serviceArguments.mtls_frontend)" null
+MT="$MT_NO_CA"' | .serviceArguments.mtls_frontend.client_ca_path="/opt/loxilb/cert/server.crt"'
 expect "a replace that changes frontend mTLS alone is accepted" "$(post "$(fp "$MT")")" 200
 expect "frontend mTLS reads back" "$(rule $FPPORT .serviceArguments.mtls_frontend.client_cert_mode)" '"optional"'
+expect "the frontend CA path reads back" "$(rule $FPPORT .serviceArguments.mtls_frontend.client_ca_path)" '"/opt/loxilb/cert/server.crt"'
 expect "the same again changes nothing" "$(post "$(fp "$MT")")" 409
 
 if [[ $code == 0 ]]; then

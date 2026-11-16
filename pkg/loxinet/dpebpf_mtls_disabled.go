@@ -20,6 +20,6 @@
 package loxinet
 
 // DpLBRuleSetMTLS is a no-op when mTLS support is not compiled in.
-func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) {
-	// mTLS not compiled — no-op
+func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) error {
+	return nil
 }

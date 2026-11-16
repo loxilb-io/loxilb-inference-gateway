@@ -6052,25 +6052,25 @@ func (m *LoadbalanceEntryServiceArgumentsMtlsBackend) UnmarshalBinary(b []byte) 
 	return nil
 }
 
-// LoadbalanceEntryServiceArgumentsMtlsFrontend Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.
+// LoadbalanceEntryServiceArgumentsMtlsFrontend Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. An enabled verification mode requires a CA bundle. The listener client trust applies when SNI selects a server certificate. TLS-context updates have the serviceArguments lifecycle limitation.
 //
 // swagger:model LoadbalanceEntryServiceArgumentsMtlsFrontend
 type LoadbalanceEntryServiceArgumentsMtlsFrontend struct {
 
-	// Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.
+	// Standard Base64-encoded PEM CA bundle. When client_ca_path is empty, the gateway validates the bundle and stores it in its writable configuration directory for frontend client-certificate verification.
 	ClientCaCertData string `json:"client_ca_cert_data,omitempty"`
 
-	// Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.
+	// Gateway-local PEM CA bundle path, up to 255 bytes. This path takes precedence when both CA fields are supplied.
 	ClientCaPath string `json:"client_ca_path,omitempty"`
 
-	// Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.
+	// Client verification mode. Disabled performs no client verification. Optional verifies a supplied certificate and permits omission. Required requires a valid certificate.
 	// Enum: [disabled optional required]
 	ClientCertMode *string `json:"client_cert_mode,omitempty"`
 
 	// Certificate-name pattern, for example *.corp.example.com, used when require_client_cn is true. The C path contains wildcard matching; the encoder carries at most 255 bytes. This field alone does not enable client certificate verification.
 	ClientCnPattern string `json:"client_cn_pattern,omitempty"`
 
-	// Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.
+	// Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, native TLS may load a sibling crl.pem. For an inline CA, the sibling is in the shared managed frontend-client-ca directory. Set an explicit path for a rule-specific CRL. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.
 	ClientCrlPath string `json:"client_crl_path,omitempty"`
 
 	// Requests certificate-name pattern checking on the active frontend mTLS path. Supply a nonempty client_cn_pattern; an empty pattern does not establish an additional identity restriction.

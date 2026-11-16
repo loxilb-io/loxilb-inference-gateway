@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-16T12:48:34+00:00",
-  "source_revision": "cca72ff4ba10dd6e5b62fd66ca04f2898cee15fa"
+  "generated_at": "2026-11-16T13:43:23+00:00",
+  "source_revision": "860dab5238fc63db6e8b7500243cb03deb1fe4e4"
  },
  "contract": {
   "total": 359,
@@ -1610,7 +1610,7 @@
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5777,
+     "call_line": 5780,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -2592,7 +2592,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5313,
+     "call_line": 5316,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2705,7 +2705,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5313,
+     "call_line": 5316,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2829,7 +2829,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5313,
+     "call_line": 5316,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2951,7 +2951,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5313,
+     "call_line": 5316,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -3046,7 +3046,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -3137,7 +3137,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -3199,7 +3199,7 @@
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5777,
+     "call_line": 5780,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -5378,7 +5378,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5782,
+     "call_line": 5785,
      "calls": "syncVllmScraper",
      "note": "on create; the replace path calls it too (rules.go:5201), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
@@ -6979,8 +6979,8 @@
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2230,
-     "call_line": 2300,
+     "def_line": 2237,
+     "call_line": 2307,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },
@@ -7046,8 +7046,8 @@
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2230,
-     "call_line": 2300,
+     "def_line": 2237,
+     "call_line": 2307,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },
@@ -7103,7 +7103,7 @@
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
      "def_line": 2067,
-     "call_line": 2144,
+     "call_line": 2147,
      "calls": "RecordBootLegacyFallback",
      "note": "boot replay fell back to the legacy *.txt artifacts because no usable snapshot.json was present"
     },
@@ -7111,8 +7111,8 @@
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2230,
-     "call_line": 2300,
+     "def_line": 2237,
+     "call_line": 2307,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },
@@ -8756,7 +8756,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8836,7 +8836,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8919,7 +8919,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8998,7 +8998,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9087,7 +9087,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9166,7 +9166,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9248,7 +9248,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -11403,7 +11403,7 @@
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank",
      "receiver": "RuleH"
     },
@@ -11566,7 +11566,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4174,
-     "call_line": 5734,
+     "call_line": 5737,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -18258,8 +18258,8 @@
      "symbol": "NlpInit",
      "kind": "func",
      "file": "api/loxinlp/nlp.go",
-     "def_line": 2230,
-     "call_line": 2300,
+     "def_line": 2237,
+     "call_line": 2307,
      "calls": "LbSessionGet",
      "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay"
     },

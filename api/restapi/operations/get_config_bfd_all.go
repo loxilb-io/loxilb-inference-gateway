@@ -41,7 +41,7 @@ func NewGetConfigBfdAll(ctx *middleware.Context, handler GetConfigBfdAllHandler)
 
 # Get BFD session inforrmation in the device
 
-Return BFD sessions when the cluster BFD running flag is set. Current IPv6 host/port parsing can corrupt readback. A session accepted for asynchronous creation may not yet appear; the global running flag can also become inconsistent after deletion.
+Return the initialized BFD session table. No configured sessions (including keepalive disabled or after deleting the last session) returns 200 with Attr: []. BGP-only mode returns 400 and an uninitialized BFD subsystem returns 503. Current IPv6 host/port parsing can corrupt readback.
 */
 type GetConfigBfdAll struct {
 	Context *middleware.Context
