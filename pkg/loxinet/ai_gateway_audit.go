@@ -179,6 +179,12 @@ type aiCompleteRecord struct {
 	Priority  int
 	ClassInfo int
 	Objective string
+	// TraceID, ParentSpanID and SessionID are the request's correlation as
+	// the datapath captured it (aiCorr): each "" when absent, and then not
+	// written. Never identity.
+	TraceID      string
+	ParentSpanID string
+	SessionID    string
 }
 
 // The class bits a completion carries, mirroring AI_GW_CLASSF_* in
@@ -232,6 +238,7 @@ func emitAIComplete(c aiCompleteRecord) bool {
 		Stream:    c.IsStream,
 	}
 	aiClassDetail(r.Data, c.Priority, c.ClassInfo, c.Objective)
+	aiCorrDetail(r, c.TraceID, c.ParentSpanID, c.SessionID)
 	return p.Emit(r)
 }
 
@@ -253,6 +260,12 @@ type aiSettleRecord struct {
 	// one request name one actor.
 	AuthSrc     int
 	NetIdentity string
+	// TraceID, ParentSpanID and SessionID are the request's correlation as
+	// the datapath captured it (aiCorr): each "" when absent, and then not
+	// written. Never identity.
+	TraceID      string
+	ParentSpanID string
+	SessionID    string
 }
 
 // emitAISettle writes the data.ai.settle record for a token charge. A
@@ -282,6 +295,7 @@ func emitAISettle(s aiSettleRecord) bool {
 		Reserved:  s.Reserved,
 		ResEpoch:  s.ResEpoch,
 	}
+	aiCorrDetail(r, s.TraceID, s.ParentSpanID, s.SessionID)
 	return p.Emit(r)
 }
 
@@ -312,6 +326,12 @@ type aiDenyRecord struct {
 	Priority  int
 	ClassInfo int
 	Objective string
+	// TraceID, ParentSpanID and SessionID are the request's correlation as
+	// the datapath captured it (aiCorr): each "" when absent, and then not
+	// written. Never identity.
+	TraceID      string
+	ParentSpanID string
+	SessionID    string
 }
 
 // emitAIDeny writes the sec.ai.deny record for a request the admission
@@ -345,7 +365,21 @@ func emitAIDeny(d aiDenyRecord) bool {
 		Decision: d.ErrorCode,
 	}
 	aiClassDetail(r.Data, d.Priority, d.ClassInfo, d.Objective)
+	aiCorrDetail(r, d.TraceID, d.ParentSpanID, d.SessionID)
 	return p.Emit(r)
+}
+
+// aiCorrDetail writes a request's trace and session correlation into its
+// record: trace_id and parent_span_id on the envelope, session_id in the
+// data detail. Each is written only when present, and as given; the
+// datapath has already decided validity (sockproxy_corr.h). It touches
+// neither the actor nor span_id.
+func aiCorrDetail(r *audit.Record, traceID, parentSpanID, sessionID string) {
+	r.TraceID = traceID
+	r.ParentSpanID = parentSpanID
+	if r.Data != nil {
+		r.Data.SessionID = sessionID
+	}
 }
 
 // aiDataActor builds the actor for a data-path record. The data path
