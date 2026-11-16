@@ -78,6 +78,7 @@ func (e *encoder) encode(r *Record, st stamp) ([]byte, error) {
 	b = appendOptField(b, "request_id", r.RequestID)
 	b = appendOptField(b, "trace_id", r.TraceID)
 	b = appendOptField(b, "span_id", r.SpanID)
+	b = appendOptField(b, "parent_span_id", r.ParentSpanID)
 
 	b = append(b, `,"actor":{`...)
 	b = appendFirstField(b, "auth", string(r.Actor.Auth))

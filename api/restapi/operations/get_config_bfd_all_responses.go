@@ -58,6 +58,51 @@ func (o *GetConfigBfdAllOK) WriteResponse(rw http.ResponseWriter, producer runti
 	}
 }
 
+// GetConfigBfdAllBadRequestCode is the HTTP code returned for type GetConfigBfdAllBadRequest
+const GetConfigBfdAllBadRequestCode int = 400
+
+/*
+GetConfigBfdAllBadRequest BFD is unavailable in BGP-only mode
+
+swagger:response getConfigBfdAllBadRequest
+*/
+type GetConfigBfdAllBadRequest struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigBfdAllBadRequest creates GetConfigBfdAllBadRequest with default headers values
+func NewGetConfigBfdAllBadRequest() *GetConfigBfdAllBadRequest {
+
+	return &GetConfigBfdAllBadRequest{}
+}
+
+// WithPayload adds the payload to the get config bfd all bad request response
+func (o *GetConfigBfdAllBadRequest) WithPayload(payload *models.Error) *GetConfigBfdAllBadRequest {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config bfd all bad request response
+func (o *GetConfigBfdAllBadRequest) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigBfdAllBadRequest) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(400)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigBfdAllUnauthorizedCode is the HTTP code returned for type GetConfigBfdAllUnauthorized
 const GetConfigBfdAllUnauthorizedCode int = 401
 
@@ -197,7 +242,7 @@ func (o *GetConfigBfdAllInternalServerError) WriteResponse(rw http.ResponseWrite
 const GetConfigBfdAllServiceUnavailableCode int = 503
 
 /*
-GetConfigBfdAllServiceUnavailable Maintenance mode
+GetConfigBfdAllServiceUnavailable Maintenance mode or BFD subsystem unavailable
 
 swagger:response getConfigBfdAllServiceUnavailable
 */

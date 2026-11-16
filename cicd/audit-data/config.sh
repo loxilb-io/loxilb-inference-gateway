@@ -141,6 +141,18 @@ if ! $hexec l3ep1 curl -sf --max-time 5 "http://127.0.0.1:8080/v1/chat/completio
 fi
 echo "  backend reports the usage counts it is asked for"
 
+# The HTTP/2 leg of the correlation rows (TC) needs a backend that completes
+# an h2 exchange and reports the correlation headers it received.
+$hexec l3ep1 python3 "$(pwd)/h2c_backend.py" audit-h2 8090 > /tmp/audit-data-h2c.log 2>&1 &
+track_helper
+for i in $(seq 1 20); do
+  $hexec l3ep1 curl -sf --max-time 1 --http2-prior-knowledge "http://127.0.0.1:8090/__receipts/probe" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+$hexec l3ep1 curl -sf --max-time 1 --http2-prior-knowledge "http://127.0.0.1:8090/__receipts/probe" >/dev/null 2>&1 || {
+  echo "FATAL: the h2c backend on :8090 is not answering"; exit 1; }
+echo "  h2c backend answers on :8090"
+
 echo "#########################################"
 echo "Waiting for the loxilb REST API"
 echo "#########################################"
@@ -239,7 +251,7 @@ echo "#########################################"
 # mode 4 (full proxy) turns on the userspace HTTP path; api_key_auth decides
 # whether the admission gate enforces. Both are needed: a rule with the
 # streaming flag alone accounts but never refuses.
-mkrule() { # mkrule <port> <sse>
+mkrule() { # mkrule <port> <sse> [<extra serviceArguments json> <target port>]
   $hexec l3h1 curl -s -m 10 -X POST http://$VIP:11111/netlox/v1/config/loadbalancer \
     -H 'Content-Type: application/json' \
     -d "{
@@ -255,10 +267,10 @@ mkrule() { # mkrule <port> <sse>
         \"model_name\":      \"$MODEL\",
         \"api_key_auth\":    \"required\",
         \"sse_mode\":         $2,
-        \"inactiveTimeOut\":  60
+        \"inactiveTimeOut\":  60${3:-}
       },
       \"endpoints\": [
-        {\"endpointIP\": \"31.31.31.1\", \"targetPort\": 8080, \"weight\": 1}
+        {\"endpointIP\": \"31.31.31.1\", \"targetPort\": ${4:-8080}, \"weight\": 1}
       ]
     }"
 }
@@ -271,6 +283,13 @@ for spec in "2020 false" "2021 true" "2022 false"; do
     *) echo "  FATAL: service :$1 rejected: $resp"; exit 1 ;;
   esac
 done
+
+# :2023 is the HTTP/2 twin of :2020, for the correlation rows' HTTP/2 leg.
+resp=$(mkrule 2023 false ', "backend_protocol": "http2"' 8090)
+case "$resp" in
+  *Success*) echo "  service :2023 created (HTTP/2, sse=false)" ;;
+  *) echo "  FATAL: service :2023 rejected: $resp"; exit 1 ;;
+esac
 
 sleep 2
 
@@ -325,6 +344,7 @@ K_QUOTA_ID='$K_QUOTA_ID'
 GW_ARGS='$GW_ARGS'
 TRUST_PORT='2022'
 EDGE_PORT='2020'
+H2_PORT='2023'
 EOF
 
 echo "#########################################"
@@ -332,4 +352,4 @@ echo "audit-data testbed ready"
 echo "#########################################"
 echo "  Control plane API: http://$VIP:11111/netlox/v1"
 echo "  Audit directory:   llb1:$AUDIT_DIR"
-echo "  Services:          $VIP:2020 (non-streaming), $VIP:2021 (SSE), $VIP:2022 (trusted upstreams)"
+echo "  Services:          $VIP:2020 (non-streaming), $VIP:2021 (SSE), $VIP:2022 (trusted upstreams), $VIP:2023 (HTTP/2)"

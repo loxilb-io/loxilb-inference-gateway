@@ -12,6 +12,9 @@ Endpoints:
   POST /v1/chat/completions   non-streaming, or SSE when the body asks
   GET  /health                readiness
   GET  /__receipts/<nonce>    how many requests carried that X-Test-Nonce
+  GET  /__corr/<nonce>        the traceparent and X-Client-Session-Id lines the
+                              last request with that nonce carried, in order,
+                              each [name as sent, value as received]
 
 The receipt count is the only honest oracle for a refused request. From the
 client side a refusal and a forwarded request whose answer was discarded
@@ -46,6 +49,7 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 # How many requests arrived carrying each X-Test-Nonce. Guarded because the
 # server is threaded.
 RECEIPTS = {}
+CORR = {}
 RECEIPTS_LOCK = threading.Lock()
 
 
@@ -98,8 +102,15 @@ class Handler(BaseHTTPRequestHandler):
         nonce = self.headers.get("X-Test-Nonce")
         if not nonce:
             return
+        # The correlation headers as they arrived: every line, its name as
+        # sent and its value untouched, so the scenario can say whether the
+        # gateway forwarded them byte for byte (and forwarded a duplicate as
+        # a duplicate) rather than whether some value got through.
+        corr = [[k, v] for k, v in self.headers.items()
+                if k.lower() in ("traceparent", "x-client-session-id")]
         with RECEIPTS_LOCK:
             RECEIPTS[nonce] = RECEIPTS.get(nonce, 0) + 1
+            CORR[nonce] = corr
 
     # ── routes ─────────────────────────────────────────────────────────────
     def do_GET(self):
@@ -111,6 +122,11 @@ class Handler(BaseHTTPRequestHandler):
             nonce = path[len("/__receipts/"):]
             with RECEIPTS_LOCK:
                 self._send_json({"nonce": nonce, "count": RECEIPTS.get(nonce, 0)})
+            return
+        if path.startswith("/__corr/"):
+            nonce = path[len("/__corr/"):]
+            with RECEIPTS_LOCK:
+                self._send_json({"nonce": nonce, "headers": CORR.get(nonce, [])})
             return
         self.send_error(404)
 

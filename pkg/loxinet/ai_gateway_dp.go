@@ -29,6 +29,7 @@ package loxinet
 import "C"
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"strconv"
@@ -1400,7 +1401,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.c
 // actor its completion does.
 //
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.int64_t, requestID *C.char, producerID C.int, authSrc C.int, netIdentity *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.int64_t, requestID *C.char, producerID C.int, authSrc C.int, netIdentity *C.char, result *C.ai_gw_decision_t, corr *C.ai_corr_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
@@ -1412,6 +1413,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.c
 
 	count := int(promptTokens) + int(completTokens)
 	tenant := C.GoString(tenantID)
+	traceID, parentSpanID, sessionID := aiCorrStrings(corr)
 	// A zero count no longer short-circuits when a reservation rides along:
 	// the claim must be released even for an uncounted response, or the
 	// tenant's admissions stay blocked until the window rolls over. A
@@ -1459,6 +1461,10 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.c
 
 		AuthSrc:     int(authSrc),
 		NetIdentity: C.GoString(netIdentity),
+
+		TraceID:      traceID,
+		ParentSpanID: parentSpanID,
+		SessionID:    sessionID,
 	})
 
 	if !allowed {
@@ -1654,8 +1660,9 @@ func llb_ai_stream_end(tenantID *C.char, modelName *C.char) C.int {
 //	objective:     the hint that was applied, "" when none was
 //
 //export llb_ai_record_request
-func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int, latencyMs C.int64_t, promptTokens C.int, completTokens C.int, streamStart C.int, streamEnd C.int, errorCode *C.char, requestID *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, isStream C.int, producerID C.int, clientIP *C.char, originIP *C.char, trustedHops C.int, authSrc C.int, netIdentity *C.char, priority C.int, classInfo C.int, objective *C.char) {
+func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int, latencyMs C.int64_t, promptTokens C.int, completTokens C.int, streamStart C.int, streamEnd C.int, errorCode *C.char, requestID *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, isStream C.int, producerID C.int, clientIP *C.char, originIP *C.char, trustedHops C.int, authSrc C.int, netIdentity *C.char, priority C.int, classInfo C.int, objective *C.char, corr *C.ai_corr_t) {
 	defer cgoRecover("llb_ai_record_request")
+	traceID, parentSpanID, sessionID := aiCorrStrings(corr)
 	tenantIDStr := C.GoString(tenantID)
 	modelNameStr := C.GoString(modelName)
 	netIdentityStr := C.GoString(netIdentity)
@@ -1694,7 +1701,32 @@ func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int
 		Priority:  int(priority),
 		ClassInfo: int(classInfo),
 		Objective: C.GoString(objective),
+
+		TraceID:      traceID,
+		ParentSpanID: parentSpanID,
+		SessionID:    sessionID,
 	})
+}
+
+// aiCorrStrings reads a request's trace and session correlation as the data
+// plane captured it (ai_corr_t, sockproxy_ai_gw.h): each "" when absent, and
+// all three "" for a NULL pointer. The data plane decided validity; the
+// values are taken as they are, never cut or rewritten here. Each field is
+// read up to its NUL within its own array, so a missing NUL cannot run on.
+func aiCorrStrings(corr *C.ai_corr_t) (traceID, parentSpanID, sessionID string) {
+	if corr == nil {
+		return "", "", ""
+	}
+	field := func(p *C.char, n int) string {
+		b := C.GoBytes(unsafe.Pointer(p), C.int(n))
+		if i := bytes.IndexByte(b, 0); i >= 0 {
+			b = b[:i]
+		}
+		return string(b)
+	}
+	return field(&corr.trace_id[0], len(corr.trace_id)),
+		field(&corr.parent_span_id[0], len(corr.parent_span_id)),
+		field(&corr.session_id[0], len(corr.session_id))
 }
 
 // netIDCompleteOutcome names, for the binding's request counter, what the
@@ -1725,8 +1757,9 @@ func netIDCompleteOutcome(authSrc int) string {
 // stage ran.
 //
 //export llb_ai_record_deny
-func llb_ai_record_deny(requestID *C.char, producerID C.int, svcIdent *C.char, modelName *C.char, tenantID *C.char, keyID *C.char, userID *C.char, stage C.int, httpStatus C.int, errorCode *C.char, clientIP *C.char, originIP *C.char, trustedHops C.int, authSrc C.int, netIdentity *C.char, priority C.int, classInfo C.int, objective *C.char) {
+func llb_ai_record_deny(requestID *C.char, producerID C.int, svcIdent *C.char, modelName *C.char, tenantID *C.char, keyID *C.char, userID *C.char, stage C.int, httpStatus C.int, errorCode *C.char, clientIP *C.char, originIP *C.char, trustedHops C.int, authSrc C.int, netIdentity *C.char, priority C.int, classInfo C.int, objective *C.char, corr *C.ai_corr_t) {
 	defer cgoRecover("llb_ai_record_deny")
+	traceID, parentSpanID, sessionID := aiCorrStrings(corr)
 	recordAIDeny(aiDenyRecord{
 		RequestID:  C.GoString(requestID),
 		TenantID:   C.GoString(tenantID),
@@ -1749,6 +1782,10 @@ func llb_ai_record_deny(requestID *C.char, producerID C.int, svcIdent *C.char, m
 		Priority:  int(priority),
 		ClassInfo: int(classInfo),
 		Objective: C.GoString(objective),
+
+		TraceID:      traceID,
+		ParentSpanID: parentSpanID,
+		SessionID:    sessionID,
 	})
 }
 
@@ -1802,7 +1839,31 @@ func aiRecordDenyC(d aiDenyRecord) {
 	}()
 	llb_ai_record_deny(args[0], C.int(d.WorkerID), args[1], args[2], args[3], args[4], args[5],
 		C.int(d.Stage), C.int(d.HTTPStatus), args[6], args[7], args[8], C.int(d.TrustedHops),
-		C.int(d.AuthSrc), args[9], C.int(d.Priority), C.int(d.ClassInfo), args[10])
+		C.int(d.AuthSrc), args[9], C.int(d.Priority), C.int(d.ClassInfo), args[10],
+		aiCorrC(d.TraceID, d.ParentSpanID, d.SessionID))
+}
+
+// aiCorrC builds the ai_corr_t the data plane would hand over: nil when all
+// three are "", as a caller with no correlation passes NULL. A value longer
+// than its field is a test's mistake, and panics rather than being cut.
+func aiCorrC(traceID, parentSpanID, sessionID string) *C.ai_corr_t {
+	if traceID == "" && parentSpanID == "" && sessionID == "" {
+		return nil
+	}
+	var c C.ai_corr_t
+	put := func(dst []C.char, v string) {
+		if len(v) >= len(dst) {
+			panic("aiCorrC: value does not fit its field")
+		}
+		for i := 0; i < len(v); i++ {
+			dst[i] = C.char(v[i])
+		}
+		dst[len(v)] = 0
+	}
+	put(c.trace_id[:], traceID)
+	put(c.parent_span_id[:], parentSpanID)
+	put(c.session_id[:], sessionID)
+	return &c
 }
 
 // llb_ai_pd_record records a P/D disaggregation lifecycle event for Prometheus metrics.

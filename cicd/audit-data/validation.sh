@@ -12,6 +12,10 @@
 #   T18  what was dropped before the writer is named exactly, per producer
 #        and per stream, and nothing lands unattributed
 #   T21  two producers enqueuing out of order is not a drop
+#   TC   a client's traceparent and X-Client-Session-Id are recorded on the
+#        deny, complete and settle records (HTTP/1.1 and HTTP/2); absent,
+#        malformed or duplicate -> that field absent, the other kept; the
+#        backend gets both headers as sent; neither is an identity
 #
 # The join key is the client's own X-Request-Id: the gateway adopts a
 # supplied one before the admission gate decides, so every record of a
@@ -433,6 +437,158 @@ chk T-GW-3-5c "the refusal names the peer it came from" "$PEER" \
 # where a defaulted origin would be most likely to be believed.
 chk T-GW-3-5d "and reports no origin, the gate running before the splice" absent \
   "$(printf '%s' "$DORG" | jq -r 'if .actor | has("origin_ip") then "present" else "absent" end')"
+# ════════════════════════════════════════════════════════════════════════════
+echo ""
+echo "TC: trace and session correlation (WP-D)"
+echo "════════════════════════════════════════════════════════════════════════"
+# A client's traceparent and X-Client-Session-Id are recorded on the deny,
+# complete and settle records of its request: trace_id and parent_span_id
+# from a valid traceparent, detail.session_id from a valid session value.
+# Absent, malformed or duplicate -> that field is absent; one header voided
+# never voids the other. Neither header is an identity: a session value
+# beside forged X-Auth-* headers changes no actor field. The gateway
+# forwards both headers to the backend as it received them.
+#
+# Every row reads one record of one request, found by its X-Request-Id, and
+# prints "trace_id|parent_span_id|session_id" with "-" for an absent field,
+# or NO-RECORD(n) when there is not exactly one such record: a row that
+# finds no record has failed for a reason that is not the field.
+
+TC_T=4bf92f3577b34da6a3ce929d0e0e4736
+TC_S="loxigpt.app:sess_01-A"
+TC_S128=$(printf 'a%.0s' $(seq 1 128))
+TC_S129="${TC_S128}a"
+tp() { printf '00-%s-%s-01' "${2:-$TC_T}" "$1"; }   # tp <parent-id> [trace-id]
+
+# tc_send <h1|h2> <deny|admit> [curl args...] → TC_RID, RESP_CODE
+# deny: a valid key on a model outside its list (403 model_not_allowed);
+# admit: a key that may use the model (200, a completion and a settle).
+tc_send() {
+  local proto=$1 kind=$2 port=2020 extra=(); shift 2
+  if [[ "$proto" == h2 ]]; then port=$H2_PORT; extra=(--http2-prior-knowledge); fi
+  new_rid; TC_RID=$LAST_RID
+  if [[ "$kind" == deny ]]; then
+    infer "$port" "$TC_RID" "$(body_for other-model)" "${extra[@]}" -H "X-Api-Key: $K_MODEL" "$@"
+  else
+    infer "$port" "$TC_RID" "$(body_for "$MODEL")" "${extra[@]}" -H "X-Api-Key: $K_ALL" "$@"
+  fi
+}
+tc_rec() { # tc_rec <rid> <event_type> → "trace|parent|session" or NO-RECORD(n)
+  local n
+  wait_for "$1" "$2" || true
+  n=$(count ".request_id==\"$1\" and .event_type==\"$2\"")
+  [[ "$n" == 1 ]] || { echo "NO-RECORD($n)"; return; }
+  for_rid "$1" "$2" | jq -r '[.trace_id // "-", .parent_span_id // "-", .detail.session_id // "-"] | join("|")'
+}
+tc_actor() { # tc_actor <rid> → the completion's actor without the socket peer
+  for_rid "$1" data.ai.complete | head -n1 | jq -c '.actor | del(.remote)'
+}
+tc_wire() { # tc_wire <h1|h2> <nonce> → the correlation fields the backend got
+  if [[ "$1" == h2 ]]; then
+    $hexec l3ep1 curl -s -m 5 --http2-prior-knowledge "http://127.0.0.1:8090/__headers/$2" 2>/dev/null |
+      jq -c '[(.headers.traceparent // [])[] | ["traceparent", .]] + [(.headers["x-client-session-id"] // [])[] | ["x-client-session-id", .]]'
+  else
+    $hexec l3ep1 curl -s -m 5 "$BACKEND/__corr/$2" 2>/dev/null |
+      jq -c '[.headers[] | [(.[0] | ascii_downcase), .[1]]] | sort_by(.[0])'
+  fi
+}
+wire_of() { jq -cn --args '[range(0; $ARGS.positional | length; 2) as $i | $ARGS.positional[$i:$i+2]] | sort_by(.[0])' "$@"; }
+
+for P in h1 h2; do
+  echo "  ── $P ──"
+  # 1. both valid: every record carries exactly the sent values.
+  tc_send "$P" deny -H "traceparent: $(tp 00f067aa0ba902b7)" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+  chk TC-$P-1a "deny arm refused (precondition)" 403 "$RESP_CODE"
+  chk TC-$P-1b "deny carries trace, parent and session" "$TC_T|00f067aa0ba902b7|$TC_S" "$(tc_rec "$R" sec.ai.deny)"
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba902b8)" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+  chk TC-$P-1c "admit arm served (precondition)" 200 "$RESP_CODE"
+  chk TC-$P-1d "completion carries trace, parent and session" "$TC_T|00f067aa0ba902b8|$TC_S" "$(tc_rec "$R" data.ai.complete)"
+  chk TC-$P-1e "settle carries trace, parent and session" "$TC_T|00f067aa0ba902b8|$TC_S" "$(tc_rec "$R" data.ai.settle)"
+  chk TC-$P-1f "the backend got both headers byte for byte" \
+    "$(wire_of traceparent "$(tp 00f067aa0ba902b8)" x-client-session-id "$TC_S")" "$(tc_wire "$P" "$R")"
+
+  # 2. neither sent: no field on any record (never invented).
+  tc_send "$P" deny; R=$TC_RID
+  chk TC-$P-2a "deny without either header: no field" "-|-|-" "$(tc_rec "$R" sec.ai.deny)"
+  tc_send "$P" admit; R=$TC_RID; RID_PLAIN=$R
+  chk TC-$P-2b "completion without either header: no field" "-|-|-" "$(tc_rec "$R" data.ai.complete)"
+  chk TC-$P-2c "settle without either header: no field" "-|-|-" "$(tc_rec "$R" data.ai.settle)"
+
+  # 3. malformed traceparent beside a valid session: the trace fields are
+  #    absent, the session is recorded. Then the higher-version forms.
+  n=0
+  for bad in "00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01" \
+             "00-00000000000000000000000000000000-00f067aa0ba902b7-01" \
+             "00-$TC_T-0000000000000000-01" \
+             "ff-$TC_T-00f067aa0ba902b7-01" \
+             "00-$TC_T-00f067aa0ba902b7-0" \
+             "00-$TC_T-00f067aa0ba902b7-01-x" \
+             "00-$TC_T-00f067aa0ba902b7-0g" \
+             "01-$TC_T-00f067aa0ba902b7-01x"; do
+    n=$((n + 1))
+    tc_send "$P" admit -H "traceparent: $bad" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+    chk TC-$P-3.$n "malformed '$bad': trace absent, session kept" "-|-|$TC_S" "$(tc_rec "$R" data.ai.complete)"
+  done
+  for good in "01-$TC_T-00f067aa0ba902c1-01" "01-$TC_T-00f067aa0ba902c1-01-future"; do
+    n=$((n + 1))
+    tc_send "$P" admit -H "traceparent: $good" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+    chk TC-$P-3.$n "higher version '$good' is read" "$TC_T|00f067aa0ba902c1|$TC_S" "$(tc_rec "$R" data.ai.complete)"
+  done
+
+  # 4. duplicate traceparent (two lines; on HTTP/1.1 in two spellings) beside
+  #    a valid session: the trace fields are absent on all three records, the
+  #    session is kept on all three.
+  if [[ "$P" == h1 ]]; then DUP2=TraceParent; else DUP2=traceparent; fi
+  tc_send "$P" deny -H "traceparent: $(tp 00f067aa0ba902d1)" -H "$DUP2: $(tp 00f067aa0ba902d2)" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+  chk TC-$P-4a "duplicate traceparent: deny keeps the session only" "-|-|$TC_S" "$(tc_rec "$R" sec.ai.deny)"
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba902d3)" -H "$DUP2: $(tp 00f067aa0ba902d4)" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+  chk TC-$P-4b "duplicate traceparent: completion keeps the session only" "-|-|$TC_S" "$(tc_rec "$R" data.ai.complete)"
+  chk TC-$P-4c "duplicate traceparent: settle keeps the session only" "-|-|$TC_S" "$(tc_rec "$R" data.ai.settle)"
+  chk TC-$P-4d "the backend got both traceparent lines as sent (the client did send two)" \
+    "$(wire_of traceparent "$(tp 00f067aa0ba902d3)" traceparent "$(tp 00f067aa0ba902d4)" x-client-session-id "$TC_S")" "$(tc_wire "$P" "$R")"
+
+  # 5. a comma-joined traceparent is not read as one valid value.
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba902e1),$(tp 00f067aa0ba902e2)" -H "X-Client-Session-Id: $TC_S"; R=$TC_RID
+  chk TC-$P-5a "comma-joined traceparent: trace absent, session kept" "-|-|$TC_S" "$(tc_rec "$R" data.ai.complete)"
+
+  # 6. duplicate session beside a valid traceparent: the session is absent on
+  #    all three records, the trace fields are kept on all three.
+  if [[ "$P" == h1 ]]; then SDUP2=x-client-session-id; else SDUP2=X-Client-Session-Id; fi
+  tc_send "$P" deny -H "traceparent: $(tp 00f067aa0ba902f1)" -H "X-Client-Session-Id: $TC_S" -H "$SDUP2: other.session"; R=$TC_RID
+  chk TC-$P-6a "duplicate session: deny keeps the trace only" "$TC_T|00f067aa0ba902f1|-" "$(tc_rec "$R" sec.ai.deny)"
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba902f2)" -H "X-Client-Session-Id: $TC_S" -H "$SDUP2: other.session"; R=$TC_RID
+  chk TC-$P-6b "duplicate session: completion keeps the trace only" "$TC_T|00f067aa0ba902f2|-" "$(tc_rec "$R" data.ai.complete)"
+  chk TC-$P-6c "duplicate session: settle keeps the trace only" "$TC_T|00f067aa0ba902f2|-" "$(tc_rec "$R" data.ai.settle)"
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba902f3)" -H "X-Client-Session-Id: $TC_S,other.session"; R=$TC_RID
+  chk TC-$P-6d "comma-joined session: session absent, trace kept" "$TC_T|00f067aa0ba902f3|-" "$(tc_rec "$R" data.ai.complete)"
+
+  # 7. the session's limits: 128 bytes is read, 129 is not, nor a byte
+  #    outside A-Z a-z 0-9 . _ : - ; the value is never cut.
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba90301)" -H "X-Client-Session-Id: $TC_S128"; R=$TC_RID
+  chk TC-$P-7a "a 128-byte session is recorded whole" "$TC_T|00f067aa0ba90301|$TC_S128" "$(tc_rec "$R" data.ai.complete)"
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba90302)" -H "X-Client-Session-Id: $TC_S129"; R=$TC_RID
+  chk TC-$P-7b "a 129-byte session is absent, not cut" "$TC_T|00f067aa0ba90302|-" "$(tc_rec "$R" data.ai.complete)"
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba90303)" -H "X-Client-Session-Id: sess/01"; R=$TC_RID
+  chk TC-$P-7c "a session with '/' is absent" "$TC_T|00f067aa0ba90303|-" "$(tc_rec "$R" data.ai.complete)"
+
+  # 8. the session is not an identity: forged X-Auth-* beside it leave the
+  #    actor what it is for the same key without them (row 2's request).
+  tc_send "$P" admit -H "X-Client-Session-Id: $TC_S" -H "X-Auth-Tenant: forged-tenant" -H "X-Auth-User: forged-user"; R=$TC_RID
+  tc_rec "$R" data.ai.complete >/dev/null
+  chk TC-$P-8a "forged X-Auth-* with a session: actor as without" "$(tc_actor "$RID_PLAIN")" "$(tc_actor "$R")"
+
+  # 9. retry attempts of one logical call: one trace-id, a new parent-id and
+  #    a new X-Request-Id each (the LoxiGPT team's test point).
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba90401)" -H "X-Client-Session-Id: $TC_S"; RA=$TC_RID
+  tc_send "$P" admit -H "traceparent: $(tp 00f067aa0ba90402)" -H "X-Client-Session-Id: $TC_S"; RB=$TC_RID
+  chk TC-$P-9a "attempt 1 at the backend: its own parent-id" \
+    "$(wire_of traceparent "$(tp 00f067aa0ba90401)" x-client-session-id "$TC_S")" "$(tc_wire "$P" "$RA")"
+  chk TC-$P-9b "attempt 2 at the backend: its own parent-id" \
+    "$(wire_of traceparent "$(tp 00f067aa0ba90402)" x-client-session-id "$TC_S")" "$(tc_wire "$P" "$RB")"
+  chk TC-$P-9c "attempt 1's completion: same trace, its parent" "$TC_T|00f067aa0ba90401|$TC_S" "$(tc_rec "$RA" data.ai.complete)"
+  chk TC-$P-9d "attempt 2's completion: same trace, its parent" "$TC_T|00f067aa0ba90402|$TC_S" "$(tc_rec "$RB" data.ai.complete)"
+done
+
 # ════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "T2 / T18 / T21: what is lost before the writer is named exactly"

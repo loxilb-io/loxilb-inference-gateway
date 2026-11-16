@@ -276,7 +276,6 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 		// explicit client-cert CRL path (leaf-only X509_V_FLAG_CRL_CHECK).
 		// Additive/default-off — empty preserves today's behaviour (77-04 sibling-crl convention).
 		lbRules.Serv.MTLSFrontend.ClientCRLPath = params.Attr.ServiceArguments.MtlsFrontend.ClientCrlPath
-		tk.LogIt(tk.LogDebug, "api: POST LB - mTLS frontend stored: %+v\n", lbRules.Serv.MTLSFrontend)
 	}
 
 	// mTLS Backend Configuration

@@ -435,8 +435,12 @@ type Record struct {
 	RequestID string
 	TraceID   string
 	SpanID    string
-	Actor     Actor
-	Outcome   Outcome
+	// ParentSpanID is the caller's span the request arrived under: the
+	// parent-id of its traceparent. SpanID is left for a span of the
+	// writer's own; a received parent-id is never written there.
+	ParentSpanID string
+	Actor        Actor
+	Outcome      Outcome
 
 	Mgmt *MgmtDetail
 	Data *DataDetail

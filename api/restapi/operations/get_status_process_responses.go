@@ -152,7 +152,7 @@ func (o *GetStatusProcessForbidden) WriteResponse(rw http.ResponseWriter, produc
 const GetStatusProcessInternalServerErrorCode int = 500
 
 /*
-GetStatusProcessInternalServerError Internal service error
+GetStatusProcessInternalServerError Internal service error, including missing or invalid global process data or no readable processes
 
 swagger:response getStatusProcessInternalServerError
 */

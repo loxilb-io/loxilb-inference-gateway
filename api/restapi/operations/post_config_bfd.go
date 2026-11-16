@@ -34,7 +34,7 @@ func NewPostConfigBfd(ctx *middleware.Context, handler PostConfigBfdHandler) *Po
 
 # Create vlan interface in the device
 
-Create or update a BFD session for an existing cluster instance. New sessions require a valid remote address, interval at least 100000 microseconds, and retryCount greater than zero; first setup also validates source IP. Existing-session zero interval/retryCount preserves that value, while unchanged submissions conflict and source-IP changes are not applied. Interval narrows from uint64 to uint32. First creation is asynchronous and can fail after HTTP success.
+Create or update a BFD session for an existing cluster instance. New sessions require a valid remote address, interval at least 100000 microseconds, and retryCount greater than zero; first setup also validates source IP. Existing-session zero interval/retryCount preserves that value, while unchanged submissions conflict and source-IP changes are not applied. Interval narrows from uint64 to uint32. First creation is asynchronous and can fail after HTTP success. BGP-only mode returns 400; an uninitialized BFD subsystem returns 503.
 */
 type PostConfigBfd struct {
 	Context *middleware.Context

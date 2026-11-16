@@ -120,6 +120,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_convhdr
 
+      - name: "test_corr (traceparent and X-Client-Session-Id for the audit records: the capture, the HTTP/1.1 callbacks at every split and on a kept connection, two HTTP/2 streams on the real relay; ASan + UBSan)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_corr
+
+      - name: "test_ai_gw_stub_proto (the record exports end in one ai_corr_t *, llb_ai_kv_best_worker has no const, the weak stubs match)"
+        if: ${{ !cancelled() }}
+        run: make -C loxilb-ebpf/common test_aigwstub
+
       - name: "test_epp_immediate (an Endpoint Picker's immediate answer carries exactly one X-Request-Id, the request's own)"
         if: ${{ !cancelled() }}
         run: make -C loxilb-ebpf/common test_eppimm
@@ -132,6 +140,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: sh loxilb-ebpf/common/check_notify_arm.sh
 
-      - name: "ai_gw_exports_includes (pkg/loxinet/ai_gw_exports.h reads every header sockproxy_ai_gw.h reaches as written; only that header's own text with const removed)"
+      - name: "ai_gw_exports_includes (pkg/loxinet/ai_gw_exports.h reads sockproxy_ai_gw.h as written: no const defined away, no const in its prototypes)"
         if: ${{ !cancelled() }}
         run: bash cicd/common/ai_gw_exports_includes.sh

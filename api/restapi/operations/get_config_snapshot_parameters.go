@@ -31,7 +31,7 @@ type GetConfigSnapshotParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*Comma-separated domains (endpoint, loadbalancer, kvexactbinding, l7policy, firewall, policy, mirror, session, sessionulcl, ipfilter, securityrate, bfd, bgp, ipsec, cors, tracing, cert). Omitted or empty selection captures all supported domains. Inspect included_domains and excluded_domains for actual coverage; certificate material and OTLP header values remain external.
+	/*Comma-separated domains (endpoint, jwtauthprofile, halfclose, netidentity, loadbalancer, kvexactbinding, l7policy, firewall, policy, mirror, session, sessionulcl, ipfilter, securityrate, bfd, bgp, bgppolicyassignment, ipsec, cors, tracing, cert, auditsink). Omitted or empty selection captures all supported domains. Inspect included_domains and excluded_domains for actual coverage; certificate material and OTLP header values remain external.
 	  In: query
 	*/
 	Components *string

@@ -62,7 +62,7 @@ func (o *DeleteConfigBfdRemoteIPRemoteIPOK) WriteResponse(rw http.ResponseWriter
 const DeleteConfigBfdRemoteIPRemoteIPBadRequestCode int = 400
 
 /*
-DeleteConfigBfdRemoteIPRemoteIPBadRequest Malformed arguments for API call
+DeleteConfigBfdRemoteIPRemoteIPBadRequest Malformed arguments for API call or BFD unavailable in BGP-only mode
 
 swagger:response deleteConfigBfdRemoteIpRemoteIpBadRequest
 */
@@ -332,7 +332,7 @@ func (o *DeleteConfigBfdRemoteIPRemoteIPInternalServerError) WriteResponse(rw ht
 const DeleteConfigBfdRemoteIPRemoteIPServiceUnavailableCode int = 503
 
 /*
-DeleteConfigBfdRemoteIPRemoteIPServiceUnavailable Maintenance mode
+DeleteConfigBfdRemoteIPRemoteIPServiceUnavailable Maintenance mode or BFD subsystem unavailable
 
 swagger:response deleteConfigBfdRemoteIpRemoteIpServiceUnavailable
 */
