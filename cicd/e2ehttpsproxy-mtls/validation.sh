@@ -347,6 +347,8 @@ else
     code=1
 fi
 
+bash ./validate_frontend_mtls_sni.sh "$servIP" || code=1
+
 # A rule that takes over a kept listener: runs while the backends are up, and
 # before validate_api.sh deletes the rule on 2020.
 if [[ -f ./validate_takeover.sh ]]; then

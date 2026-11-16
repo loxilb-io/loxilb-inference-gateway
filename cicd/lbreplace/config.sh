@@ -27,5 +27,13 @@ config_docker_host --host1 llb1 --host2 l3ep1 --ptype phy --addr 31.31.31.254/24
 
 sleep 5
 
+# The full-proxy listener uses TLS when checking frontend mTLS readback.
+cert_dir=$(mktemp -d) || exit 1
+trap 'rm -rf -- "$cert_dir"' EXIT
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=lbreplace.test' \
+    -keyout "$cert_dir/server.key" -out "$cert_dir/server.crt" || exit 1
+sudo docker cp "$cert_dir/server.crt" llb1:/opt/loxilb/cert/server.crt || exit 1
+sudo docker cp "$cert_dir/server.key" llb1:/opt/loxilb/cert/server.key || exit 1
+
 # The rules are created by validation.sh: what it checks is the answer to
 # each request, starting with the create.
