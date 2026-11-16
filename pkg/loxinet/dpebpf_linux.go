@@ -2021,7 +2021,10 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 
 	if w.Work == DpCreate {
 		// Set mTLS frontend config directly in dat (when mTLS build tag active)
-		DpLBRuleSetMTLS(dat, w)
+		if err := DpLBRuleSetMTLS(dat, w); err != nil {
+			tk.LogIt(tk.LogError, "[DP] refusing frontend mTLS rule: %v\n", err)
+			return EbpfErrNat4Add
+		}
 
 		ret := C.llb_add_map_elem(C.LL_DP_NAT_MAP,
 			unsafe.Pointer(key),

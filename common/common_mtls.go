@@ -131,13 +131,8 @@ func (m *MTLSFrontendConfig) Validate() error {
 			if err := validatePEMFile(m.ClientCAPath); err != nil {
 				return fmt.Errorf("invalid client CA file: %w", err)
 			}
-		}
-
-		// Validate CA data if provided
-		if m.ClientCACertData != "" {
-			if err := validatePEMData(m.ClientCACertData); err != nil {
-				return fmt.Errorf("invalid client CA certificate data: %w", err)
-			}
+		} else if _, err := DecodeFrontendClientCA(m.ClientCACertData); err != nil {
+			return err
 		}
 	}
 

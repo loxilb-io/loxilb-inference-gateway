@@ -6099,19 +6099,19 @@ func init() {
               "type": "object"
             },
             "mtls_frontend": {
-              "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
+              "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. An enabled verification mode requires a CA bundle. The listener client trust applies when SNI selects a server certificate. TLS-context updates have the serviceArguments lifecycle limitation.",
               "properties": {
                 "client_ca_cert_data": {
-                  "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
+                  "description": "Standard Base64-encoded PEM CA bundle. When client_ca_path is empty, the gateway validates the bundle and stores it in its writable configuration directory for frontend client-certificate verification.",
                   "type": "string"
                 },
                 "client_ca_path": {
-                  "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
+                  "description": "Gateway-local PEM CA bundle path, up to 255 bytes. This path takes precedence when both CA fields are supplied.",
                   "type": "string"
                 },
                 "client_cert_mode": {
                   "default": "disabled",
-                  "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
+                  "description": "Client verification mode. Disabled performs no client verification. Optional verifies a supplied certificate and permits omission. Required requires a valid certificate.",
                   "enum": [
                     "disabled",
                     "optional",
@@ -6124,7 +6124,7 @@ func init() {
                   "type": "string"
                 },
                 "client_crl_path": {
-                  "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
+                  "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, native TLS may load a sibling crl.pem. For an inline CA, the sibling is in the shared managed frontend-client-ca directory. Set an explicit path for a rule-specific CRL. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
                   "type": "string"
                 },
                 "require_client_cn": {
@@ -42891,19 +42891,19 @@ func init() {
               }
             },
             "mtls_frontend": {
-              "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
+              "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. An enabled verification mode requires a CA bundle. The listener client trust applies when SNI selects a server certificate. TLS-context updates have the serviceArguments lifecycle limitation.",
               "type": "object",
               "properties": {
                 "client_ca_cert_data": {
-                  "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
+                  "description": "Standard Base64-encoded PEM CA bundle. When client_ca_path is empty, the gateway validates the bundle and stores it in its writable configuration directory for frontend client-certificate verification.",
                   "type": "string"
                 },
                 "client_ca_path": {
-                  "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
+                  "description": "Gateway-local PEM CA bundle path, up to 255 bytes. This path takes precedence when both CA fields are supplied.",
                   "type": "string"
                 },
                 "client_cert_mode": {
-                  "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
+                  "description": "Client verification mode. Disabled performs no client verification. Optional verifies a supplied certificate and permits omission. Required requires a valid certificate.",
                   "type": "string",
                   "default": "disabled",
                   "enum": [
@@ -42917,7 +42917,7 @@ func init() {
                   "type": "string"
                 },
                 "client_crl_path": {
-                  "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
+                  "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, native TLS may load a sibling crl.pem. For an inline CA, the sibling is in the shared managed frontend-client-ca directory. Set an explicit path for a rule-specific CRL. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
                   "type": "string"
                 },
                 "require_client_cn": {
@@ -44449,19 +44449,19 @@ func init() {
           }
         },
         "mtls_frontend": {
-          "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
+          "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. An enabled verification mode requires a CA bundle. The listener client trust applies when SNI selects a server certificate. TLS-context updates have the serviceArguments lifecycle limitation.",
           "type": "object",
           "properties": {
             "client_ca_cert_data": {
-              "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
+              "description": "Standard Base64-encoded PEM CA bundle. When client_ca_path is empty, the gateway validates the bundle and stores it in its writable configuration directory for frontend client-certificate verification.",
               "type": "string"
             },
             "client_ca_path": {
-              "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
+              "description": "Gateway-local PEM CA bundle path, up to 255 bytes. This path takes precedence when both CA fields are supplied.",
               "type": "string"
             },
             "client_cert_mode": {
-              "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
+              "description": "Client verification mode. Disabled performs no client verification. Optional verifies a supplied certificate and permits omission. Required requires a valid certificate.",
               "type": "string",
               "default": "disabled",
               "enum": [
@@ -44475,7 +44475,7 @@ func init() {
               "type": "string"
             },
             "client_crl_path": {
-              "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
+              "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, native TLS may load a sibling crl.pem. For an inline CA, the sibling is in the shared managed frontend-client-ca directory. Set an explicit path for a rule-specific CRL. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
               "type": "string"
             },
             "require_client_cn": {
@@ -45597,19 +45597,19 @@ func init() {
       }
     },
     "LoadbalanceEntryServiceArgumentsMtlsFrontend": {
-      "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
+      "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. An enabled verification mode requires a CA bundle. The listener client trust applies when SNI selects a server certificate. TLS-context updates have the serviceArguments lifecycle limitation.",
       "type": "object",
       "properties": {
         "client_ca_cert_data": {
-          "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
+          "description": "Standard Base64-encoded PEM CA bundle. When client_ca_path is empty, the gateway validates the bundle and stores it in its writable configuration directory for frontend client-certificate verification.",
           "type": "string"
         },
         "client_ca_path": {
-          "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
+          "description": "Gateway-local PEM CA bundle path, up to 255 bytes. This path takes precedence when both CA fields are supplied.",
           "type": "string"
         },
         "client_cert_mode": {
-          "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
+          "description": "Client verification mode. Disabled performs no client verification. Optional verifies a supplied certificate and permits omission. Required requires a valid certificate.",
           "type": "string",
           "default": "disabled",
           "enum": [
@@ -45623,7 +45623,7 @@ func init() {
           "type": "string"
         },
         "client_crl_path": {
-          "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
+          "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, native TLS may load a sibling crl.pem. For an inline CA, the sibling is in the shared managed frontend-client-ca directory. Set an explicit path for a rule-specific CRL. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes. GET returns the stored path.",
           "type": "string"
         },
         "require_client_cn": {

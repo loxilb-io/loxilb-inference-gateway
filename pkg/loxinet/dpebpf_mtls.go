@@ -27,15 +27,16 @@ import "C"
 import (
 	"unsafe"
 
+	opts "github.com/loxilb-io/loxilb/options"
 	tk "github.com/loxilb-io/loxilib"
 )
 
 // DpLBRuleSetMTLS sets mTLS fields directly in the dp_proxy_tacts struct (dat)
 // so that llb_conv_nat2proxy can read them when creating the proxy entry.
 // This is called in the DpCreate path before llb_add_map_elem.
-func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) {
+func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) error {
 	if w.NatType != DpFullProxy {
-		return
+		return nil
 	}
 
 	// The backend leg's request rides every push, with or without a frontend
@@ -50,7 +51,7 @@ func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) {
 	}
 
 	if w.MTLSFrontend == nil {
-		return
+		return nil
 	}
 
 	switch w.MTLSFrontend.ClientCertMode {
@@ -66,8 +67,14 @@ func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) {
 		dat.mtls_require_client_cn = 1
 	}
 
-	if w.MTLSFrontend.ClientCAPath != "" {
-		cPath := C.CString(w.MTLSFrontend.ClientCAPath)
+	caPath := ""
+	if dat.mtls_frontend_mode != 0 {
+		var err error
+		caPath, err = frontendClientCAPath(opts.Opts.ConfigPath, w.MTLSFrontend)
+		if err != nil {
+			return err
+		}
+		cPath := C.CString(caPath)
 		C.strncpy(&dat.mtls_client_ca_path[0], cPath, 255)
 		C.free(unsafe.Pointer(cPath))
 	}
@@ -87,6 +94,7 @@ func DpLBRuleSetMTLS(dat *proxyActs, w *LBDpWorkQ) {
 	}
 
 	tk.LogIt(tk.LogInfo, "[DP] mTLS frontend set in dat: mode=%s ca_path=%s require_cn=%v crl=%s\n",
-		w.MTLSFrontend.ClientCertMode, w.MTLSFrontend.ClientCAPath, w.MTLSFrontend.RequireClientCN,
+		w.MTLSFrontend.ClientCertMode, caPath, w.MTLSFrontend.RequireClientCN,
 		w.MTLSFrontend.ClientCRLPath)
+	return nil
 }
