@@ -8,6 +8,19 @@ on:
         default: false
         description: Export the u22 candidate to the privileged BGP recovery job
   workflow_dispatch:
+    inputs:
+      bgp-recovery:
+        type: boolean
+        default: false
+        description: Export the u22 candidate to the privileged BGP recovery job
+      source-sha:
+        description: Checkout revision for the PR 577 comparison
+        type: choice
+        default: workflow-ref
+        options:
+          - workflow-ref
+          - '3e48242903d747de0889d349b1089960282c525b'
+          - '2d0aa7c856816ab35580ec3e5d21e3d848b959bb'
 
 permissions:
   contents: read
@@ -25,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.source-sha != 'workflow-ref' && inputs.source-sha || github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
           persist-credentials: false
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
@@ -90,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.source-sha != 'workflow-ref' && inputs.source-sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Read and check centralized pins
         id: pins
@@ -174,7 +187,7 @@ jobs:
         run: date +%s > "$RUNNER_TEMP/bgp-recovery-job-start"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.source-sha != 'workflow-ref' && inputs.source-sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@v5
         with:
