@@ -21,15 +21,8 @@ package loxinet
 #include <stdlib.h>
 #include <string.h>
 
-// What the class resolver answers with (must match sockproxy_ai_gw.h).
-typedef struct ai_gw_class {
-    int32_t priority;
-    uint8_t priority_class;
-    uint8_t objective_denied;
-    uint8_t pad[2];
-    char    objective[64];
-} ai_gw_class_t;
-_Static_assert(sizeof(ai_gw_class_t) == 72, "ai_gw_class_t size");
+// ai_gw_class_t comes from the datapath header (see ai_gw_exports.h).
+#include "ai_gw_exports.h"
 */
 import "C"
 
