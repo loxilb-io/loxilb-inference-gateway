@@ -21,18 +21,10 @@ package loxinet
 #include <stdlib.h>
 #include <string.h>
 
-// AI Gateway decision structure (must match sockproxy_ai_gw.h)
-// decision values: 0=allow, 1=deny_401, 2=deny_403, 3=deny_429, 4=deny_503
-typedef struct {
-    int  decision;
-    int  retry_after;
-    char tenant_id[128];
-    char model_name[128];
-    char key_id[64];
-    char error_code[64];
-    char user_id[128];
-    int  auth_flags;
-} ai_gw_decision_t;
+// The bridge's structures and the datapath's prototypes of this package's
+// exports, read so that a Go signature which differs from its prototype is a
+// compile error (see ai_gw_exports.h). The structures are not mirrored here.
+#include "ai_gw_exports.h"
 */
 import "C"
 
@@ -1179,7 +1171,7 @@ func tokenQuotaReleaseInternal(store *rl.RateLimiterStore, tenantID, modelName, 
 // The C caller clears the amount/epoch and records the refusal itself.
 //
 //export llb_ai_token_quota_release
-func llb_ai_token_quota_release(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, reservedToks C.int, resEpoch C.longlong) {
+func llb_ai_token_quota_release(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, reservedToks C.int, resEpoch C.int64_t) {
 	defer func() {
 		if r := recover(); r != nil {
 			tk.LogIt(tk.LogCritical, "[AIGateway] reservation cancellation panic: %v\n", r)
@@ -1296,7 +1288,7 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // in play it is the plain prompt + max_tokens claim.
 //
 //export llb_ai_token_quota_reserve
-func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptEst C.int, maxTokens C.int, defaultTokens C.int, resEpoch *C.longlong, granted *C.int, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptEst C.int, maxTokens C.int, defaultTokens C.int, resEpoch *C.int64_t, granted *C.int, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail closed on panic, matching the other gate decisions: deny with a
 	// short retry rather than crashing the datapath or silently admitting.
 	// A refusal is counted once, by the C gate's deny record, not here.
@@ -1361,7 +1353,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.c
 		noteReservationClamped(service, clamped)
 	}
 	if resEpoch != nil {
-		*resEpoch = C.longlong(epoch)
+		*resEpoch = C.int64_t(epoch)
 	}
 	if granted != nil {
 		*granted = C.int(held)
@@ -1408,7 +1400,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.c
 // actor its completion does.
 //
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, requestID *C.char, producerID C.int, authSrc C.int, netIdentity *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.int64_t, requestID *C.char, producerID C.int, authSrc C.int, netIdentity *C.char, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
