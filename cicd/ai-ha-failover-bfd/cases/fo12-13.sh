@@ -175,17 +175,26 @@ bfd_cut_at_start() {
 }
 
 fo12_bfd_only_at_start() {
-  local n low high status=FAIL launch1 launch2
+  local n low high status=FAIL launch1 launch2 rc1=0 rc2=0
   wait_roles 60 6 || { verdict FAILOVER-12.bfd-only NOT_RUN "$ROLE_LAST"; return; }
   read -r low high < <(for n in $NODES; do echo "$(node_eth0 "$n") $n"; done |
     sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | awk '{print $2}' | xargs)
   # loxilb uses the higher IPv4 address as the tiebreak for two active ranks.
   node_death "$BACKUP_NODE" >/dev/null; node_death "$MASTER_NODE" >/dev/null
+  if ! node_start_pair > "$F12_DIR/bfd-pair-start.log" 2>&1; then
+    verdict FAILOVER-12.bfd-only NOT_RUN "could not start both BFD test containers"
+    return
+  fi
   NODE_RETURN_HOOK=bfd_cut_at_start node_return "$low" > "$F12_DIR/$low.bfd-cut.log" 2>&1 &
   launch1=$!
   NODE_RETURN_HOOK=bfd_cut_at_start node_return "$high" > "$F12_DIR/$high.bfd-cut.log" 2>&1 &
   launch2=$!
-  wait "$launch1"; wait "$launch2"
+  wait "$launch1" || rc1=$?
+  wait "$launch2" || rc2=$?
+  if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ]; then
+    verdict FAILOVER-12.bfd-only NOT_RUN "the BFD test gateways failed to start"
+    return
+  fi
   local start clean=1
   start=$(now_ms)
   while [ "$(( $(now_ms) - start ))" -lt 100000 ]; do

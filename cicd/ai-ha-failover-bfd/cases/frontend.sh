@@ -45,6 +45,10 @@ frontend_case() (
     printf '%s --ha-frontend-interface=e%s%s\n' "$(cat "$dir/$n-command")" "$n" "$SW_C" > "$HAFO_DIR/.${n}-cmdline"
     node_death "$n" >/dev/null
   done
+  if ! node_start_pair > "$dir/pair-start.log" 2>&1; then
+    verdict FAILOVER-FRONTEND NOT_RUN "could not start both frontend test containers"
+    return
+  fi
   read -r m b <<< "$NODES"
   node_return "$m" > "$dir/$m-start.log" 2>&1 & pid1=$!
   node_return "$b" > "$dir/$b-start.log" 2>&1 & pid2=$!

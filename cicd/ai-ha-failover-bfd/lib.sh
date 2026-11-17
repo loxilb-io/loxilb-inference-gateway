@@ -181,6 +181,15 @@ node_death() {
   echo "$t0"
 }
 
+# Docker can swap the dynamic peer IPs if both default-bridge endpoints
+# start concurrently. Allocate in setup order before launching the gateways.
+node_start_pair() {
+  local n
+  for n in $NODES; do
+    docker start "$n" >/dev/null || return 1
+  done
+}
+
 # node_return <node>: emulates the reboot of a dead node, then starts the
 # gateway with the flags it had and re-applies the configuration list.
 # What is cleared before the gateway starts: the whole old network namespace
