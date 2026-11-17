@@ -488,6 +488,9 @@ func (b *bfdSession) pairTimeoutLocked(now time.Time) func() {
 	state := electionPeerLost
 	if b.RemDisc == 0 {
 		state = electionStartExpired
+		if b.startExpired != nil && !b.startExpired() {
+			state = electionStartWithoutBFD
+		}
 		if b.startExpired != nil && b.startExpired() && (last.IsZero() || now.Sub(last) > detection) {
 			b.peerLost = true
 			return b.pairNotificationLocked(state)

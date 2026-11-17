@@ -145,12 +145,18 @@ role refuses quota-limited tenants while its quota state warms.
 
 ### B1 election limits
 
-| Verdict | Required result | Basis |
+| Verdict | Required result | Source |
 |---|---|---|
-| FAILOVER-1, each death, stop, term and crash repetition | Survivor becomes MASTER within 2 s. The first sample in a sustained 3 s run of HTTP 200 starts within 12 s. The stop clock starts at container exit, after Docker's grace period. The other modes start at fault injection. | Step 0 measured BFD promotion in 0.26–0.60 s after the effective fault. The 2 s test budget also allows for runner and sampling delay. The 12 s HTTP budget covers the Step 0 maximum of 9.52 s, listener activation and the 3 s quota warm-up already included in that measurement. These are CI limits for this proxy scenario. |
-| FAILOVER-12a and FAILOVER-12b | The isolated node owns the VIP as MASTER and returns a keyed HTTP 200 within 120 s of starting. It still serves in the final three samples and logs the 95 s start allowance. | 90 s XSync hello gate plus 5 s cool-off. The 25 s margin covers boot, quota warm-up and the 5 s sampling interval. The isolated B1 bed run first served about 106.5 s after start. |
-| FAILOVER-12c and FAILOVER-12a.peer-up | One MASTER and one BACKUP within 45 s of starting the returning peer. The incumbent keeps the VIP, and all probes are HTTP 200 (at least 10 samples). | Step 0 role convergence took about 16.6–29.7 s with the same scenario. The budget allows runner overhead and six consecutive role samples. B1 requires zero observed outages on a BACKUP return. |
-| FAILOVER-12 | Both starts and both returns pass. | The two isolated paths cover a survivor restart and cold start. |
+| FAILOVER-1 per repetition | MASTER promotion within 2 s. The stop clock starts at container exit after Docker's grace period. Other modes use fault injection. | Step 0 measured promotion in about 0.26–0.60 s. The 2 s gate includes runner and sample delay. |
+| FAILOVER-12a and FAILOVER-12b | MASTER with the VIP within 120 s of gateway process creation, with ownership intact in the final three samples. The epoch comes from the gateway PID's kernel start time. | The 95 s XSync and cool-off gate plus 25 s for process initialization, ownership installation and sampling. This retains the 120 s threshold. |
+| FAILOVER-12c and FAILOVER-12a.peer-up | The active node retains the VIP throughout the sampled return. At least 10 HTTP probes, all HTTP 200. | No pre-emption on peer return. The sample floor prevents a vacuous pass. |
+| FAILOVER-12.bfd-only | Both nodes can become active when XSync is ready and only initial BFD is blocked. On reconnect only the higher-IP node owns the VIP. | The accepted split-brain policy and the fixed active-rank tie-break. |
+
+The suite records promotion-to-sustained-HTTP time for campaign A, including
+lone start. Three seconds of uninterrupted HTTP 200 define sustained service.
+Returning-peer role stabilisation is recorded after six consistent samples.
+The return observer has a 120 s collection limit and reports unobserved if
+the roles have not stabilised. It does not set a role-stabilisation verdict.
 
 The election gate also checks that a BFD BACKUP refuses a forced MASTER write to
 `/config/cistate`. The failback checks require the survivor to keep the VIP

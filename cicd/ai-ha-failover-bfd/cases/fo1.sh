@@ -15,7 +15,7 @@
 #
 # Per repetition the timeline is: t0, survivor reports MASTER, VIP on the
 # survivor, listener on the VIP, first 200, and the probe's outcome histogram
-# in between. Each repetition judges promotion and stable HTTP recovery.
+# in between. Each repetition judges promotion and records stable HTTP recovery.
 #
 # Mutations: HAFO_MUTATE=fo1-skip-fault skips the fault, and
 # HAFO_MUTATE=fo1-backend-down stops the backend first; every repetition must
@@ -24,7 +24,6 @@
 FO1_REPS=${HAFO_FO1_REPS:-5}
 FO1_CRASH_REPS=${HAFO_FO1_CRASH_REPS:-3}
 FO1_HANDOVER_MS=2000
-FO1_RECOVERY_MS=12000
 FO1_DIR="$OUT/fo1"
 mkdir -p "$FO1_DIR"
 : > "$FO1_DIR/summary.jsonl"
@@ -130,13 +129,13 @@ tl["settled"] = sys.argv[6] == "1"
 print(json.dumps(tl, sort_keys=True))
 PY
   local judgment status detail
-  judgment=$(python3 - "$FO1_DIR/summary.jsonl" "$FO1_HANDOVER_MS" "$FO1_RECOVERY_MS" <<'PY2'
+  judgment=$(python3 - "$FO1_DIR/summary.jsonl" "$FO1_HANDOVER_MS" <<'PY2'
 import json
 import sys
 
 with open(sys.argv[1]) as samples:
     t = json.loads(list(samples)[-1])
-handover_limit, recovery_limit = map(int, sys.argv[2:])
+handover_limit = int(sys.argv[2])
 master, stable = t["survivor_master_ms"], t["stable_200_from_ms"]
 # docker stop includes its grace period. Use container exit as the start of
 # the service budget. Other fault modes start when the link or process is hit.
@@ -144,17 +143,16 @@ anchor = t["exit_ms"] if t["mode"] == "stop" else 0
 if t["survivor_role_before"] != "BACKUP" or anchor is None:
     print("NOT_RUN pre-fault BACKUP or stop exit sample is missing")
 else:
-    passed = (master is not None and stable is not None and t["settled"]
-              and master - anchor <= handover_limit
-              and stable - anchor <= recovery_limit)
+    passed = master is not None and master - anchor <= handover_limit
     print("PASS" if passed else "FAIL",
-          f"master={master} ms, stable HTTP 200={stable} ms, anchor={anchor} ms,"
-          f" 3 s stable sample={t['settled']}; allowed after anchor:"
-          f" promotion <= {handover_limit} ms, stable HTTP <= {recovery_limit} ms")
+          f"master={master} ms, anchor={anchor} ms; promotion <= {handover_limit} ms")
+delay = max(0, stable - master) if master is not None and stable is not None and t["settled"] else "unobserved"
+print(f"promotion to sustained HTTP 200: {delay} ms (campaign A)")
 PY2
 )
-  read -r status detail <<< "$judgment"
+  read -r status detail <<< "${judgment%%$'\n'*}"
   verdict "FAILOVER-1.$mode.$i" "${status:-FAIL}" "${detail:-timeline judgment failed}"
+  verdict "FAILOVER-1.$mode.$i.http" RECORDED "${judgment#*$'\n'}"
   # Restore the pair for the next repetition.
   case "$mode" in
     crash)

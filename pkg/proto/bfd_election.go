@@ -14,6 +14,7 @@ const (
 	electionUp
 	electionPeerLost
 	electionStartExpired
+	electionStartWithoutBFD
 )
 
 const (
@@ -40,6 +41,8 @@ func elect(local, peer uint32, state electionState, eligible, shuttingDown bool)
 	}
 
 	switch state {
+	case electionStartWithoutBFD:
+		return electionDecision{common.CIMasterStateString, "active_without_bfd"}
 	case electionStartExpired:
 		return electionDecision{common.CIMasterStateString, "active_alone"}
 	case electionPeerLost:

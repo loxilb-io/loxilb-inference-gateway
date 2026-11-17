@@ -28,6 +28,7 @@ func TestElectionTable(t *testing.T) {
 		{electionUp, "up"},
 		{electionPeerLost, "peer_lost"},
 		{electionStartExpired, "start_expired"},
+		{electionStartWithoutBFD, "start_without_bfd"},
 	}
 	const (
 		backup = common.CIBackupStateString
@@ -39,7 +40,7 @@ func TestElectionTable(t *testing.T) {
 		'L': {backup, "legacy_peer"}, 'P': {master, "preferred_rank"},
 		'R': {backup, "peer_preferred"}, 'I': {backup, "invalid_local_rank"},
 		'X': {backup, "ineligible"}, 'S': {backup, "shutdown_withdrawal"},
-		'T': {master, "peer_timeout"}, 'A': {master, "active_alone"},
+		'T': {master, "peer_timeout"}, 'A': {master, "active_alone"}, 'N': {master, "active_without_bfd"},
 	}
 	// UP table columns are unknown, withdrawn, backup-low, backup-high,
 	// master-low, master-high, legacy-min, legacy-max.
@@ -74,6 +75,8 @@ func TestElectionTable(t *testing.T) {
 								code = 'T'
 							case electionStartExpired:
 								code = 'A'
+							case electionStartWithoutBFD:
+								code = 'N'
 							}
 						}
 						want := reasons[code]

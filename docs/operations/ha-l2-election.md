@@ -20,6 +20,37 @@ elected role use the existing error response. Readiness retains its
 configuration-recovery meaning. The log and `loxilb_ha_election_events_total`
 record transition reasons. The lone-start log records the 95-second allowance.
 
+## Startup and recovery timing
+
+Budget gateway initialization, the **95 s start gate**, and VIP
+installation for an isolated node. MASTER with the VIP completes the
+election. Saved full-proxy rules then need listener preparation on the
+existing 10 s rule ticker and may need the default 3 s quota warm-up
+before HTTP 200. The original llbigw-2 samples took 113.536 s for a
+restart and 132.122 s for cold start, including harness and sampling time.
+
+## Election events
+
+`loxilb_ha_election_events_total{reason="..."}` is a counter. Each time
+series appears when its reason is used. The reason values are fixed.
+
+| Reason | Decision |
+|---|---|
+| `active_alone` | XSync startup wait timed out with no usable BFD peer. |
+| `active_without_bfd` | XSync reached the peer, but BFD was never heard before initial detection closed. |
+| `peer_timeout` | An observed BFD peer stopped responding. |
+| `preferred_rank`, `peer_preferred` | The local or remote rank won. |
+| `equal_rank` | Equal ranks select BACKUP. |
+| `legacy_peer` | The peer uses the legacy discriminator range. |
+| `peer_withdrawn` | The peer has a withdrawn rank. |
+| `waiting_for_peer` | No settled peer decision yet. |
+| `ineligible`, `invalid_local_rank`, `shutdown_withdrawal` | The local node cannot be selected by that election decision. |
+| `external_role_refused` | A role write conflicts with the current BFD election. |
+
+If BFD alone is cut at startup, XSync can be ready on both nodes and both
+can become active. On reconnect the higher-IP active rank keeps the VIP
+and the lower-IP node becomes BACKUP.
+
 ## Upgrade
 
 1. Verify one MASTER, one BACKUP, BFD UP, and customer traffic. Record the
