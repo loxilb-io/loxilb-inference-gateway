@@ -14,6 +14,7 @@ The case detaches and reattaches the active test node's frontend Docker
 network. It requires the same name and a new kernel ifindex. The port API
 and transmit map must reference the replacement, BFD and VIP ownership
 must remain stable, and the client must recover. The case reports the
-transmit-map recovery time and allows the existing VIP advertisement
-sweep to refresh the customer neighbor entry. The unit test separately
+transmit-map recovery time. The MASTER re-advertises the affected IPv4
+VIPs once after processing the new datapath binding. The normal periodic
+advertisement remains available. The unit test separately
 delivers the old ifindex's delete after reattachment.

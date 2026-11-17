@@ -125,15 +125,16 @@ type PortLayer2Info struct {
 
 // Port - holds all information related to an interface
 type Port struct {
-	Name   string
-	PortNo int
-	Zone   string
-	SInfo  PortSwInfo
-	HInfo  PortHwInfo
-	Stats  PortStatsInfo
-	L3     PortLayer3Info
-	L2     PortLayer2Info
-	Sync   DpStatusT
+	Name            string
+	PortNo          int
+	Zone            string
+	SInfo           PortSwInfo
+	HInfo           PortHwInfo
+	Stats           PortStatsInfo
+	L3              PortLayer3Info
+	L2              PortLayer2Info
+	Sync            DpStatusT
+	refreshVIPsOnUp bool
 }
 
 // PortsH - the port context container
@@ -226,11 +227,18 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 			delete(P.portOmap, p.SInfo.OsID)
 			p.SInfo.OsID = osid
 			P.portOmap[osid] = p
+			p.refreshVIPsOnUp = true
 		}
 
 		p.HInfo.Link = hwi.Link
 		p.HInfo.State = hwi.State
 		p.HInfo.Mtu = hwi.Mtu
+		if p.refreshVIPsOnUp && hwi.Link && hwi.State && zn.Rules != nil {
+			p.refreshVIPsOnUp = false
+			// Queue after PortAdd has submitted all replacement work,
+			// including any work done by the port-type branches below.
+			defer zn.Rules.queuePortVIPRefresh(p)
+		}
 		macChanged := !p.IsL3TunPort() && p.HInfo.MacAddr != hwi.MacAddr
 		if macChanged {
 			p.HInfo.MacAddr = hwi.MacAddr
