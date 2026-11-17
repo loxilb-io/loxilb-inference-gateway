@@ -7957,6 +7957,10 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 	}
 
 	ciState, _ := mh.has.CIStateGetInst(inst)
+	// An unelected L2 HA node must not publish a VIP on a dummy device.
+	if ciState == cmn.CIUnDefStateString && !egress && tk.IsNetIPv4(IP.String()) && mh.has.protectsL2VIP(inst) {
+		ciState = cmn.CIBackupStateString
+	}
 	if ciState == cmn.CIMasterStateString {
 		dev := fmt.Sprintf("llb-rule-%s", IP.String())
 		ret, _ := R.zone.L3.IfaFindAddr(dev, IP)
