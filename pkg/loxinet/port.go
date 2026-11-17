@@ -110,11 +110,11 @@ type PortSwInfo struct {
 	// PortPolNumEgr - egress-direction policer id (needs --egr-hooks)
 	PortPolNumEgr int
 	PortMirNum    int
-	PortActive bool
-	PortReal   *Port
-	PortOvl    *Port
-	SessMark   uint64
-	BpfLoaded  bool
+	PortActive    bool
+	PortReal      *Port
+	PortOvl       *Port
+	SessMark      uint64
+	BpfLoaded     bool
 }
 
 // PortLayer2Info - layer2 information related to an interface
@@ -209,16 +209,35 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 		return PortZoneErr, errors.New("no-zone error")
 	}
 
-	if P.portSmap[name] != nil {
-		p := P.portSmap[name]
+	if p := P.portSmap[name]; p != nil {
+		// A recreated link keeps the logical LoxiLB port and its rules, but
+		// its kernel and datapath bindings belong to the new ifindex.
+		replaced := portIndexChanged(p.SInfo.OsID, osid)
+		if replaced {
+			// A netns move can deliver the replacement under a temporary
+			// name before it acquires the final name.
+			if alias := P.portOmap[osid]; alias != nil && alias != p {
+				if ret, err := P.PortDel(alias.Name, alias.SInfo.PortType); err != nil {
+					return ret, err
+				}
+			}
+			tk.LogIt(tk.LogInfo, "port replace - %s ifindex %d -> %d\n", name, p.SInfo.OsID, osid)
+			p.DP(DpRemove)
+			delete(P.portOmap, p.SInfo.OsID)
+			p.SInfo.OsID = osid
+			P.portOmap[osid] = p
+		}
+
 		p.HInfo.Link = hwi.Link
 		p.HInfo.State = hwi.State
 		p.HInfo.Mtu = hwi.Mtu
-		if !p.IsL3TunPort() && !bytes.Equal(hwi.MacAddr[:], p.HInfo.MacAddr[:]) {
+		macChanged := !p.IsL3TunPort() && p.HInfo.MacAddr != hwi.MacAddr
+		if macChanged {
 			p.HInfo.MacAddr = hwi.MacAddr
-			p.DP(DpCreate)
-
 			tk.LogIt(tk.LogInfo, "port add - %s addr-changed\n", name)
+		}
+		if replaced || macChanged {
+			p.DP(DpCreate)
 			zn.L3.IfasTicker(true)
 		}
 		if p.SInfo.PortType == cmn.PortReal {
@@ -300,6 +319,9 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 				p.DP(DpCreate)
 				return 0, nil
 			}
+		}
+		if replaced {
+			return 0, nil
 		}
 		tk.LogIt(tk.LogTrace, "port add - %s exists\n", name)
 		return PortExistsErr, errors.New("port exists")
@@ -411,6 +433,18 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 	tk.LogIt(tk.LogDebug, "port added - %s:%d OSID %d\n", name, p.PortNo, osid)
 
 	return 0, nil
+}
+
+// Zero/negative indices are used by internal callers that have no kernel identity.
+func portIndexChanged(current, event int) bool {
+	return current > 0 && event > 0 && current != event
+}
+
+func (P *PortsH) portDeleteLink(name string, ptype, ifindex int) (int, error) {
+	if current := P.portSmap[name]; current != nil && portIndexChanged(current.SInfo.OsID, ifindex) {
+		return 0, nil
+	}
+	return P.PortDel(name, ptype)
 }
 
 // PortDel - delete a port from loxinet realm
