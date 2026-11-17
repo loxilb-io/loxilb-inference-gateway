@@ -36,7 +36,8 @@
 
 F11_ID=${F11_ID:-FAILOVER-11}
 echo; echo "$F11_ID  Failback$([ "$F11_ID" = FAILOVER-11r ] && echo ' after the standby was restarted first')"
-F11_DIR="$OUT/$(echo "$F11_ID" | tr 'A-Z' 'a-z' | tr -d '-')"; mkdir -p "$F11_DIR"
+f11_fixture="fo${F11_ID#FAILOVER-}"
+F11_DIR="$OUT/$f11_fixture"; mkdir -p "$F11_DIR"
 f11_notrun() { for c in $F11_ID.single-master $F11_ID.probe $F11_ID.debt; do verdict "$c" NOT_RUN "$1"; done; }
 f11_hook() { # a sampler in the returning node's new namespace, before its gateway starts
   sudo ip netns exec "$1" python3 "$HAFO_DIR/hafo_tools.py" node --vip $VIP --interval $SAMPLE_INTERVAL \
@@ -73,8 +74,7 @@ if [ "$f11_pre_ok" != 1 ]; then
 elif ! fo_begin; then
   f11_notrun "roles did not hold before the fault ($ROLE_LAST)"
 else
-  f11_lc=$(echo "$F11_ID" | tr 'A-Z' 'a-z' | tr -d '-')      # fo11 / fo11r: its own tenants
-  KD=$(key_raw "$f11_lc-debt-key"); KC=$(key_raw "$f11_lc-ctl-key")
+  KD=$(key_raw "$f11_fixture-debt-key"); KC=$(key_raw "$f11_fixture-ctl-key")
   mmac=$(node_mac "$M"); smac=$(node_mac "$S")
   loxilb_pid "$M" > "$F11_DIR/pid-$M"; loxilb_pid "$S" > "$F11_DIR/pid-$S"
   monitors_start "$F11_DIR"
