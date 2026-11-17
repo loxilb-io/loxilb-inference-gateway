@@ -33,6 +33,8 @@ echo "#########################################"
 echo "Connecting and configuring  hosts"
 echo "#########################################"
 
+config_t0=$(date +%s)
+
 
 connect_docker_hosts l3h1 llb1
 connect_docker_hosts l3h2 llb1
@@ -243,4 +245,14 @@ do
   done
 done
 
-sleep 60
+# The 60 s this scenario has always settled for is not enough when llb1 is
+# slow to load its eBPF program onto the interfaces above (4-5 s each on some
+# runners, 29 loads): the routes for the last subnets are still queued behind
+# those loads, and the first pings to an L3 host get their replies sent out
+# eth0. Wait for the routes, and keep the 60 s as the minimum.
+settle_start=$SECONDS
+wait_loxilb_dp_routes llb1 "$config_t0"
+settle_left=$(( 60 - (SECONDS - settle_start) ))
+if (( settle_left > 0 )); then
+  sleep "$settle_left"
+fi
