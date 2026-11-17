@@ -226,6 +226,15 @@ fi
 for n in $NODES; do
   echo "$n role=$(role "$n") $(vip_state "$n")" | tee -a "$OUT/fo0-vip-state.txt"
 done
+forced=$(api "$BACKUP_NODE" POST /config/cistate '{"instance":"llb-inst0","state":"MASTER","vip":"0.0.0.0"}')
+forced_code=$(printf '%s\n' "$forced" | sed -n 's/^http_code=//p')
+if [[ "$forced_code" =~ ^[45][0-9][0-9]$ ]] &&
+   [ "$(role "$BACKUP_NODE")" = BACKUP ] && [ "$(role "$MASTER_NODE")" = MASTER ]; then
+  verdict FAILOVER-0.cistate-gate PASS "the BFD BACKUP refused a forced MASTER request and the incumbent stayed active"
+else
+  verdict FAILOVER-0.cistate-gate FAIL "HTTP ${forced_code:-none}; roles: $(role "$BACKUP_NODE") / $(role "$MASTER_NODE")"
+fi
+
 verdict FAILOVER-0.standby-listener RECORDED "$BACKUP_NODE (BACKUP): $(vip_state "$BACKUP_NODE"); $MASTER_NODE (MASTER): $(vip_state "$MASTER_NODE")"
 for n in $NODES; do
   docker exec "$n" sh -c 'grep -h -E "Added BFD|using bfd bind|BFD State|HA stage=ka-gate|kept without a listener|ci-change instance" /var/log/loxilb$(hostname).log' 2>/dev/null | sed "s/^/$n: /"

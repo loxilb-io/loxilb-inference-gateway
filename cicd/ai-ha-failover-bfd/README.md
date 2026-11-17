@@ -93,7 +93,7 @@ eBPF map.
 |---|---|---|
 | FAILOVER-0 | Is the pair healthy before any fault? Roles, a keyed 200 with one backend receipt, a 401 with none, a completed quota sync push, equal read-backs, store and JWKS usable on both. Records the standby's listener state, BFD lines, start-up times, bpffs layout. | PASS/FAIL + RECORDED |
 | BED-1, BED-2 | Harness checks: docker does not restart a killed gateway; a dead node returns and the pair is healthy. | PASS/FAIL |
-| FAILOVER-1 | How long is the service down? Open-loop probe (20/s, a new connection per request) through four ways of losing the MASTER: node death, container stop, SIGTERM to loxilb, crash and restart in place. Per repetition: survivor MASTER, VIP, listener, first 200, outcome histogram. | RECORDED; one HARNESS BOUND (200s stable within 60 s) that is not a product budget |
+| FAILOVER-1 | How long is the service down? Open-loop probe (20/s, a new connection per request) through four ways of losing the MASTER: node death, container stop, SIGTERM to loxilb, crash and restart in place. Per repetition: survivor MASTER, VIP, listener, first 200, outcome histogram. | PASS/FAIL per repetition; telemetry and pre-fault settling recorded |
 | FAILOVER-2 | Does the same API key keep working with no management call? Then 200 distinct keys at once. | PASS/FAIL + RECORDED |
 | FAILOVER-3 | Does a JWT minted before the fault keep working, with the client unable to reach the IdP? Expired and garbage tokens are refused. | PASS/FAIL + RECORDED |
 | FAILOVER-4 | Does a key deleted on the old master stay refused on the new one? Control: an undeleted key. | PASS/FAIL |
@@ -104,8 +104,8 @@ eBPF map.
 | FAILOVER-9 | Failover while the key store is down; recovery when it returns, with no gateway restart. | PASS/FAIL (recovery) + RECORDED |
 | FAILOVER-10 | Promotion of a standby that restarted a moment ago. | RECORDED |
 | FAILOVER-11 | Failback: no second MASTER, the probe keeps answering, a tenant in debt stays refused. | PASS/FAIL + RECORDED |
-| FAILOVER-11r | The same failback with the pair prepared so that the return changes the roles: the node that wins a fresh election holds MASTER and its standby has been restarted since. The returning node then takes MASTER back. | probe, debt PASS/FAIL; single-master RECORDED (the overlap is shorter than the sampling interval and cannot be judged) |
-| FAILOVER-12 | Can one gateway serve the VIP while its peer does not answer (after a restart, after a cold start)? | RECORDED |
+| FAILOVER-11r | Repeat after restarting the standby before the fault. The survivor keeps MASTER and the returning node remains BACKUP. | PASS/FAIL + RECORDED |
+| FAILOVER-12 | Does an isolated start serve the VIP, and does the peer rejoin without taking ownership or interrupting service? | PASS/FAIL |
 | FAILOVER-13 | A node returns with an older configuration than its peer and is promoted. | RECORDED (+ harness restore check) |
 
 Every cross-node claim has three guards: a control identity that must be
@@ -139,10 +139,22 @@ before the fault, and wait up to 30 s for it. The requirement is not relaxed;
 the wait is measured, and when the probe got anything else on the way the
 repetition reports it as its own RECORDED line (`FAILOVER-1.<mode>.<n>.before`).
 When 3 s of 200s are not reached within the 30 s, every verdict of that
-repetition (`FAILOVER-1.<mode>.<n>` and `.before`) is NOT_RUN and the repetition does
-not count towards the mode's bound. A
+repetition (`FAILOVER-1.<mode>.<n>` and `.before`) is NOT_RUN. A
 pair whose roles hold is not always serving: a MASTER that has just taken the
 role refuses quota-limited tenants while its quota state warms.
+
+### B1 election limits
+
+| Verdict | Required result | Basis |
+|---|---|---|
+| FAILOVER-1, each death, stop, term and crash repetition | Survivor becomes MASTER within 2 s. The first sample in a sustained 3 s run of HTTP 200 starts within 12 s. The stop clock starts at container exit, after Docker's grace period. The other modes start at fault injection. | Step 0 measured BFD promotion in 0.26–0.60 s after the effective fault. The 2 s test budget also allows for runner and sampling delay. The 12 s HTTP budget covers the Step 0 maximum of 9.52 s, listener activation and the 3 s quota warm-up already included in that measurement. These are CI limits for this proxy scenario. |
+| FAILOVER-12a and FAILOVER-12b | The isolated node owns the VIP as MASTER and returns a keyed HTTP 200 within 120 s of starting. It still serves in the final three samples and logs the 95 s start allowance. | 90 s XSync hello gate plus 5 s cool-off. The 25 s margin covers boot, quota warm-up and the 5 s sampling interval. The isolated B1 bed run first served about 106.5 s after start. |
+| FAILOVER-12c and FAILOVER-12a.peer-up | One MASTER and one BACKUP within 45 s of starting the returning peer. The incumbent keeps the VIP, and all probes are HTTP 200 (at least 10 samples). | Step 0 role convergence took about 16.6–29.7 s with the same scenario. The budget allows runner overhead and six consecutive role samples. B1 requires zero observed outages on a BACKUP return. |
+| FAILOVER-12 | Both starts and both returns pass. | The two isolated paths cover a survivor restart and cold start. |
+
+The election gate also checks that a BFD BACKUP refuses a forced MASTER write to
+`/config/cistate`. The failback checks require the survivor to keep the VIP
+when the old MASTER returns.
 
 ## Mutations
 
@@ -153,7 +165,7 @@ NOT_RUN where the oracle refuses to judge).
 |---|---|---|
 | `ka-peer` | llb2's `--ka` names a peer nobody holds | every case NOT_RUN |
 | `drop-rule` | llb2 is not sent one rule | FAILOVER-0.readback FAIL |
-| `fo1-skip-fault` | no fault is applied | FAILOVER-1 NOT_RUN |
+| `fo1-skip-fault` | no fault is applied | FAILOVER-1 FAIL (no promotion) |
 | `fo1-backend-down` | the backend is stopped first | FAILOVER-1 NOT_RUN (control) |
 | `fo2-delete-key` | the key is deleted before the fault | FAILOVER-2 FAIL |
 | `fo3-wrong-aud` | the JWT profile expects an audience no token has | FAILOVER-3 FAIL |
@@ -175,15 +187,15 @@ shared store, so a node that was never sent one reads it back anyway.
 
 ## CI
 
-Job `ai-ha-failover-bfd` in `.github/workflows/ha-two-node-nightly.yml`, on
-the schedule, on dispatch, and on same-repository pull requests affecting the HA workflow. `validation.sh` reports the product as it
+Job `ai-ha-failover-bfd` on the schedule, on dispatch, and on same-repository
+pull requests matching the workflow paths. `validation.sh` reports the product as it
 is, and part of that is FAIL today. `known-fail.tsv` lists those verdicts;
 `verdict_gate.py` makes the job green only when the run matches the list
 exactly: an unlisted FAIL or NOT_RUN and a listed verdict that reports
 something else each turn it red. An entry names the one verdict it expects:
 `FAIL`, or `NOT_RUN` for an oracle whose precondition this product cannot
-meet. Matching is exact. A defect shorter than the sampling interval is not
-listed; its case reports it as RECORDED (`FAILOVER-11r.single-master`).
+meet. Matching is exact. The single-MASTER verdict counts observed overlap
+using the timestamps and sampling interval in the evidence.
 
 | | CI runner | Testbed the numbers in the report come from |
 |---|---|---|

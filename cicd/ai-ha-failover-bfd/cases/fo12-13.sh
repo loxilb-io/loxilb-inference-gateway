@@ -1,5 +1,5 @@
 # FAILOVER-12, FAILOVER-13  A gateway on its own, and a node that returns with an old
-# configuration.   (sourced by validation.sh; both record-only)
+# configuration.   (sourced by validation.sh)
 #
 #   FAILOVER-12b  after a node-death failover the survivor's gateway is restarted
 #           while the peer is still dead. Recorded for 5 minutes: role, each
@@ -19,6 +19,9 @@
 # FAILOVER-12 runs b, c, a so that one node death serves b and c.
 
 LONE_WATCH_S=${HAFO_LONE_WATCH_S:-300}
+LONE_READY_MS=120000
+PEER_RETURN_S=45
+declare -A LONE_RESULT
 F12_DIR="$OUT/fo12"; F13_DIR="$OUT/fo13"; mkdir -p "$F12_DIR" "$F13_DIR"
 
 # apply_record <node> <file>: every write of the list, never stopping; one
@@ -42,12 +45,12 @@ lone_watch() {
     sleep 5
   done
 }
-# lone_summary <file> -> role sequence, first listener, first 200, last line
+# lone_summary <file> -> role sequence and first healthy owner/service sample.
 lone_summary() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "$LONE_READY_MS" <<'PY'
 import re, sys
 rows = [ln.rstrip("\n") for ln in open(sys.argv[1]) if ln.strip()]
-roles, last, first_listen, first_200, n200 = [], None, None, None, 0
+roles, last, first_listen, first_200, first_owned, n200 = [], None, None, None, None, 0
 for ln in rows:
     ms = int(ln.split()[0]); r = re.search(r"role=(\S+)", ln).group(1)
     if r != last:
@@ -58,6 +61,13 @@ for ln in rows:
         n200 += 1
         if first_200 is None:
             first_200 = ms
+        if first_owned is None and r == "MASTER" and "vip_on_lo=1" in ln:
+            first_owned = ms
+limit = int(sys.argv[2])
+# Require the end of the observation to still be healthy and owned locally.
+healthy = lambda row: all(x in row for x in ("role=MASTER ", "vip_on_lo=1 ", "client=[200"))
+passed = (first_owned is not None and first_owned <= limit and len(rows) >= 3
+          and all(healthy(row) for row in rows[-3:]))
 cl = {}
 for ln in rows:
     c = re.search(r"client=\[([^\]]*)\]", ln).group(1)
@@ -65,15 +75,45 @@ for ln in rows:
 print("roles %s; first listener on the VIP at %s ms; first 200 at %s ms; client answers over %d samples: %s; last sample: %s"
       % (" -> ".join(roles), first_listen, first_200, len(rows),
          ", ".join("%s x%d" % kv for kv in sorted(cl.items())), rows[-1] if rows else "none"))
-print("SERVED=%d" % n200)
+print(f"owner with HTTP 200 at {first_owned} ms; limit {limit} ms; last three samples must remain healthy")
+print("RESULT=" + ("PASS" if passed else "FAIL"))
 PY
 }
+lone_verdict() { # <case> <prefix> <details>
+  local id=$1 prefix=$2 detail=$3 summary result
+  summary=$(lone_summary "$F12_DIR/$prefix-watch.txt")
+  result=$(sed -n 's/^RESULT=//p' <<< "$summary")
+  if ! grep -Eq 'reason=active_alone.*start_wait_seconds=95' "$F12_DIR/$prefix-ha-lines.txt"; then
+    result=FAIL
+    detail="$detail; missing the active_alone log with the 95 s start allowance"
+  fi
+  LONE_RESULT[$id]=${result:-FAIL}
+  verdict "$id" "${LONE_RESULT[$id]}" "$detail; $(sed -n '2p' <<< "$summary"); $(head -1 <<< "$summary")"
+}
+
+peer_return_verdict() { # <case> <owner> <peer> <elapsed-ms> <probe json>
+  local id=$1 owner=$2 peer=$3 elapsed=$4 probe=$5 status=FAIL
+  local attempts ok owner_vip peer_vip
+  attempts=$(jget "d['attempts']" < "$probe")
+  ok=$(jget "d['ok_after_mark']" < "$probe")
+  owner_vip=$(vip_state "$owner")
+  peer_vip=$(vip_state "$peer")
+  if [ "$elapsed" -le $((PEER_RETURN_S * 1000)) ] &&
+     [ "$MASTER_NODE" = "$owner" ] && [ "$BACKUP_NODE" = "$peer" ] &&
+     [[ "$owner_vip" == vip_on_lo=1\ * && "$peer_vip" == vip_on_lo=0\ * ]] &&
+     [[ "$attempts" =~ ^[0-9]+$ && "$ok" == "$attempts" ]] && [ "$attempts" -ge 10 ]; then
+    status=PASS
+  fi
+  LONE_RESULT[$id]=$status
+  verdict "$id" "$status" "convergence $elapsed ms (limit ${PEER_RETURN_S} s); roles [$ROLE_LAST], expected $owner MASTER ($owner_vip) and $peer BACKUP ($peer_vip); ${ok:-0}/${attempts:-0} HTTP 200 (at least 10 requests and zero failures)"
+}
+
 ha_lines() { # <node> <file>: the gateway's own HA lines
-  docker exec "$1" sh -c 'grep -h -E "Added BFD|BFD State|HA stage|ka-gate|kept without a listener|ci-change instance|snapshot|not an address of this gateway" /var/log/loxilb$(hostname).log | tail -n 200' > "$2" 2>&1
+  docker exec "$1" sh -c 'grep -h -E "Added BFD|BFD State|HA stage|ka-gate|kept without a listener|ci-change instance|reason=active_alone|snapshot|not an address of this gateway" /var/log/loxilb$(hostname).log | tail -n 200' > "$2" 2>&1
 }
 
 if want FAILOVER-12; then
-echo; echo "FAILOVER-12  Lone start (record-only)"
+echo; echo "FAILOVER-12  Lone start"
 if ! fo_begin; then
   verdict FAILOVER-12 NOT_RUN "roles did not hold before the case ($ROLE_LAST)"
 elif ! fo_fault; then
@@ -93,23 +133,26 @@ else
   w=$(apply_record "$S" "$F12_DIR/b-writes.txt")
   lone_watch "$S" "$LONE_WATCH_S" "$F12_DIR/b-watch.txt" "$r0"
   ha_lines "$S" "$F12_DIR/b-ha-lines.txt"
-  sum=$(lone_summary "$F12_DIR/b-watch.txt"); b_served=$(echo "$sum" | sed -n 's/^SERVED=//p')
-  verdict FAILOVER-12b RECORDED "gateway on $S restarted with its peer dead ($(cat "$F12_DIR/b-watch.head")): REST API ready after $ams ms; the list's writes were answered [$w]; over $LONE_WATCH_S s: $(echo "$sum" | head -1)"
-  # ---- c: the peer returns.
-  # A client that keeps asking every 0.5 s through the whole return.
-  sudo ip netns exec $CLIENT python3 "$HAFO_DIR/hafo_tools.py" debtwatch --vip $VIP --port $PORT_KEY --model $MODEL_KEY \
+  lone_verdict FAILOVER-12b b "survivor $S restarted with peer dead; API ready after $ams ms; rule writes [$w]"
+
+  # ---- c: the peer returns while the client probes the existing owner.
+  sudo ip netns exec "$CLIENT" python3 "$HAFO_DIR/hafo_tools.py" debtwatch --vip "$VIP" --port "$PORT_KEY" --model "$MODEL_KEY" \
     --header "X-Api-Key: $(key_raw fo-seed-key)" --max 300 --tag "fo12-c-$$" --out "$F12_DIR/c-watch.jsonl" --interval 0.5 \
     > "$F12_DIR/c-watch.json" 2>/dev/null &
+  c_probe=$!
   c0=$(now_ms)
-  fo_restore; wait_roles 240 6; c_roles=$(( $(now_ms) - c0 ))
+  c_ok=0
+  if fo_restore && wait_roles "$PEER_RETURN_S" 6; then c_ok=1; fi
+  c_roles=$(( $(now_ms) - c0 ))
   sleep 10
-  sudo touch "$F12_DIR/c-watch.jsonl.stop"; wait 2>/dev/null; sudo rm -f "$F12_DIR/c-watch.jsonl.stop"
-  verdict FAILOVER-12c RECORDED "the peer $M returned: the roles read [$ROLE_LAST] $c_roles ms after its return began; a client asking every 0.5 s from the start of the return until 10 s after the roles held saw: $(jget "' '.join('%s x%d' % (a, b) for a, b in d['sequence'])" < "$F12_DIR/c-watch.json")"
+  sudo touch "$F12_DIR/c-watch.jsonl.stop"; wait "$c_probe"; sudo rm -f "$F12_DIR/c-watch.jsonl.stop"
+  [ "$c_ok" = 1 ] || c_roles=$((PEER_RETURN_S * 1000 + 1))
+  peer_return_verdict FAILOVER-12c "$S" "$M" "$c_roles" "$F12_DIR/c-watch.json"
 
   # ---- a: both down, one starts, its peer never answers.
   if ! wait_roles 60 6; then
     verdict FAILOVER-12a NOT_RUN "the pair was not healthy after FAILOVER-12c ($ROLE_LAST)"
-    a_served=unknown
+    LONE_RESULT[FAILOVER-12a]=NOT_RUN
   else
     LONE=llb1; PEER=llb2
     node_death "$BACKUP_NODE" >/dev/null; node_death "$MASTER_NODE" >/dev/null
@@ -118,20 +161,27 @@ else
     w=$(apply_record "$LONE" "$F12_DIR/a-writes.txt")
     lone_watch "$LONE" "$LONE_WATCH_S" "$F12_DIR/a-watch.txt" "$a0"
     ha_lines "$LONE" "$F12_DIR/a-ha-lines.txt"
-    sum=$(lone_summary "$F12_DIR/a-watch.txt"); a_served=$(echo "$sum" | sed -n 's/^SERVED=//p')
-    verdict FAILOVER-12a RECORDED "$LONE started alone after both nodes were down ($ret); the list's writes were answered [$w]; over $LONE_WATCH_S s: $(echo "$sum" | head -1)"
-    vretry $PORT_KEY $MODEL_KEY "X-Api-Key: $(key_raw fo-seed-key)" 300 fo12-a2 0.5 > "$F12_DIR/a-peer-retry.json" &
+    lone_verdict FAILOVER-12a a "$LONE started after both nodes were down ($ret); rule writes [$w]"
+    sudo ip netns exec "$CLIENT" python3 "$HAFO_DIR/hafo_tools.py" debtwatch --vip "$VIP" --port "$PORT_KEY" --model "$MODEL_KEY" \
+      --header "X-Api-Key: $(key_raw fo-seed-key)" --max 300 --tag "fo12-a2-$$" --out "$F12_DIR/a-peer.jsonl" --interval 0.5 \
+      > "$F12_DIR/a-peer.json" 2>/dev/null &
+    a_probe=$!
     p0=$(now_ms)
-    if ret=$(node_return "$PEER" 2>>"$F12_DIR/a-restore.err") && apply_cfg "$PEER" "" returning 2>>"$F12_DIR/a-restore.err"; then
-      wait_roles 240 6
-      # The lone node refused or held its writes; give it the list again now.
-      apply_cfg "$LONE" "" returning 2>>"$F12_DIR/a-restore.err"
-      echo "after the peer returned, list on $LONE: created=$APPLY_NEW already-held=$APPLY_HELD" >> "$F12_DIR/a-writes.txt"
-    fi
-    wait 2>/dev/null
-    verdict FAILOVER-12a.peer-up RECORDED "then $PEER started ($ret): roles [$ROLE_LAST] $(( $(now_ms) - p0 )) ms later; a client asking every 0.5 s saw: $(jget "' '.join('%s x%d' % (a, b) for a, b in d['sequence'])" < "$F12_DIR/a-peer-retry.json"), first 200 after $(jget "d['first_200_after_ms']" < "$F12_DIR/a-peer-retry.json") ms"
+    p_ok=0
+    if node_return "$PEER" 2>>"$F12_DIR/a-restore.err" &&
+       apply_cfg "$PEER" "" returning 2>>"$F12_DIR/a-restore.err" &&
+       wait_roles "$PEER_RETURN_S" 6; then p_ok=1; fi
+    p_roles=$(( $(now_ms) - p0 ))
+    sleep 10
+    sudo touch "$F12_DIR/a-peer.jsonl.stop"; wait "$a_probe"; sudo rm -f "$F12_DIR/a-peer.jsonl.stop"
+    [ "$p_ok" = 1 ] || p_roles=$((PEER_RETURN_S * 1000 + 1))
+    peer_return_verdict FAILOVER-12a.peer-up "$LONE" "$PEER" "$p_roles" "$F12_DIR/a-peer.json"
   fi
-  verdict FAILOVER-12 RECORDED "can one healthy gateway started with --ka serve the VIP while its peer does not answer? Keyed requests answered 200 in $b_served of the samples after a restart of the survivor, and in $a_served of the samples after a cold start of one node (one sample every 5 s for $LONE_WATCH_S s each)"
+  f12_status=PASS
+  for id in FAILOVER-12b FAILOVER-12c FAILOVER-12a FAILOVER-12a.peer-up; do
+    [ "${LONE_RESULT[$id]:-NOT_RUN}" = PASS ] || f12_status=FAIL
+  done
+  verdict FAILOVER-12 "$f12_status" "both lone starts and both peer returns must pass their ownership and service limits"
 fi
 fi
 
