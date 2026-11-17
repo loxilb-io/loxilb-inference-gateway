@@ -133,6 +133,7 @@ type PortDpWorkQ struct {
 	SetPol     int
 	SetPolEgr  int // egress-direction policer id (needs --egr-hooks)
 	LoadEbpf   string
+	oldSrcMAC  [6]uint8
 }
 
 // L2AddrDpWorkQ - work queue entry for l2 address operation
