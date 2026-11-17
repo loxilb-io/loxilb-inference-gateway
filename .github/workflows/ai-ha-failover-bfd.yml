@@ -1,0 +1,100 @@
+name: AI-HA-Failover-BFD
+
+# Two gateways and one client-facing VIP. Use the candidate binary from the
+# checkout and compare the observed verdicts with the scenario baseline.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pkg/proto/bfd*'
+      - 'pkg/loxinet/cluster.go'
+      - 'pkg/loxinet/apiclient.go'
+      - 'pkg/loxinet/dpbroker.go'
+      - 'pkg/loxinet/loxinet.go'
+      - 'pkg/loxinet/port*.go'
+      - 'pkg/loxinet/rules*.go'
+      - 'pkg/loxinet/layer3.go'
+      - 'pkg/loxinet/neighbor.go'
+      - 'pkg/loxinet/dpebpf_linux.go'
+      - 'pkg/loxinet/shutdown*.go'
+      - 'pkg/loxinet/ha_*.go'
+      - 'pkg/loxinet/xsync*.go'
+      - 'pkg/loxinet/sockproxy_sync*.go'
+      - 'pkg/ratelimit/**'
+      - 'api/loxinlp/**'
+      - 'api/restapi/handler/cluster.go'
+      - 'cicd/ai-ha-failover-bfd/**'
+      - 'cicd/common.sh'
+      - 'cicd/common/reflect-echo/**'
+      - 'cicd/ai-jwtauth/hdr_echo.py'
+      - 'cicd/ai-jwtauth/mkrealm.py'
+      - 'cicd/ai-jwtauth/keycloak/**'
+      - 'scripts/aigw-db-bootstrap.sql'
+      - 'scripts/fetch-release-asset.sh'
+      - '.github/actions/ai-sanity-setup/**'
+      - '.github/workflows/ai-ha-failover-bfd.yml'
+      - 'loxilb-ebpf'
+      - 'Makefile'
+      - 'Dockerfile'
+  schedule:
+    - cron: '35 19 * * *'
+  workflow_dispatch:
+
+jobs:
+  ai-ha-failover-bfd:
+    name: ai-ha-failover-bfd
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    env:
+      LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      # The testbed runs five repetitions per FAILOVER-1 mode and three crash
+      # repetitions; two of each keep the job inside its budget.
+      HAFO_FO1_REPS: 2
+      HAFO_FO1_CRASH_REPS: 2
+      HAFO_OUT: /tmp/ai-ha-failover-bfd/out
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: ./.github/actions/ai-sanity-setup
+        with:
+          ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}
+      # validation.sh exits non-zero on any FAIL; the gate then decides the
+      # job from the known-fail list. Both gateways' logs are kept before
+      # teardown.
+      - name: BFD HA failover (two nodes, one shared VIP, shared key store, Keycloak)
+        run: |
+          cd cicd/ai-ha-failover-bfd/
+          rc=0
+          mkdir -p /tmp/ai-ha-failover-bfd
+          if ./config.sh; then
+            result=0
+            ./validation.sh || result=$?
+            # 1 and 2 are the harness verdict codes; the gate checks individual cases.
+            if [ "$result" -gt 2 ]; then rc=1; fi
+            python3 ./verdict_gate.py "$HAFO_OUT/verdicts.tsv" ./known-fail.tsv || rc=1
+          else
+            rc=1
+          fi
+          if [ -f .owned ]; then
+            for n in llb1 llb2; do
+              docker exec "$n" sh -c 'cat /var/log/loxilb*.log' > "/tmp/ai-ha-failover-bfd/$n-loxilb.log" 2>&1 || true
+            done
+          fi
+          ./rmconfig.sh || rc=1
+          exit "$rc"
+      - name: Keep the run's verdicts and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-ha-failover-bfd-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/ai-ha-failover-bfd/
+          if-no-files-found: ignore
+          retention-days: 14
