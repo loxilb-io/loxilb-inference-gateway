@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-16T23:03:33+00:00",
-  "source_revision": "d778bfb31959a031e4869407eebaeacfa24a311d"
+  "generated_at": "2026-11-17T04:50:27+00:00",
+  "source_revision": "1a7c6da92780bb66386acd754acffc0c172fa4fa"
  },
  "contract": {
   "total": 359,
@@ -7391,8 +7391,8 @@
      "symbol": "DpEbpfInit",
      "kind": "func",
      "file": "pkg/loxinet/dpebpf_linux.go",
-     "def_line": 614,
-     "call_line": 717,
+     "def_line": 642,
+     "call_line": 745,
      "calls": "SetConntrackMaxEntries",
      "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this"
     },

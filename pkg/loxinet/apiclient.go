@@ -116,7 +116,7 @@ func (na *NetAPIStruct) NetPortDel(pm *cmn.PortMod) (int, error) {
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 
-	ret, err := mh.zr.Ports.PortDel(pm.Dev, pm.Ptype)
+	ret, err := mh.zr.Ports.portDeleteLink(pm.Dev, pm.Ptype, pm.LinkIndex)
 	return ret, err
 }
 
