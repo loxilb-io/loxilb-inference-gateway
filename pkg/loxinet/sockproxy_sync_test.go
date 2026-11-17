@@ -29,7 +29,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"runtime"
@@ -41,8 +40,8 @@ import (
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
-	loxilib "github.com/loxilb-io/loxilib"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -99,6 +98,7 @@ func (m *mockApplier) Apply(ev proxySyncEvent) int {
 func TestSockproxySyncSkeleton(t *testing.T) {
 	t.Parallel()
 	s := newTestCoordinator(newMockApplier(0))
+	defer s.Stop()
 	if s == nil {
 		t.Fatalf("newTestCoordinator returned nil")
 	}
@@ -449,6 +449,7 @@ func TestSockproxySyncRollingUpgrade(t *testing.T) {
 func TestSockproxySyncStartIdempotent(t *testing.T) {
 	t.Parallel()
 	s := newTestCoordinator(newMockApplier(0))
+	defer s.Stop()
 
 	// peersFn returns nil so spawnConsumersForKnownPeers iterates an empty
 	// peer set and exits cleanly (no per-peer consumer goroutines spawned).
@@ -513,6 +514,7 @@ func TestPeerConsumerDrainsQueue(t *testing.T) {
 	defer cleanup()
 
 	s := newTestCoordinator(newMockApplier(0))
+	defer s.Stop()
 
 	peer := DpPeer{
 		Peer:    net.ParseIP("127.0.0.1"),
@@ -592,6 +594,7 @@ func TestPeerConsumerRetriesAndDrops(t *testing.T) {
 	defer cleanup()
 
 	s := newTestCoordinator(newMockApplier(0))
+	defer s.Stop()
 
 	peer := DpPeer{
 		Peer:    net.ParseIP("127.0.0.99"),
@@ -817,56 +820,16 @@ func (b *syncBuffer) String() string {
 // It does NOT use the `s.wg.Add(1); go s.consumerLoop(...)` test seam that
 // hid this gap in TestPeerConsumerDrainsQueue / TestPeerConsumerRetriesAndDrops.
 //
-// Deviation from the original design sketch: it was written against
-// loxilib v0.9.0 which exposes LogItInfo /
-// CurrLogLevel / LOG_INFO as package-level globals. This repo's go.mod
-// pins loxilib v0.8.9-0.20241218081253-760c19357603 which uses a single
-// `DefaultLogger *Logger` package-global with LogItInfo / CurrLogLevel as
-// STRUCT FIELDS and LogInfo (camelCase) as the level constant. We adapt
-// the log-capture pattern accordingly while keeping the test semantics
-// identical: tk.LogIt is a silent no-op until DefaultLogger is non-nil
-// (logger.go:120-122 of the vendored version), so the test constructs a
-// minimal Logger and assigns it to loxilib.DefaultLogger. Save+restore
-// via defer for parallel-test safety.
-//
-// Test does NOT mark t.Parallel: the loxilib.DefaultLogger swap is not
-// parallel-safe with any other test that might rely on the default
-// (production code never runs under go test, but defensive — see
-// RESEARCH caveat).
+// Logger publication is synchronized with all LogIt readers, including workers
+// from other fixtures. This test also stops its coordinator on assertion failure.
 func TestPeerConsumerRespawnOnMasterPromotion(t *testing.T) {
-	// Step 1: Install a logger that writes to a SYNCHRONIZED bytes.Buffer
-	// so tk.LogIt emissions land somewhere the test can grep. Save and
-	// restore the previous loxilib.DefaultLogger via defer. Setting both
-	// LogItInfo (the destination *log.Logger) AND CurrLogLevel = LogInfo
-	// (the gate in logger.go) is REQUIRED — setting only one
-	// silently drops the log line.
-	//
-	// The buffer MUST be mutex-guarded: tk.LogIt fires from the spawned
-	// consumer goroutine (sockproxy_sync.go:383) while the test's main
-	// goroutine calls logBuf.String inside the poll-loop. Without the
-	// mutex, `go test -race` flags a WARNING: DATA RACE on the buffer.
 	logBuf := &syncBuffer{}
-	origLogger := loxilib.DefaultLogger
-	// Every level logger MUST be non-nil: the spawned consumer goroutine
-	// emits WARN/ERR lines (e.g. the RPCConnect trigger path), and
-	// loxilib.(*Logger).Log calls the level logger unconditionally once
-	// the CurrLogLevel gate passes — a nil field is a process-wide SIGSEGV.
-	captureLogger := &loxilib.Logger{
-		CurrLogLevel: loxilib.LogInfo,
-		LogItEmer:    log.New(logBuf, "EMER: ", log.LstdFlags),
-		LogItAlert:   log.New(logBuf, "ALRT: ", log.LstdFlags),
-		LogItCrit:    log.New(logBuf, "CRIT: ", log.LstdFlags),
-		LogItErr:     log.New(logBuf, "ERR: ", log.LstdFlags),
-		LogItWarn:    log.New(logBuf, "WARN: ", log.LstdFlags),
-		LogItNotice:  log.New(logBuf, "NOTI: ", log.LstdFlags),
-		LogItInfo:    log.New(logBuf, "INFO: ", log.LstdFlags),
-		LogItDebug:   log.New(logBuf, "DBG: ", log.LstdFlags),
-		LogItTrace:   log.New(logBuf, "TRACE: ", log.LstdFlags),
+	captureLogger, err := tk.NewLogger(logBuf, tk.LogInfo, false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	loxilib.DefaultLogger = captureLogger
-	defer func() {
-		loxilib.DefaultLogger = origLogger
-	}()
+	origLogger := tk.SwapDefaultLogger(captureLogger)
+	defer tk.SwapDefaultLogger(origLogger)
 
 	// Step 2: Bufconn mock server for the receiving side.
 	mock := &mockSockproxyServer{}
@@ -874,6 +837,7 @@ func TestPeerConsumerRespawnOnMasterPromotion(t *testing.T) {
 	defer cleanup()
 
 	s := newTestCoordinator(newMockApplier(0))
+	defer s.Stop()
 
 	// Toggle that flips from "not master" to "master" between Start and
 	// OnStateChange. Mimics the production race precisely.

@@ -45,6 +45,7 @@ import (
 	prometheus "github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/aikey"
 	"github.com/loxilb-io/loxilb/pkg/llamafirewall"
@@ -55,7 +56,6 @@ import (
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	"github.com/loxilb-io/loxilb/pkg/user"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // string constant representing root security zone
@@ -114,7 +114,7 @@ type loxiNetH struct {
 	// AIKeyService is the data-plane API-key store. It is a separate object
 	// from UserService on purpose: the two planes share no store, no cache and
 	// no enable switch. Nil means no key store is configured.
-	AIKeyService *aikey.Service
+	AIKeyService atomic.Pointer[aikey.Service]
 
 	// JWTAuthProfiles holds the data-plane JWT auth profiles and their
 	// verifier runtime. Always initialized: profile configuration needs no
@@ -195,7 +195,7 @@ func (mh *loxiNetH) ParamSet(param cmn.ParamMod) (int, error) {
 // ParamGet - Get Loxinet Params
 func (mh *loxiNetH) ParamGet(param *cmn.ParamMod) (int, error) {
 	logLevel := "n/a"
-	switch mh.logger.CurrLogLevel {
+	switch mh.logger.LogItGetLevel() {
 	case tk.LogTrace:
 		logLevel = "trace"
 	case tk.LogDebug:
@@ -354,7 +354,7 @@ func loxiNetTicker(bgpPeerMode bool) {
 				// Independent of the management plane: the key store has its
 				// own connection, and a service that started degraded heals
 				// here whatever --userservice is set to.
-				mh.AIKeyService.Ticker()
+				mh.AIKeyService.Load().Ticker()
 			}
 		}
 	}
@@ -876,7 +876,7 @@ func loxiNetInit() {
 		// getting this backwards is a key API that tells an operator they
 		// configured nothing while it is busy dialling what they configured.
 		svc := aikey.New()
-		mh.AIKeyService = svc
+		mh.AIKeyService.Store(svc)
 		// Objectives and classes: one snapshot of the store's rows, kept
 		// current on its own goroutine, with the last one the store
 		// answered with kept in a file beside snapshot.json for a start
@@ -902,7 +902,7 @@ func loxiNetInit() {
 		// their cached copy expires. Without this the store evicts locally and
 		// the revocation stops at this gateway's edge.
 		if coord := mh.sockproxySync; coord != nil {
-			mh.AIKeyService.SetInvalidationSink(func(inv aikey.KeyInvalidation) {
+			svc.SetInvalidationSink(func(inv aikey.KeyInvalidation) {
 				coord.BroadcastKeyInvalidation(inv.KeyHash, inv.KeyID)
 			})
 		}

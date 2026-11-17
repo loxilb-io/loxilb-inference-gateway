@@ -27,7 +27,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // connectionTrackingExporter wraps an OpenTelemetry exporter to track connection status

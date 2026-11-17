@@ -287,9 +287,9 @@ import (
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 	nlp "github.com/vishvananda/netlink"
 )
 
@@ -521,7 +521,7 @@ type GPUMonitoringStatus struct {
 }
 
 // dpEbpfTicker - this ticker routine runs every DpEbpfLinuxTiVal seconds
-func dpEbpfTicker() {
+func dpEbpfTicker(dp *DpEbpfH) {
 
 	// Stack trace logger
 	defer func() {
@@ -543,22 +543,19 @@ func dpEbpfTicker() {
 	tLen := uint(len(tbls))
 
 	for {
-		if mh.dpEbpf == nil {
-			continue
-		}
 		select {
-		case <-mh.dpEbpf.stop:
+		case <-dp.stop:
 			return
-		case <-mh.dpEbpf.ctBcast:
+		case <-dp.ctBcast:
 			tk.LogIt(tk.LogDebug, "CT Bcast\n")
-			dpCTMapBcast()
+			dp.dpCTMapBcast()
 			continue
-		case <-mh.dpEbpf.trigGC:
+		case <-dp.trigGC:
 			C.llb_age_map_entries(C.LL_DP_CT_MAP)
 			C.llb_age_map_entries(C.LL_DP_FCV4_MAP)
-			mh.dpEbpf.gcTS = time.Now()
-		case <-mh.dpEbpf.ticker.C:
-			sel := mh.dpEbpf.tbN % tLen
+			dp.gcTS = time.Now()
+		case <-dp.ticker.C:
+			sel := dp.tbN % tLen
 
 			// For every tick collect stats for an eBPF map
 			// This routine caches stats in a local statsDB
@@ -569,15 +566,15 @@ func dpEbpfTicker() {
 			/* No need to fetch all stats in this fashion */
 			//C.llb_collect_map_stats(C.int(C.LL_DP_CT_STATS_MAP))
 			/* Per entry stats will be fetched in C.ll_ct_map_ent_has_aged */
-			if mh.dpEbpf.gcTiVal == 0 || time.Duration(time.Since(mh.dpEbpf.gcTS).Seconds()) > time.Duration(mh.dpEbpf.gcTiVal) {
+			if dp.gcTiVal == 0 || time.Duration(time.Since(dp.gcTS).Seconds()) > time.Duration(dp.gcTiVal) {
 				C.llb_age_map_entries(C.LL_DP_CT_MAP)
 				C.llb_age_map_entries(C.LL_DP_FCV4_MAP)
-				mh.dpEbpf.gcTS = time.Now()
+				dp.gcTS = time.Now()
 			}
 
 			// Hello, connect and initial requests run independently of this ticker.
-			dpCTMapChkUpdates()
-			mh.dpEbpf.tbN++
+			dp.dpCTMapChkUpdates()
+			dp.tbN++
 		}
 	}
 }
@@ -787,7 +784,7 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 	ne.initL4TraceRingBuffer()
 	ne.initL4TraceConfig()
 
-	go dpEbpfTicker()
+	go dpEbpfTicker(ne)
 	for i := 0; i < mapNotifierWorkers; i++ {
 		go dpMapNotifierWorker(ne.stop, ne.ToMapCh)
 	}
@@ -3287,11 +3284,11 @@ func (e *DpEbpfH) DpPolMod(w *PolDpWorkQ) int {
 			unsafe.Pointer(dat))
 
 		if ret != 0 {
-			*w.Status = 1
+			w.setStatus(1)
 			return EbpfErrPolAdd
 		}
 
-		*w.Status = 0
+		w.setStatus(0)
 
 	} else if w.Work == DpRemove {
 		// Array map types need to be zeroed out first
@@ -3309,9 +3306,9 @@ func (e *DpEbpfH) DpPolMod(w *PolDpWorkQ) int {
 func (e *DpEbpfH) DpPolAdd(w *PolDpWorkQ) int {
 	ec := e.DpPolMod(w)
 	if ec != 0 {
-		*w.Status = DpCreateErr
+		w.setStatus(DpCreateErr)
 	} else {
-		*w.Status = 0
+		w.setStatus(0)
 		// shadow meter offload after eBPF success (non-blocking, non-fatal)
 		if mh.dpuMgr != nil {
 			mh.dpuMgr.ShadowPolAdd(w)
@@ -4533,16 +4530,16 @@ func dpCTMapNotifierWorker(cti *DpCtInfo) {
 	tk.LogIt(tk.LogTrace, "[CT] %s - %s\n", opStr, cti.String())
 }
 
-func dpCTMapBcast() {
-	mh.dpEbpf.mtx.Lock()
+func (dp *DpEbpfH) dpCTMapBcast() {
+	dp.mtx.Lock()
 
-	for _, cti := range mh.dpEbpf.ctMap {
+	for _, cti := range dp.ctMap {
 		if cti.Deleted <= 0 && cti.CState == "est" {
 			cti.XSync = true
 		}
 	}
 
-	mh.dpEbpf.mtx.Unlock()
+	dp.mtx.Unlock()
 
 	cti := new(DpCtInfo)
 	cti.Proto = "xsync"
@@ -4551,10 +4548,10 @@ func dpCTMapBcast() {
 	tk.LogIt(tk.LogInfo, "[CT]  CTBcast Complete \n")
 }
 
-func dpCTMapChkUpdates() {
-	mh.dpEbpf.mtx.Lock()
+func (dp *DpEbpfH) dpCTMapChkUpdates() {
+	dp.mtx.Lock()
 	// NOTE: do NOT use defer here — we must release the lock before calling
-	// dpCTMapDpuOffloadScan, which acquires mh.dpEbpf.mtx itself.
+	// dpCTMapDpuOffloadScan, which acquires dp.mtx itself.
 	var tact C.struct_dp_ct_tact
 	var act *C.struct_dp_ct_dat
 	var blkCti []DpCtInfo
@@ -4563,15 +4560,15 @@ func dpCTMapChkUpdates() {
 	tc := time.Now()
 	fd := C.llb_map2fd(C.LL_DP_CT_MAP)
 
-	if len(mh.dpEbpf.ctMap) > 0 {
-		tk.LogIt(tk.LogTrace, "[CT] Map size %d\n", len(mh.dpEbpf.ctMap))
+	if len(dp.ctMap) > 0 {
+		tk.LogIt(tk.LogTrace, "[CT] Map size %d\n", len(dp.ctMap))
 	}
 
-	for _, cti := range mh.dpEbpf.ctMap {
+	for _, cti := range dp.ctMap {
 		// tk.LogIt(tk.LogDebug, "[CT] check %s:%s:%v\n", cti.Key, cti.CState, cti.XSync)
 		if cti.CState != "est" {
 			if C.bpf_map_lookup_elem(C.int(fd), unsafe.Pointer(&cti.PKey[0]), unsafe.Pointer(&tact)) != 0 {
-				delete(mh.dpEbpf.ctMap, cti.Key())
+				delete(dp.ctMap, cti.Key())
 				continue
 			}
 
@@ -4594,8 +4591,8 @@ func dpCTMapChkUpdates() {
 				goCtEnt.RuleID = cti.RuleID
 				goCtEnt.ServProto = cti.ServProto
 				goCtEnt.CI = cti.CI
-				delete(mh.dpEbpf.ctMap, cti.Key())
-				mh.dpEbpf.ctMap[goCtEnt.Key()] = goCtEnt
+				delete(dp.ctMap, cti.Key())
+				dp.ctMap[goCtEnt.Key()] = goCtEnt
 				ctStr := goCtEnt.String()
 				tk.LogIt(tk.LogTrace, "[CT] %s - %s\n", "update", ctStr)
 				if goCtEnt.CState == "est" {
@@ -4634,7 +4631,7 @@ func dpCTMapChkUpdates() {
 				tk.LogIt(tk.LogInfo, "[CT] out-of-sync %s:%s:%v\n", cti.Key(), cti.CState, cti.XSync)
 				if C.bpf_map_lookup_elem(C.int(fd), unsafe.Pointer(&cti.PKey[0]), unsafe.Pointer(&tact)) != 0 {
 					tk.LogIt(tk.LogInfo, "[CT] out-of-sync not found %s:%s:%v\n", cti.Key(), cti.CState, cti.XSync)
-					delete(mh.dpEbpf.ctMap, cti.Key())
+					delete(dp.ctMap, cti.Key())
 					continue
 				}
 				cti.PVal = C.GoBytes(unsafe.Pointer(&tact), C.sizeof_struct_dp_ct_tact)
@@ -4647,7 +4644,7 @@ func dpCTMapChkUpdates() {
 				}
 				if C.bpf_map_lookup_elem(C.int(fd), unsafe.Pointer(&cti.PKey[0]), unsafe.Pointer(&tact)) != 0 {
 					tk.LogIt(tk.LogDebug, "[CT] ent not found %s\n", cti.Key())
-					//delete(mh.dpEbpf.ctMap, cti.Key)
+					//delete(dp.ctMap, cti.Key)
 					cti.Deleted++
 					cti.XSync = true
 				} else {
@@ -4687,11 +4684,11 @@ func dpCTMapChkUpdates() {
 					if (cti.Proto == "tcp" || cti.Proto == "udp") && mh.dpuMgr != nil {
 						tk.LogIt(tk.LogDebug, "[CT-DPU] XSync delete: removing offload flow=%s\n", cti.Key())
 						mh.dpuMgr.ShadowLBFlowRemove(cti)
-						// mh.dpEbpf.mtx is already held by the outer dpCTMapChkUpdates lock;
+						// dp.mtx is already held by the outer dpCTMapChkUpdates lock;
 						// no inner Lock/Unlock needed here.
 						delete(dpuOffloadedFlows, cti.Key())
 					}
-					delete(mh.dpEbpf.ctMap, cti.Key())
+					delete(dp.ctMap, cti.Key())
 					// This is a strange fix - See comment above. Do we still need it ?
 					// C.llb_del_map_elem(C.LL_DP_CT_MAP, unsafe.Pointer(cti.PKey[0]))
 				}
@@ -4728,16 +4725,16 @@ func dpCTMapChkUpdates() {
 	}
 
 	// Release the CT map lock before the DPU offload scan.
-	// dpCTMapDpuOffloadScan acquires mh.dpEbpf.mtx internally to protect
+	// dpCTMapDpuOffloadScan acquires dp.mtx internally to protect
 	// dpuOffloadedFlows from goCtHwOffloadHandler; calling it with the lock
 	// already held would deadlock.
-	mh.dpEbpf.mtx.Unlock()
+	dp.mtx.Unlock()
 
 	// DPU offload: direct CT map scan for established flows (NAT + non-NAT).
 	// The kprobe-based notifier may not fire on all kernels, so we scan
 	// the eBPF CT map directly to find offload candidates.
 	if mh.dpuMgr != nil && mh.dpuMgr.IsEnabled() {
-		dpCTMapDpuOffloadScan(fd)
+		dp.dpCTMapDpuOffloadScan(fd)
 	}
 }
 
@@ -4748,18 +4745,18 @@ var dpuOffloadedFlows = make(map[string]*DpCtInfo)
 // dpCTMapDpuOffloadScan handles cleanup of DOCA offload entries for flows
 // that are no longer present in the eBPF CT map. Offload creation is handled
 // by the event-driven goCtHwOffloadHandler callback (via cp_ring perf buffer).
-func dpCTMapDpuOffloadScan(fd C.int) {
+func (dp *DpEbpfH) dpCTMapDpuOffloadScan(fd C.int) {
 	var key, nextKey C.struct_dp_ct_key
 	var tact C.struct_dp_ct_tact
 
 	// Lock protects dpuOffloadedFlows against concurrent writes from
 	// goCtHwOffloadHandler (called from C perf buffer pthread).
-	mh.dpEbpf.mtx.Lock()
+	dp.mtx.Lock()
 	if len(dpuOffloadedFlows) == 0 {
-		mh.dpEbpf.mtx.Unlock()
+		dp.mtx.Unlock()
 		return
 	}
-	mh.dpEbpf.mtx.Unlock()
+	dp.mtx.Unlock()
 
 	// Collect currently active CT flows from eBPF map.
 	// Value is tact.lts (last eBPF-processed packet timestamp, ns) for idle timeout detection.
@@ -4800,7 +4797,7 @@ func dpCTMapDpuOffloadScan(fd C.int) {
 	// Cleanup: remove DOCA entries for flows no longer in eBPF CT map,
 	// and force-expire HW-offloaded flows whose eBPF lts has been idle too long.
 	// Both NAT and non-NAT entries are tracked in d.entries under "ct" pipeKey.
-	mh.dpEbpf.mtx.Lock()
+	dp.mtx.Lock()
 	for flowKey, ct := range dpuOffloadedFlows {
 		lts, inEbpf := activeFlows[flowKey]
 		if !inEbpf {
@@ -4823,13 +4820,13 @@ func dpCTMapDpuOffloadScan(fd C.int) {
 		delete(dpuOffloadedFlows, flowKey)
 		// Trigger Go ctMap XSync deletion path so it cleans up within ~10s
 		// rather than waiting for the next 60s idle check cycle.
-		if cte := mh.dpEbpf.ctMap[flowKey]; cte != nil {
+		if cte := dp.ctMap[flowKey]; cte != nil {
 			cte.Deleted = 1
 			cte.XSync = true
 			cte.NTs = time.Now()
 		}
 	}
-	mh.dpEbpf.mtx.Unlock()
+	dp.mtx.Unlock()
 }
 
 // dpCtTombstone deletes a CT entry from the eBPF map and cleans up associated

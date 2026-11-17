@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // FlowHwStatsEntry is a per-flow hardware counter entry in the debug response.

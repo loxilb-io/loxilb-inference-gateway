@@ -23,7 +23,7 @@ import (
 	"strconv"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // fcTenantSlotsFromEnv is the tenant-table size a model pool is created
@@ -86,7 +86,7 @@ func (na *NetAPIStruct) NetFcTenantSlotsWarning(lm *cmn.LbRuleMod) string {
 	if lm == nil || fcTenantShareWanted(&lm.Serv) == 0 {
 		return ""
 	}
-	store := mh.AIKeyService
+	store := mh.AIKeyService.Load()
 	if store == nil {
 		return ""
 	}

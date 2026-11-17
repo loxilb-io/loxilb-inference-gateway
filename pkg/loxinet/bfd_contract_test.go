@@ -53,12 +53,20 @@ func TestBFDListAndDeletePreserveRemainingSessions(t *testing.T) {
 	// Gate protocol traffic and callbacks: this tests configured session state,
 	// not HA transitions or a real peer. Deletion also releases gated tickers.
 	gate := make(chan struct{})
+	owned := map[string]bool{}
 	for _, remote := range []string{"127.0.0.2", "127.0.0.3"} {
 		err := ch.Bs.BFDAddRemote(bfd.ConfigArgs{RemoteIP: remote, SourceIP: "127.0.0.1", Port: 3784, Interval: 1000000, Multi: 5, Instance: cmn.CIDefault, StartGate: gate}, ch)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = ch.Bs.BFDDeleteRemote(bfd.ConfigArgs{RemoteIP: remote}) })
+		owned[remote] = true
+		t.Cleanup(func() {
+			if owned[remote] {
+				if err := ch.Bs.BFDDeleteRemote(bfd.ConfigArgs{RemoteIP: remote}); err != nil {
+					t.Errorf("join BFD fixture %s: %v", remote, err)
+				}
+			}
+		})
 	}
 	// Even a stale lifecycle hint must not hide the authoritative table.
 	rows, err := ch.CIBFDSessionGet()
@@ -69,6 +77,7 @@ func TestBFDListAndDeletePreserveRemainingSessions(t *testing.T) {
 	if _, err = ch.CIBFDSessionDel(cmn.BFDMod{Instance: cmn.CIDefault, RemoteIP: net.ParseIP("127.0.0.2")}); err != nil {
 		t.Fatal(err)
 	}
+	owned["127.0.0.2"] = false
 	rows, err = ch.CIBFDSessionGet()
 	if err != nil || len(rows) != 1 || !ch.SpawnKa {
 		t.Fatalf("remaining session hidden/stopped: %+v %v %v", rows, err, ch.SpawnKa)
@@ -76,6 +85,7 @@ func TestBFDListAndDeletePreserveRemainingSessions(t *testing.T) {
 	if _, err = ch.CIBFDSessionDel(cmn.BFDMod{Instance: cmn.CIDefault, RemoteIP: net.ParseIP("127.0.0.3")}); err != nil {
 		t.Fatal(err)
 	}
+	owned["127.0.0.3"] = false
 	rows, err = ch.CIBFDSessionGet()
 	if err != nil || len(rows) != 0 || ch.SpawnKa {
 		t.Fatalf("last deletion is not an empty list: %+v %v", rows, err)

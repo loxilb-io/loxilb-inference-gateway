@@ -24,7 +24,7 @@ import (
 	"syscall"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // backendVerifyOf reads the verification request of a rule; no object is the

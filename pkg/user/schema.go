@@ -20,7 +20,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // Schema is the PostgreSQL schema the management-plane tables live in, owned

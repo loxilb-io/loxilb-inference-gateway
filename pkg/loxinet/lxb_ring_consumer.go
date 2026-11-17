@@ -41,9 +41,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/plugins/mcp"
 	"github.com/loxilb-io/loxilb/pkg/plugins/openai"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 const (

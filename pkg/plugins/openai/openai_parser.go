@@ -17,8 +17,8 @@ import (
 	"os"
 	"strings"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/parser"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // OpenAIParser implements PayloadParser for OpenAI APIs

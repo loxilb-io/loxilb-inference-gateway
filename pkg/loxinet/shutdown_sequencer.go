@@ -32,7 +32,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // runShutdownStage executes a single shutdown stage with a hard deadline.

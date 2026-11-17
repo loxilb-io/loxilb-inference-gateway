@@ -26,7 +26,7 @@ import (
 // key service's data-path lookup statistics, every result series present
 // from the start so that a first event shows in increase().
 func aiKeyLookupSnapshot() prometheus.AIKeyLookupSnapshot {
-	return aiKeyLookupSnapshotOf(mh.AIKeyService.LookupStats())
+	return aiKeyLookupSnapshotOf(mh.AIKeyService.Load().LookupStats())
 }
 
 func aiKeyLookupSnapshotOf(st aikey.LookupStats) prometheus.AIKeyLookupSnapshot {

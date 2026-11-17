@@ -37,7 +37,7 @@ import (
 	"time"
 	"unsafe"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -176,8 +176,9 @@ func llb_epp_submit(svcID C.uint32_t, ns unsafe.Pointer, fd C.int, gen C.uint64_
 		tk.LogIt(tk.LogDebug, "[EPP] submit fd=%d: rule %d has no EPP configuration\n", int(fd), uint32(svcID))
 		return 0
 	}
-	if eppInflight.Load() >= eppMaxInflight {
-		tk.LogIt(tk.LogWarning, "[EPP] submit fd=%d: %d requests already waiting on EPPs; refused\n", int(fd), eppMaxInflight)
+	limit := atomic.LoadInt64(&eppMaxInflight)
+	if eppInflight.Load() >= limit {
+		tk.LogIt(tk.LogWarning, "[EPP] submit fd=%d: %d requests already waiting on EPPs; refused\n", int(fd), limit)
 		return 0
 	}
 	head := C.GoBytes(unsafe.Pointer(reqHdrs), reqHdrsLen)

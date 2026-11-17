@@ -22,7 +22,7 @@ import (
 	"net"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // lbSockMapCode validates a service's sockMapMode and returns its dataplane code

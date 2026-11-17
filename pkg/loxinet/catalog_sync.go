@@ -33,7 +33,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 const (

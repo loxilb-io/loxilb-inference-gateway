@@ -44,7 +44,7 @@ import "C"
 import (
 	"net"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // DpBackendTLSStateGet - the backend TLS policy the listener of a service has

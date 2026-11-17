@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"github.com/loxilb-io/loxilb/pkg/pgstore"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // TokenSink receives management-token evictions so they can be published to

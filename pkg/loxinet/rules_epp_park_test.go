@@ -120,16 +120,36 @@ func eppTestBackendOn(t *testing.T, name string, l net.Listener) (*httptest.Serv
 
 func eppAddr(ep cmn.LbEndPointArg) string { return fmt.Sprintf("%s:%d", ep.EpIP, ep.EpPort) }
 
+// eppTestAddRule/eppTestDeleteRule follow the management API's caller-lock
+// contract while the native harness's zone ticker is running.
+func eppTestAddRule(serv cmn.LbServiceArg, eps []cmn.LbEndPointArg) (int, error) {
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	return mh.zr.Rules.AddLbRule(serv, nil, nil, nil, eps)
+}
+
+func eppTestDeleteRule(serv cmn.LbServiceArg) (int, error) {
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	return mh.zr.Rules.DeleteLbRule(serv)
+}
+
+func eppTestRuleMark(key string) int {
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	return mh.zr.Rules.GetLBRuleMarkByKey(key)
+}
+
 func eppTestRule(t *testing.T, port uint16, eppAddr, failureMode string, timeoutMs uint32, eps ...cmn.LbEndPointArg) cmn.LbServiceArg {
 	t.Helper()
 	serv := cmn.LbServiceArg{
 		ServIP: eppTestVIP, ServPort: port, Proto: "tcp", Mode: cmn.LBModeFullProxy, Sel: cmn.LbSelRr,
 		EppEndpoint: eppAddr, EppFailureMode: failureMode, EppTimeoutMs: timeoutMs, EppPlaintext: true,
 	}
-	if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, eps); err != nil {
+	if _, err := eppTestAddRule(serv, eps); err != nil {
 		t.Fatalf("add rule on :%d: %v", port, err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(serv) })
+	t.Cleanup(func() { eppTestDeleteRule(serv) })
 	return serv
 }
 
@@ -261,10 +281,10 @@ func TestEppParkResumeThroughDataPlane(t *testing.T) {
 		defer stop()
 		eppTestRule(t, 28108, addr, cmn.EppFailureModeFailOpen, 2000, ep)
 		plain := cmn.LbServiceArg{ServIP: eppTestVIP, ServPort: 28110, Proto: "tcp", Mode: cmn.LBModeFullProxy, Sel: cmn.LbSelRr}
-		if _, err := mh.zr.Rules.AddLbRule(plain, nil, nil, nil, []cmn.LbEndPointArg{ep}); err != nil {
+		if _, err := eppTestAddRule(plain, []cmn.LbEndPointArg{ep}); err != nil {
 			t.Fatal(err)
 		}
-		defer mh.zr.Rules.DeleteLbRule(plain)
+		defer eppTestDeleteRule(plain)
 
 		// Park several requests on every worker, then push plain traffic
 		// through: it must complete long before the parked ones resume.

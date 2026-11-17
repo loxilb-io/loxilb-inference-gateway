@@ -2,14 +2,13 @@ package loxinet
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
+	"io"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	logrus "github.com/sirupsen/logrus"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -37,10 +36,21 @@ func (l *oplogBuf) String() string {
 // default one for the test.
 func oplogTestLogger(t *testing.T, level tk.LogLevelT, tty bool) *tk.Logger {
 	t.Helper()
-	prev := tk.DefaultLogger
-	tk.DefaultLogger = nil
-	lg := tk.LogItInit(filepath.Join(t.TempDir(), "gw.log"), level, tty)
-	t.Cleanup(func() { tk.DefaultLogger = prev; logrus.SetOutput(os.Stderr) })
+	lg, err := tk.NewLogger(io.Discard, level, tty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousRing := opLog
+	prev := tk.SwapDefaultLogger(lg)
+	previousOutput := logrus.StandardLogger().Out
+	t.Cleanup(func() {
+		tk.SwapDefaultLogger(prev)
+		logrus.SetOutput(previousOutput)
+		if opLog != nil && opLog != previousRing {
+			opLog.Stop(opLogShutdownWait)
+		}
+		opLog = previousRing
+	})
 	return lg
 }
 
@@ -66,7 +76,6 @@ func TestRequestPathLogsNothingAtTheDefaultLevel(t *testing.T) {
 		opLogInstall(lg, out)
 		calls()
 		got := strings.Count(out.String(), "llb_ai_validate_key")
-		opLog = nil
 		if got != tc.lines {
 			t.Fatalf("level %d: %d log lines for five keyed requests, want %d:\n%s", tc.level, got, tc.lines, out.String())
 		}
@@ -79,16 +88,9 @@ func TestRequestPathLogsNothingAtTheDefaultLevel(t *testing.T) {
 func TestOpLogInstallRoutesEveryLevelThroughTheQueue(t *testing.T) {
 	lg := oplogTestLogger(t, tk.LogTrace, true)
 	out := &oplogBuf{}
-	stdout := os.Stdout
-	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = devnull
-	defer func() { os.Stdout = stdout; devnull.Close(); opLog = nil }()
 
 	opLogInstall(lg, out)
-	if lg.LogTTY {
+	if lg.TTY() {
 		t.Fatal("the logger still writes its own terminal copy")
 	}
 	for l := tk.LogEmerg; l <= tk.LogTrace; l++ {

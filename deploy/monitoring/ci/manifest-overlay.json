@@ -1171,7 +1171,7 @@
     "evidence": "Exercised by the EPP request phase in epp-sanity.yml (epp-datapath lane, scripts/epp-test.sh) and cicd/k3d-incluster-inference-epp; the C data plane reports outcomes through the cgo exports below.",
     "writer_sources": [
      { "symbol": "RecordEppOutcome", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1639, "writes": "aiEppRequestsTotal" },
-     { "symbol": "llb_epp_metric_outcome", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 416, "call_line": 418, "calls": "RecordEppOutcome", "entry_point": "cgo-export" }
+     { "symbol": "llb_epp_metric_outcome", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 417, "call_line": 419, "calls": "RecordEppOutcome", "entry_point": "cgo-export" }
     ]
    },
    "loxilb_ai_epp_duration_seconds": {
@@ -1180,7 +1180,7 @@
     "evidence": "Exercised by the EPP request phase in epp-sanity.yml (epp-datapath lane, scripts/epp-test.sh) and cicd/k3d-incluster-inference-epp; the C data plane reports outcomes through the cgo exports below.",
     "writer_sources": [
      { "symbol": "RecordEppOutcome", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1639, "writes": "aiEppDurationSeconds" },
-     { "symbol": "run", "kind": "method", "receiver": "eppFlight", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 210, "call_line": 217, "calls": "RecordEppOutcome", "entry_point": "goroutine" }
+     { "symbol": "run", "kind": "method", "receiver": "eppFlight", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 211, "call_line": 218, "calls": "RecordEppOutcome", "entry_point": "goroutine" }
     ]
    },
    "loxilb_ai_epp_candidates_rejected_total": {
@@ -1189,7 +1189,7 @@
     "evidence": "Exercised by the EPP request phase in epp-sanity.yml (epp-datapath lane, scripts/epp-test.sh) and cicd/k3d-incluster-inference-epp; the C data plane reports outcomes through the cgo exports below.",
     "writer_sources": [
      { "symbol": "RecordEppCandidateRejected", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 1649, "writes": "aiEppCandidatesRejectedTotal" },
-     { "symbol": "llb_epp_metric_rejected", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 422, "call_line": 424, "calls": "RecordEppCandidateRejected", "entry_point": "cgo-export" }
+     { "symbol": "llb_epp_metric_rejected", "kind": "func", "file": "pkg/loxinet/ai_epp_dp.go", "def_line": 423, "call_line": 425, "calls": "RecordEppCandidateRejected", "entry_point": "cgo-export" }
     ]
    },
    "loxilb_ai_epp_inflight": {
@@ -1336,8 +1336,8 @@
     ],
     "data_sources": [
      { "symbol": "PublishPolicerAttachment", "kind": "func", "file": "api/prometheus/policer_metrics.go", "def_line": 81, "writes": "policerAttachmentStore" },
-     { "symbol": "publishAttachment", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 170, "call_line": 178, "calls": "PublishPolicerAttachment" },
-     { "symbol": "PolTicker", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 391, "call_line": 428, "calls": "publishAttachment", "note": "also republished synchronously from PolAdd (qospol.go:272), PolAssociateLbRule (:333) and PolDelete (:362), so a config change is visible without waiting for the tick" },
+     { "symbol": "publishAttachment", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 171, "call_line": 179, "calls": "PublishPolicerAttachment" },
+     { "symbol": "PolTicker", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 392, "call_line": 429, "calls": "publishAttachment", "note": "also republished synchronously from PolAdd (qospol.go:273), PolAssociateLbRule (:334) and PolDelete (:363), so a config change is visible without waiting for the tick" },
      { "symbol": "ZoneTicker", "kind": "method", "receiver": "ZoneH", "file": "pkg/loxinet/zones.go", "def_line": 227, "call_line": 239, "calls": "PolTicker" },
      { "symbol": "loxiNetTicker", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 227, "call_line": 349, "calls": "ZoneTicker" },
      { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 375, "call_line": 926, "calls": "loxiNetTicker", "note": "go statement; the ticker goroutine runs for the life of the process" },
@@ -3229,7 +3229,7 @@
     "activation_precondition": "Native datapath initialized (loxilb_datapath_metrics_available = 1); an eBPF datapath that reports a positive LLB_CT_MAP_ENTRIES: the gauge is registered lazily on the first positive value, so on a build with no datapath capacity the family is absent -- deliberately, because a fake 0 would make every utilization ratio divide by zero.",
     "writer_sources": [
      { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2309, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
-     { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 617, "call_line": 720, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
+     { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 614, "call_line": 717, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
      { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 375, "call_line": 590, "calls": "DpEbpfInit" },
      { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1394, "call_line": 1395, "calls": "loxiNetInit", "entry_point": "main" }
     ],

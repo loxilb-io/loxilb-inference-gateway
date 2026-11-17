@@ -18,7 +18,7 @@ package loxinet
 
 import (
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // halfCloseResolve returns the half-close mode a rule will store (enum

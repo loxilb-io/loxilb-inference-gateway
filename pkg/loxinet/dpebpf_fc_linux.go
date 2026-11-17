@@ -38,7 +38,7 @@ import (
 	"unsafe"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // The capacity admission gate's read-back and drain, over the exports the

@@ -10,7 +10,7 @@
 
 package presidio
 
-import tk "github.com/loxilb-io/loxilib"
+import tk "github.com/loxilb-io/loxilb/internal/tk"
 
 // PresidioConfigManager stub (no-op when PII detection disabled)
 type PresidioConfigManager struct{}

@@ -26,8 +26,8 @@ import (
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/options"
-	tk "github.com/loxilb-io/loxilib"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 

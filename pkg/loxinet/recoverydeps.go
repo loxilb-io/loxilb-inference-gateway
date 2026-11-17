@@ -193,10 +193,11 @@ func (na *NetAPIStruct) NetRecoveryDepReady(ctx context.Context, depType string)
 		return nil
 
 	case cmn.RecoveryDepAPIKeyDB:
-		if mh.AIKeyService == nil {
+		svc := mh.AIKeyService.Load()
+		if svc == nil {
 			return fmt.Errorf("data-plane API-key store not initialized")
 		}
-		if err := mh.AIKeyService.Ready(ctx); err != nil {
+		if err := svc.Ready(ctx); err != nil {
 			return fmt.Errorf("data-plane API-key store not answering: %v", err)
 		}
 		return nil

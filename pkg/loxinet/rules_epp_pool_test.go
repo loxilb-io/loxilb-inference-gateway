@@ -38,12 +38,12 @@ func TestEppRuleReachesProxyPool(t *testing.T) {
 			serv := tt.serv
 			serv.ServIP, serv.ServPort, serv.Proto = "127.0.0.1", tt.port, "tcp"
 			serv.Mode, serv.Sel = cmn.LBModeFullProxy, cmn.LbSelRr
-			if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, eps); err != nil {
+			if _, err := eppTestAddRule(serv, eps); err != nil {
 				t.Fatalf("add fullproxy rule: %v", err)
 			}
-			defer mh.zr.Rules.DeleteLbRule(serv)
+			defer eppTestDeleteRule(serv)
 
-			ruleNum := mh.zr.Rules.GetLBRuleMarkByKey(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
+			ruleNum := eppTestRuleMark(fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto))
 			if ruleNum == 0 {
 				t.Fatal("rule number not found after add")
 			}

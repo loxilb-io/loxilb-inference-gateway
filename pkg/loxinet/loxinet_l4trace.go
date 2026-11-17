@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // initL4Tracing initializes the L4 Connection Tracing subsystem

@@ -19,7 +19,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/apiutils/status"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"net/http"
 
 	"github.com/go-openapi/runtime/middleware"

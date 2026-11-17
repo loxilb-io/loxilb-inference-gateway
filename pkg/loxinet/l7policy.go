@@ -52,7 +52,7 @@ import (
 
 	"github.com/google/uuid"
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // l7PolMux guards l7PolReg. A dedicated lock (not mh.mtx): Add/Del resolve
