@@ -195,6 +195,86 @@ probe_loxilb_rest() {
   return 0
 }
 
+## The IPv4 subnets configured on the interfaces of a namespace, one
+## "network/len" per line. Host addresses (/32) and lo are left out.
+## arg1 - namespace name
+_loxi_connected_subnets() {
+  local cidr a b c d len ip net
+  $hexec "$1" ip -4 -o addr show 2>/dev/null </dev/null |
+    awk '$2 != "lo" && $4 ~ /\// { print $4 }' |
+    while IFS=./ read -r a b c d len; do
+      (( len >= 1 && len <= 31 )) || continue
+      ip=$(( (a << 24) | (b << 16) | (c << 8) | d ))
+      net=$(( ip & ((0xffffffff << (32 - len)) & 0xffffffff) ))
+      echo "$(( net >> 24 & 255 )).$(( net >> 16 & 255 )).$(( net >> 8 & 255 )).$(( net & 255 ))/$len"
+    done | sort -u
+}
+
+## The IPv4 prefixes in a loxilb's eBPF route map, one "network/len" per line.
+## Returns non-zero if the map cannot be read. An rt_v4_map key is 12 bytes:
+## a little-endian u32 prefix length (16 zone bits plus the route's own), the
+## 2-byte zone, the address and 2 bytes of padding.
+## arg1 - loxilb instance name
+_loxi_dp_rt4_prefixes() {
+  local raw pl a b c d _
+  raw=$(sudo timeout --kill-after=1 10 docker exec "$1" \
+          bpftool -j map dump pinned /opt/loxilb/dp/bpf/rt_v4_map 2>/dev/null </dev/null) || return 1
+  grep -oE '"key":\[[^]]*\]' <<<"$raw" | tr -d '" ' |
+    sed -e 's/^key:\[//' -e 's/\]$//' -e 's/0x//g' |
+    while IFS=, read -r pl _ _ _ _ _ a b c d _; do
+      [[ -n "$d" ]] || continue
+      echo "$(( 16#$a )).$(( 16#$b )).$(( 16#$c )).$(( 16#$d ))/$(( 16#$pl - 16 ))"
+    done
+  return 0
+}
+
+## loxilb answers `ip addr add` long before its datapath does. Everything it
+## programs into eBPF goes through one queue, and that queue also loads the
+## eBPF program onto each new interface, which takes seconds per interface. A
+## connected route can therefore reach rt_v4_map minutes after it was
+## configured. Until it does, the datapath forwards that subnet by the default
+## route instead of handing it to the kernel, and replies to it leave by eth0.
+## A scenario that starts its checks on a fixed sleep fails whenever the queue
+## takes longer than the sleep.
+##
+## This waits until every IPv4 subnet configured on the loxilb's interfaces is
+## in rt_v4_map and prints one `[dp-routes]` line with the time that took. It
+## never fails a scenario: on timeout it names the missing subnets and
+## returns, and if the map cannot be read (no bpftool in the image, loxilb run
+## without its eBPF datapath) it says so and returns at once.
+##
+##   LOXILB_DP_ROUTES_SECS  how long to wait, in seconds (default 240)
+##
+## arg1 - loxilb instance name
+## arg2 - epoch seconds to report the elapsed time from (default: now)
+wait_loxilb_dp_routes() {
+  local name="$1" t0="${2:-$(date +%s)}"
+  local limit="${LOXILB_DP_ROUTES_SECS:-240}" start=$SECONDS
+  local want have w missing n=0
+
+  want=$(_loxi_connected_subnets "$name")
+  for w in $want; do n=$(( n + 1 )); done
+  while :; do
+    if ! have=$(_loxi_dp_rt4_prefixes "$name"); then
+      echo "[dp-routes] name=$name skipped=1 reason=rt_v4_map-unreadable subnets=$n kernel=$(uname -r)"
+      return 0
+    fi
+    missing=""
+    for w in $want; do
+      grep -qxF -- "$w" <<<"$have" || missing+="${missing:+,}$w"
+    done
+    if [[ -z "$missing" ]]; then
+      echo "[dp-routes] name=$name ready=1 after=$(( $(date +%s) - t0 ))s subnets=$n kernel=$(uname -r)"
+      return 0
+    fi
+    if (( SECONDS - start >= limit )); then
+      echo "[dp-routes] name=$name ready=0 after=$(( $(date +%s) - t0 ))s subnets=$n missing=$missing kernel=$(uname -r)"
+      return 0
+    fi
+    sleep 2
+  done
+}
+
 # Docker resolves short arguments as either names or ID prefixes. A missing
 # host named c1 must never resolve to a different container whose ID starts c1.
 # Verify the exact name, then mutate by full ID to avoid a second name lookup.
