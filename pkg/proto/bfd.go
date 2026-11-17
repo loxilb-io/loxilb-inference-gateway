@@ -17,6 +17,7 @@
 package bfd
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -57,12 +58,17 @@ type ConfigArgs struct {
 	// StartGate defers protocol traffic while keeping accepted configuration
 	// visible to capture. A nil gate starts immediately.
 	StartGate <-chan struct{}
-	RemoteIP  string
-	SourceIP  string
-	Port      uint16
-	Interval  uint32
-	Multi     uint8
-	Instance  string
+	// PairElection is the gateway's two-node L2 election. StartExpired is
+	// evaluated after StartGate opens and reports expiry of the existing HA wait.
+	PairElection bool
+	StartExpired func() bool
+	PairState    func() PairState
+	RemoteIP     string
+	SourceIP     string
+	Port         uint16
+	Interval     uint32
+	Multi        uint8
+	Instance     string
 }
 
 type WireRaw struct {
@@ -83,6 +89,15 @@ type Notifer interface {
 
 type bfdSession struct {
 	StartGate      <-chan struct{}
+	pairElection   bool
+	startExpired   func() bool
+	pairState      func() PairState
+	withdrawn      bool
+	rejoining      bool
+	peerAck        uint32
+	backupRank     uint32
+	openAt         time.Time
+	peerLost       bool
 	RemoteName     string
 	Instance       string
 	Cxn            net.Conn
@@ -104,7 +119,7 @@ type bfdSession struct {
 	Fin            chan bool
 	Mutex          sync.RWMutex
 	Notify         Notifer
-	PktDat         [24]byte
+	txMu           sync.Mutex
 
 	// Leases are accepted under Mutex until stopping is published. The
 	// operation token serializes transitions/callbacks without holding the
@@ -141,7 +156,8 @@ func (bs *Struct) BFDAddRemote(args ConfigArgs, cbs Notifer) error {
 	if args.Interval < BFDMinSysTXIntervalUs || args.Multi == 0 {
 		return errors.New("bfd malformed args")
 	}
-	sess := &bfdSession{Instance: args.Instance, Notify: cbs, StartGate: args.StartGate}
+	sess := &bfdSession{Instance: args.Instance, Notify: cbs, StartGate: args.StartGate,
+		pairElection: args.PairElection, startExpired: args.StartExpired, pairState: args.PairState}
 	if err := sess.initialize(args.RemoteIP, args.SourceIP, args.Port, args.Interval, args.Multi); err != nil {
 		return err
 	}
@@ -321,7 +337,7 @@ func (bs *Struct) processBFD(conn *net.UDPConn) {
 		bs.BFDMtx.RLock()
 		sess := bs.BFDSessMap[remIP.String()]
 		bs.BFDMtx.RUnlock()
-		if sess != nil && sess.active() {
+		if sess != nil && (sess.pairElection || sess.active()) {
 			sess.RunSessionSM(raw)
 		} /* else {
 			tk.LogIt(tk.LogDebug, "bfd session(%s) not found\n", remIP.String())
@@ -359,7 +375,20 @@ func (b *bfdSession) RunSessionSM(raw *WireRaw) {
 	}
 	defer func() { <-b.ops }()
 	b.Mutex.Lock()
-	if b.stopping || !b.gateOpen() {
+	if b.stopping {
+		b.Mutex.Unlock()
+		return
+	}
+	if !b.gateOpen() {
+		// A running peer can still be heard while local BFD is silent.
+		// Remember receipt so an XSync-only failure does not trigger lone start.
+		if b.pairElection && raw.Disc != 0 && raw.Multi != 0 && raw.State != BFDAdminDown {
+			b.LastRxTS = time.Now()
+		}
+		b.Mutex.Unlock()
+		return
+	}
+	if b.pairElection && (raw.Disc == 0 || raw.Multi == 0) {
 		b.Mutex.Unlock()
 		return
 	}
@@ -368,6 +397,7 @@ func (b *bfdSession) RunSessionSM(raw *WireRaw) {
 
 	b.RemMulti = raw.Multi
 	b.RemDisc = raw.Disc
+	b.peerAck = raw.RDisc
 	b.RemDesMinTxInt = raw.DesMinTxInt
 	if b.RemDesMinTxInt > b.ReqMinRxInt {
 		b.TimeOut = uint32(b.RemMulti) * b.RemDesMinTxInt
@@ -375,6 +405,7 @@ func (b *bfdSession) RunSessionSM(raw *WireRaw) {
 		b.TimeOut = uint32(b.RemMulti) * b.ReqMinRxInt
 	}
 	b.LastRxTS = time.Now()
+	b.peerLost = false
 
 	if raw.State == BFDDown {
 		if b.State == BFDDown {
@@ -396,14 +427,23 @@ func (b *bfdSession) RunSessionSM(raw *WireRaw) {
 			tk.LogIt(tk.LogInfo, "%s: BFD State -> UP\n", b.RemoteName)
 		}
 		b.State = BFDUp
-		if b.CiState == cmn.CIMasterStateString {
+		if !b.pairElection && b.CiState == cmn.CIMasterStateString {
 			// Force reelection
 			if b.MyDisc <= b.RemDisc {
 				oldState = BFDDown
 			}
 		}
 	}
-	notify := b.stateNotificationLocked(b.State, oldState)
+	var notify func()
+	if b.pairElection {
+		state := electionWaiting
+		if b.State == BFDUp {
+			state = electionUp
+		}
+		notify = b.pairNotificationLocked(state)
+	} else {
+		notify = b.stateNotificationLocked(b.State, oldState)
+	}
 	b.Mutex.Unlock()
 	if notify != nil {
 		notify()
@@ -411,27 +451,103 @@ func (b *bfdSession) RunSessionSM(raw *WireRaw) {
 }
 
 func (b *bfdSession) checkSessTimeout() {
+	b.checkSessTimeoutAt(time.Now())
+}
+
+func (b *bfdSession) checkSessTimeoutAt(now time.Time) {
 	if err := b.takeOperation(0); err != nil {
 		return
 	}
 	defer func() { <-b.ops }()
 	b.Mutex.Lock()
-	if b.stopping {
+	if b.stopping || !b.gateOpen() {
 		b.Mutex.Unlock()
 		return
 	}
 	oldState := b.State
-	if b.State == BFDUp {
-		if time.Duration(time.Since(b.LastRxTS).Microseconds()) > time.Duration(b.TimeOut) {
+	var notify func()
+	if b.pairElection {
+		if b.syncPairStateLocked() != PairHolding {
+			notify = b.pairTimeoutLocked(now)
+		}
+	} else {
+		if b.State == BFDUp && now.Sub(b.LastRxTS) > time.Duration(b.TimeOut)*time.Microsecond {
 			b.State = BFDDown
 			b.MyDisc = b.RemDisc + BFDIncrDiscVal
 			tk.LogIt(tk.LogInfo, "%s: BFD State -> Down (%v:%v)\n", b.RemoteName, b.MyDisc, b.RemDisc)
 		}
+		notify = b.stateNotificationLocked(b.State, oldState)
 	}
-	notify := b.stateNotificationLocked(b.State, oldState)
 	b.Mutex.Unlock()
 	if notify != nil {
 		notify()
+	}
+}
+
+func (b *bfdSession) pairTimeoutLocked(now time.Time) func() {
+	if b.openAt.IsZero() || b.peerLost {
+		return nil
+	}
+	detection := time.Duration(b.TimeOut) * time.Microsecond
+	if detection == 0 {
+		detection = time.Duration(b.ReqMinRxInt) * time.Duration(b.MyMulti) * time.Microsecond
+	}
+	last := b.LastRxTS
+	state := electionPeerLost
+	if b.RemDisc == 0 {
+		state = electionStartExpired
+		if b.startExpired != nil && !b.startExpired() {
+			state = electionStartWithoutBFD
+		}
+		if b.startExpired != nil && b.startExpired() && (last.IsZero() || now.Sub(last) > detection) {
+			b.peerLost = true
+			return b.pairNotificationLocked(state)
+		}
+		if last.Before(b.openAt) {
+			last = b.openAt
+		}
+	}
+	if now.Sub(last) <= detection {
+		return nil
+	}
+	b.State = BFDDown
+	b.peerLost = true
+	tk.LogIt(tk.LogInfo, "%s: BFD State -> Down (%v:%v)\n", b.RemoteName, b.MyDisc, b.RemDisc)
+	return b.pairNotificationLocked(state)
+}
+
+func (b *bfdSession) pairNotificationLocked(state electionState) func() {
+	disposition := b.syncPairStateLocked()
+	if disposition == PairHolding {
+		return nil
+	}
+	// A returning candidate must see that the peer heard its candidate rank
+	// before treating a withdrawn peer as permission to become MASTER. Two
+	// returning nodes can both have a rank-1 packet in flight.
+	if b.rejoining && state == electionUp && b.RemDisc == withdrawnRank && b.peerAck != b.backupRank {
+		state = electionWaiting
+	}
+	result := elect(b.MyDisc, b.RemDisc, state, disposition == PairEligible, false)
+	if result.role == b.CiState {
+		return nil
+	}
+	b.CiState = result.role
+	if disposition == PairEligible {
+		b.MyDisc = b.backupRank
+		if result.role == cmn.CIMasterStateString {
+			b.MyDisc += lowMasterRank - lowBackupRank
+			b.rejoining = false
+		}
+	}
+	notify, inst, remote := b.Notify, b.Instance, b.RemoteName
+	return func() {
+		if n, ok := notify.(interface {
+			BFDSessionElectionNotify(instance, remote, role, reason string)
+		}); ok {
+			n.BFDSessionElectionNotify(inst, remote, result.role, result.reason)
+		} else if notify != nil {
+			notify.BFDSessionNotify(inst, remote, result.role)
+		}
 	}
 }
 
@@ -499,7 +615,11 @@ func (b *bfdSession) bfdSessionTicker() {
 		return
 	}
 	b.started = true
+	b.openAt = time.Now()
 	b.Mutex.Unlock()
+	if b.pairElection {
+		b.checkSessTimeout()
+	}
 	for {
 		select {
 		case <-b.Fin:
@@ -509,7 +629,6 @@ func (b *bfdSession) bfdSessionTicker() {
 			b.checkSessTimeout()
 		case t := <-b.TxTicker.C:
 			tk.LogIt(-1, "Tick at %v\n", t)
-			b.encodeCtrlPacket()
 			b.sendBFDPacket()
 		}
 	}
@@ -569,7 +688,14 @@ func (b *bfdSession) initialize(remoteIP string, sourceIP string, port uint16, i
 	}
 	b.MyIP = myIP
 	b.MyDisc = tk.IPtonl(myIP)
-	b.RemDisc = 0 //tk.IPtonl(ip)
+	if b.pairElection {
+		b.backupRank = lowBackupRank
+		if bytes.Compare(myIP.To4(), ip.To4()) > 0 {
+			b.backupRank = highBackupRank
+		}
+		b.MyDisc = b.backupRank
+	}
+	b.RemDisc = 0
 	b.MyMulti = multi
 	b.DesMinTxInt = interval
 	b.ReqMinRxInt = interval
@@ -607,7 +733,6 @@ func (b *bfdSession) destruct() error {
 		started := b.started
 		b.Mutex.Unlock()
 		if started {
-			b.encodeCtrlPacket()
 			b.sendBFDPacket()
 		}
 		b.Cxn.Close()
@@ -615,29 +740,33 @@ func (b *bfdSession) destruct() error {
 	return nil
 }
 
-func (b *bfdSession) encodeCtrlPacket() error {
+func (b *bfdSession) encodeCtrlPacket() [24]byte {
 	b.Mutex.Lock()
 	defer b.Mutex.Unlock()
-
-	b.PktDat[0] = byte(byte(0x1<<5) | byte(0))
-	b.PktDat[1] = (uint8(b.State) << 6)
-	b.PktDat[2] = b.MyMulti
-	b.PktDat[3] = 24
-
-	binary.BigEndian.PutUint32(b.PktDat[4:], uint32(b.MyDisc))
-	binary.BigEndian.PutUint32(b.PktDat[8:], uint32(b.RemDisc))
-	binary.BigEndian.PutUint32(b.PktDat[12:], uint32(b.DesMinTxInt))
-	binary.BigEndian.PutUint32(b.PktDat[16:], uint32(b.ReqMinRxInt))
-	binary.BigEndian.PutUint32(b.PktDat[20:], uint32(b.ReqMinEchoInt))
-
-	return nil
+	b.syncPairStateLocked()
+	var packet [24]byte
+	packet[0] = 1 << 5
+	packet[1] = uint8(b.State) << 6
+	packet[2] = b.MyMulti
+	packet[3] = uint8(len(packet))
+	binary.BigEndian.PutUint32(packet[4:], b.MyDisc)
+	binary.BigEndian.PutUint32(packet[8:], b.RemDisc)
+	binary.BigEndian.PutUint32(packet[12:], b.DesMinTxInt)
+	binary.BigEndian.PutUint32(packet[16:], b.ReqMinRxInt)
+	binary.BigEndian.PutUint32(packet[20:], b.ReqMinEchoInt)
+	return packet
 }
 
 func (b *bfdSession) sendBFDPacket() error {
-	b.Mutex.RLock()
-	packet, conn := b.PktDat, b.Cxn
-	b.Mutex.RUnlock()
-	if err := conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+	b.txMu.Lock()
+	defer b.txMu.Unlock()
+	packet := b.encodeCtrlPacket()
+	conn := b.Cxn
+	timeout := 500 * time.Millisecond
+	if b.pairElection {
+		timeout = 25 * time.Millisecond
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return err
 	}
 	_, err := conn.Write(packet[:])

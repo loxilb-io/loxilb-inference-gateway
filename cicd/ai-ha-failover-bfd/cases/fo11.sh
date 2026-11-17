@@ -8,10 +8,8 @@
 #
 #   FAILOVER-11.single-master  PASS/FAIL  no sample pair (within 100 ms) in which
 #                        both nodes report MASTER, from the return on.
-#                        In FAILOVER-11r it is RECORDED: there the overlap is
-#                        0-100 ms, which a sampler running every 25 ms per
-#                        node cannot judge, so it reports the count and the
-#                        sampling interval instead of a verdict
+#   FAILOVER-11.sticky-owner   PASS/FAIL  the survivor stays MASTER and the
+#                        returned node becomes BACKUP without the VIP
 #   FAILOVER-11.probe          PASS/FAIL  the probe answers 200 from the start of
 #                        the return until 15 s after the roles hold again
 #   FAILOVER-11.debt           PASS/FAIL  the tenant in debt is never admitted
@@ -38,7 +36,7 @@ F11_ID=${F11_ID:-FAILOVER-11}
 echo; echo "$F11_ID  Failback$([ "$F11_ID" = FAILOVER-11r ] && echo ' after the standby was restarted first')"
 f11_fixture="fo${F11_ID#FAILOVER-}"
 F11_DIR="$OUT/$f11_fixture"; mkdir -p "$F11_DIR"
-f11_notrun() { for c in $F11_ID.single-master $F11_ID.probe $F11_ID.debt; do verdict "$c" NOT_RUN "$1"; done; }
+f11_notrun() { for c in $F11_ID.single-master $F11_ID.sticky-owner $F11_ID.probe $F11_ID.debt; do verdict "$c" NOT_RUN "$1"; done; }
 f11_hook() { # a sampler in the returning node's new namespace, before its gateway starts
   sudo ip netns exec "$1" python3 "$HAFO_DIR/hafo_tools.py" node --vip $VIP --interval $SAMPLE_INTERVAL \
     --out "$F11_DIR/node-$1-returned.jsonl" >/dev/null 2>&1 &
@@ -166,6 +164,7 @@ for r in surv:
     if r["role"] != last:
         sroles.append([r["role"], r["t"] - t_ret]); last = r["role"]
 out["survivor_role_sequence"] = sroles
+out["survivor_remained_master"] = bool(sroles) and all(role == "MASTER" for role, _ in sroles)
 moves, last = [], smac
 for r in neigh:
     if r["mac"] and r["mac"] != last:
@@ -178,12 +177,18 @@ PY
       if [ $ret_rc != 0 ] || [ "$(fb "d['returned_samples']")" -lt 100 ] || [ "$(fb "d['survivor_samples']")" -lt 100 ]; then
         f11_notrun "the return could not be observed (node_return rc=$ret_rc, samples: survivor $(fb "d['survivor_samples']"), returned $(fb "d['returned_samples']"))"
       else
-        if [ "$F11_ID" = FAILOVER-11r ]; then
-          verdict $F11_ID.single-master RECORDED "both nodes reported MASTER in $(fb "d['dual_master_samples']") sample pairs$( [ "$(fb "d['dual_master_first_ms']")" != None ] && echo ", first $(fb "d['dual_master_first_ms']") ms after the fault"), over $(fb "d['survivor_samples']") and $(fb "d['returned_samples']") samples from the start of the return to 15 s after the roles held; each node sampled every ${SAMPLE_INTERVAL} s, pairs matched within 100 ms. An overlap shorter than the sampling interval is not always seen, so this is not judged"
-        elif [ "$(fb "d['dual_master_samples']")" = 0 ]; then
+        if [ "$(fb "d['dual_master_samples']")" = 0 ]; then
           verdict $F11_ID.single-master PASS "no sample in which both nodes reported MASTER, over $(fb "d['survivor_samples']") and $(fb "d['returned_samples']") samples from the start of the return to 15 s after the roles held"
         else
           verdict $F11_ID.single-master FAIL "both nodes reported MASTER in $(fb "d['dual_master_samples']") samples, first $(fb "d['dual_master_first_ms']") ms after the fault"
+        fi
+        if [ "$roles_ok" != 1 ]; then
+          verdict $F11_ID.sticky-owner NOT_RUN "roles did not settle after return ($ROLE_LAST)"
+        elif [ "$(fb "d['survivor_remained_master']")" = True ] &&
+             [ "$(fb "d['returned_first_backup_ms'] is not None and d['returned_first_master_ms'] is None and d['returned_vip_first_ms'] is None")" = True ]; then
+          verdict $F11_ID.sticky-owner PASS "$S remained MASTER and $M returned as BACKUP without the VIP"
+        else
+          verdict $F11_ID.sticky-owner FAIL "the return changed ownership; see failback.json"
         fi
         if [ "$roles_ok" != 1 ]; then
           verdict $F11_ID.probe NOT_RUN "the roles did not hold again within 240 s of the return ($ROLE_LAST)"

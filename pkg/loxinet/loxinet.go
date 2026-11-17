@@ -287,6 +287,9 @@ func loxiNetTicker(bgpPeerMode bool) {
 				}
 
 				tk.LogIt(tk.LogCritical, "Shutdown on sig %v\n", sig)
+				if mh.has != nil && mh.has.protectsL2VIP(cmn.CIDefault) {
+					mh.has.withdrawPair("shutdown_withdrawal")
+				}
 				// Shutdown tracing subsystem first
 				mh.ctNotificationsReady.Store(false)
 				mh.shutdownTracing()
@@ -309,6 +312,9 @@ func loxiNetTicker(bgpPeerMode bool) {
 				// Existing post-stage cleanup that is NOT in any stage
 				// (preserved verbatim from the pre- handler).
 				mh.shutdownDatapathRules()
+				if mh.has != nil && mh.has.haWithdrawPending.Load() {
+					mh.has.sweepWithdrawnVIPs()
+				}
 				if mh.cloudHook != nil {
 					// Cleanup any cloud resources
 					ciState, _ := mh.has.CIStateGetInst(cmn.CIDefault)
@@ -477,6 +483,15 @@ func loxiNetInit() {
 		tk.LogIt(tk.LogError, "cluster init failed\n")
 		os.Exit(1)
 	}
+	var frontend *haFrontendGate
+	if name := opts.Opts.HAFrontendInterface; name != "" {
+		var err error
+		frontend, err = newHAFrontendGate(name, mh.has)
+		if err != nil {
+			tk.LogIt(tk.LogCritical, "HA --ha-frontend-interface=%s: %v\n", name, err)
+			os.Exit(1)
+		}
+	}
 
 	// It is important to make sure loxilb's eBPF filesystem
 	// is in place and mounted to make sure maps are pinned properly
@@ -628,6 +643,16 @@ func loxiNetInit() {
 		if mh.zr == nil {
 			tk.LogIt(tk.LogError, "root zone not found\n")
 			return
+		}
+
+		if kaArgs.SpawnKa && !opts.Opts.NoNlp && !opts.Opts.Bgp && !opts.Opts.ProxyModeOnly && opts.Opts.Cloud == "on-prem" {
+			observer := newHAFrontendObserver()
+			mh.zr.Rules.frontendObserver = observer
+			go observer.run(mh.shutdownCtx)
+		}
+		if frontend != nil {
+			frontend.observer = mh.zr.Rules.frontendObserver
+			mh.zr.Rules.frontendGate = frontend
 		}
 
 		if clusterMode {
@@ -835,6 +860,9 @@ func loxiNetInit() {
 	if !opts.Opts.BgpPeerMode {
 		// Spawn CI maintenance application
 		mh.has.CISpawn(bootSnapshotSelected)
+		if frontend != nil {
+			go frontend.run(mh.shutdownCtx)
+		}
 		if mh.bgp != nil {
 			mh.bgp.finishRoleInit()
 		}
