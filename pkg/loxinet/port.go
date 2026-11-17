@@ -240,12 +240,19 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 			defer zn.Rules.queuePortVIPRefresh(p)
 		}
 		macChanged := !p.IsL3TunPort() && p.HInfo.MacAddr != hwi.MacAddr
+		var oldSrcMAC [6]uint8
 		if macChanged {
+			if p.SInfo.PortType == cmn.PortReal && p.L2.IsPvid {
+				oldSrcMAC = p.HInfo.MacAddr
+			}
 			p.HInfo.MacAddr = hwi.MacAddr
 			tk.LogIt(tk.LogInfo, "port add - %s addr-changed\n", name)
 		}
 		if replaced || macChanged {
-			p.DP(DpCreate)
+			if oldSrcMAC != ([6]uint8{}) {
+				zn.Nh.refreshPortSourceMAC(p)
+			}
+			p.dp(DpCreate, oldSrcMAC)
 			zn.L3.IfasTicker(true)
 		}
 		if p.SInfo.PortType == cmn.PortReal {
@@ -926,7 +933,10 @@ func (P *PortsH) PortDestructAll() {
 
 // DP - sync state of port entities in loxinet realm to data-path
 func (p *Port) DP(work DpWorkT) int {
+	return p.dp(work, [6]uint8{})
+}
 
+func (p *Port) dp(work DpWorkT, oldSrcMAC [6]uint8) int {
 	zn, zoneNum := mh.zn.Zonefind(p.Zone)
 	if zoneNum < 0 {
 		return -1
@@ -1047,6 +1057,7 @@ func (p *Port) DP(work DpWorkT) int {
 	}
 
 	pWq.SetBD = p.L2.Vid
+	pWq.oldSrcMAC = oldSrcMAC
 	_, pWq.SetZoneNum = mh.zn.Zonefind(p.Zone)
 	pWq.Prop = p.SInfo.PortProp
 	pWq.SetPol = p.SInfo.PortPolNum

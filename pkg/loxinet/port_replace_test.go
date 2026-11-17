@@ -4,6 +4,7 @@
 package loxinet
 
 import (
+	"net"
 	"testing"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -22,9 +23,12 @@ func TestPortSameNameNewIndexIgnoresLateDelete(t *testing.T) {
 
 	const name = "front0"
 	const oldIndex, newIndex, portNumber, aliasNumber = 3, 5, 11, 12
+	oldMAC := [6]byte{0x02, 0, 0, 0, 0, 1}
+	newMAC := [6]byte{0x02, 0, 0, 0, 0, 2}
 	ports := mh.zr.Ports
 	port := &Port{
 		Name: name, PortNo: portNumber, Zone: RootZone,
+		HInfo: PortHwInfo{MacAddr: oldMAC},
 		SInfo: PortSwInfo{OsID: oldIndex, PortType: cmn.PortReal, PortActive: true, BpfLoaded: true},
 		L2:    PortLayer2Info{IsPvid: true, Vid: RealPortIDB + portNumber},
 	}
@@ -34,8 +38,15 @@ func TestPortSameNameNewIndexIgnoresLateDelete(t *testing.T) {
 	alias := &Port{Name: "tmp0", PortNo: aliasNumber, Zone: RootZone, SInfo: port.SInfo, L2: port.L2}
 	alias.SInfo.OsID = newIndex
 	ports.portSmap[alias.Name], ports.portOmap[newIndex], ports.portImap[aliasNumber] = alias, alias, alias
+	const nextHop = 41
+	neighMAC := net.HardwareAddr{0x02, 0, 0, 0, 0, 3}
+	key := NeighKey{NhString: "192.0.2.10", Zone: RootZone, Link: oldIndex}
+	mh.zr.Nh.NeighMap[key] = &Neigh{
+		Key: key, OifPort: port, Resolved: true, Type: NhNormal, Mark: nextHop,
+		Attr: NeighAttr{HardwareAddr: neighMAC},
+	}
 	api := &NetAPIStruct{}
-	if ret, err := api.NetPortAdd(&cmn.PortMod{Dev: name, LinkIndex: newIndex, Ptype: cmn.PortReal, Link: true, State: true}); err != nil || ret != 0 {
+	if ret, err := api.NetPortAdd(&cmn.PortMod{Dev: name, LinkIndex: newIndex, Ptype: cmn.PortReal, MacAddr: newMAC, Link: true, State: true}); err != nil || ret != 0 {
 		t.Fatalf("replace: %v (%d)", err, ret)
 	}
 	if ports.PortFindByOSID(oldIndex) != nil || ports.PortFindByOSID(newIndex) != port || port.SInfo.OsID != newIndex || ports.PortFindByName(alias.Name) != nil {
@@ -46,7 +57,7 @@ func TestPortSameNameNewIndexIgnoresLateDelete(t *testing.T) {
 		op     DpWorkT
 		index  int
 		portNo int
-	}{{DpRemove, newIndex, aliasNumber}, {DpRemove, oldIndex, portNumber}, {DpCreate, newIndex, portNumber}} {
+	}{{DpRemove, newIndex, aliasNumber}, {DpRemove, oldIndex, portNumber}} {
 		select {
 		case item := <-mh.dp.ToDpCh:
 			w, ok := item.(*PortDpWorkQ)
@@ -56,6 +67,17 @@ func TestPortSameNameNewIndexIgnoresLateDelete(t *testing.T) {
 		default:
 			t.Fatal("no datapath operation queued")
 		}
+	}
+	if len(mh.dp.ToDpCh) != 2 {
+		t.Fatalf("expected next-hop refresh and new port binding, got %d queued operations", len(mh.dp.ToDpCh))
+	}
+	if w, ok := (<-mh.dp.ToDpCh).(*NextHopDpWorkQ); !ok ||
+		w.Work != DpCreate || w.NextHopNum != nextHop || w.SrcAddr != newMAC || w.BD != port.L2.Vid {
+		t.Fatalf("the existing next hop must be refreshed before purging old cached actions: %+v", w)
+	}
+	if w, ok := (<-mh.dp.ToDpCh).(*PortDpWorkQ); !ok ||
+		w.Work != DpCreate || w.OsPortNum != newIndex || w.PortNum != portNumber || w.oldSrcMAC != oldMAC {
+		t.Fatalf("the new binding must purge fast-cache entries for the old MAC: %+v", w)
 	}
 	if _, err := api.NetPortDel(&cmn.PortMod{Dev: name, LinkIndex: oldIndex, Ptype: cmn.PortReal}); err != nil {
 		t.Fatal(err)
