@@ -19,7 +19,7 @@ function wait_cluster_ready {
 
     Res=$(printf '%s\n' "$output" |
     while IFS= read -r line; do
-        if [[ "$line" != *"Running"* && "$line" != *"READY"* ]]; then
+        if [[ "$line" != *"Running"* && "$line" != *"Completed"* && "$line" != *"READY"* ]]; then
             echo "not ready"
             return
         fi

@@ -3,7 +3,7 @@ source /vagrant/common.sh
 function wait_k0s_cluster_ready {
     Res=$(sudo k0s kubectl get pods -A |
     while IFS= read -r line; do
-        if [[ "$line" != *"Running"* && "$line" != *"READY"* ]]; then
+        if [[ "$line" != *"Running"* && "$line" != *"Completed"* && "$line" != *"READY"* ]]; then
             echo "not ready"
             return
         fi
