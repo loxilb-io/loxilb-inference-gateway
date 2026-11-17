@@ -86,7 +86,8 @@ and the lower-IP node becomes BACKUP.
 ## Upgrade
 
 1. Verify one MASTER, one BACKUP, BFD UP, and customer traffic. Record the
-   current VIP owner. Upgrade the BACKUP first. Confirm that it rejoins as
+   current VIP owner and back up each node's configuration directory.
+   Upgrade the BACKUP first. Confirm that it rejoins as
    BACKUP and the legacy MASTER still owns the VIP.
 2. Stop the legacy MASTER. Confirm that the updated peer takes over and the
    VIP serves customer traffic. Start the other node on the updated version
@@ -99,7 +100,14 @@ Do not rely on a mixed pair to converge across repeated partitions.
 
 ## Rollback
 
-While the original MASTER is still serving in step 1, replace only the updated
-BACKUP with the previous build. After step 2, use a maintenance window. Stop the
-updated pair, verify VIP withdrawal, and then start both legacy nodes. Resume
-traffic after one legacy MASTER owns the VIP and the customer probe succeeds.
+While the original MASTER is still serving in step 1, restore the BACKUP's
+pre-upgrade configuration and start it with the previous build. After step 2,
+use a maintenance window. Stop the updated pair, verify VIP withdrawal,
+restore each node's pre-upgrade configuration, and start both legacy nodes.
+Resume traffic after one legacy MASTER owns the VIP and the customer probe
+succeeds.
+
+The previous release can reject snapshots written with a newer schema.
+Retain the pre-upgrade backups until the rollback window closes. See
+[configuration recovery](configuration-recovery.md#image-changes-and-rollback)
+for the separate stores to include in the backup.

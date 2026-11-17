@@ -194,6 +194,10 @@ shared store, so a node that was never sent one reads it back anyway.
 
 ## CI
 
+The AI-HA-Failover-BFD workflow also runs the [L2 mixed-version regression](../ha-l2-mixed-version/README.md)
+against a pinned released image. The same-version suite continues to cover
+election and frontend loss, including both frontends down and same-name recreation.
+
 Job `ai-ha-failover-bfd` on the schedule, on dispatch, and on same-repository
 pull requests matching the workflow paths. `validation.sh` reports the product as it
 is, and part of that is FAIL today. `known-fail.tsv` lists those verdicts;
