@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import signal
 import subprocess
 import threading
 import time
@@ -254,10 +253,14 @@ class Trial:
     def clean_withdrawal(self, master):
         bridge = "br-" + self.networks[self.back][:12]
         capture = self.out / "sigterm-bfd.txt"
-        with capture.open("wb") as output, subprocess.Popen(
-            ["sudo", "-n", "tcpdump", "-nnvv", "-tt", "-l", "-i", bridge, "udp", "dst", "port", "3784"],
-            stdout=output, stderr=subprocess.STDOUT,
-        ) as monitor:
+        with capture.open("wb") as output:
+            # Bound the capture inside sudo so cleanup does not depend on
+            # how the runner's sudo process forwards signals to tcpdump.
+            monitor = subprocess.Popen(
+                ["sudo", "-n", "timeout", "--signal=INT", "--kill-after=2s", "12s",
+                 "tcpdump", "-nnvv", "-tt", "-l", "-i", bridge, "udp", "dst", "port", "3784"],
+                stdout=output, stderr=subprocess.STDOUT,
+            )
             try:
                 wait_for("BFD packet capture ready", lambda: "listening on" in capture.read_text(), 5)
                 start = time.time()
@@ -269,8 +272,7 @@ class Trial:
                                         self.containers[master]) == "exited 0", 20)
                 self.stable_service()
             finally:
-                if monitor.poll() is None:
-                    monitor.send_signal(signal.SIGINT)
+                monitor.wait(timeout=17)
         packets = re.split(r"(?m)^(?=\d+\.\d+ IP )", capture.read_text())[1:]
         if not any(float(packet.split()[0]) >= start
                    and f"{BACK}.{10+master}." in packet
