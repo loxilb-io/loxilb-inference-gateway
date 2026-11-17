@@ -112,7 +112,7 @@ jobs:
       # clang-14 explicitly: the eBPF build prefers it when present (common.mk), the
       # container images are built with it, and the objects clang 18 (ubuntu-24.04's
       # default) produces are refused by the runner's 6.17 kernel verifier (E2BIG).
-      - run: sudo apt-get -y install clang clang-14 llvm llvm-14 libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      - run: sudo apt-get -y install clang clang-14 llvm llvm-14 libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev tcpdump
       - name: Install libtokenizers (KV-router HF backend)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -228,8 +228,13 @@ jobs:
       - name: Egress-direction port policer (--egr-hooks)
         run: |
           cd cicd/qos-egrpol/
+          capture_dir=""
+          if mkdir -p /tmp/ci-logs; then
+            capture_dir=$(mktemp -d /tmp/ci-logs/qos-egrpol-pcap.XXXXXX) || capture_dir=""
+          fi
           rc=0
-          sudo -E env "PATH=$PATH" ./config.sh && sudo -E env "PATH=$PATH" ./validation.sh || rc=$?
+          sudo -E env "PATH=$PATH" ./config.sh &&
+            sudo -E env "PATH=$PATH" QOS_EGRPOL_PCAP_DIR="$capture_dir" ./validation.sh || rc=$?
           if [ $rc -ne 0 ]; then
             mkdir -p /tmp/ci-logs/qos-egrpol
             for f in /tmp/loxilb.err /tmp/loxilb.out /var/log/loxilbdp.log; do docker cp "llb1:$f" /tmp/ci-logs/qos-egrpol/ || true; done

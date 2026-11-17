@@ -86,6 +86,48 @@ capture_e3_timeout() {
     wait
 }
 
+pcap_pids=()
+
+stop_e3_e5_capture() {
+    if ((${#pcap_pids[@]})); then
+        kill -TERM "${pcap_pids[@]}" 2>/dev/null || true
+        wait "${pcap_pids[@]}" 2>/dev/null || true
+        pcap_pids=()
+    fi
+}
+
+start_e3_e5_capture() {
+    local dir=${QOS_EGRPOL_PCAP_DIR:-} point ns dev name attempt
+    [[ -n "$dir" ]] || return 0
+    # Keep control payloads, SYN, FIN and RST. Skip bulk data and the reverse
+    # transfer's ACK stream so recording has little impact on the scenario.
+    local filter='ip and tcp and ((host 20.20.20.1 and port 2020) or (host 31.31.31.1 and port 8080)) and
+        ((tcp[tcpflags] & (tcp-fin|tcp-syn|tcp-rst) != 0) or (ip[2:2] <= 256 and
+            ip[2:2] > (((ip[0] & 0xf) << 2) + ((tcp[12] & 0xf0) >> 2))))'
+    trap stop_e3_e5_capture EXIT
+    for point in l3h1:el3h1llb1:client llb1:ellb1l3h1:gateway-client \
+        llb1:ellb1l3ep1:gateway-backend l3ep1:el3ep1llb1:backend; do
+        IFS=: read -r ns dev name <<< "$point"
+        (
+            umask 022
+            exec ip netns exec "$ns" tcpdump --immediate-mode -nn -U -s 192 -B 4096 -c 32768 \
+                -i "$dev" -w - "$filter" \
+                > "$dir/$name.pcap" 2> "$dir/$name.log"
+        ) &
+        pcap_pids+=("$!")
+    done
+
+    # Give the taps a brief head start for the E3 SYN. A failed tap leaves its
+    # stderr for the artifact and must never determine the scenario verdict.
+    for ((attempt = 0; attempt < 20; attempt++)); do
+        if grep -qs 'listening on' "$dir/client.log" && grep -qs 'listening on' "$dir/gateway-client.log" &&
+           grep -qs 'listening on' "$dir/gateway-backend.log" && grep -qs 'listening on' "$dir/backend.log"; then
+            return 0
+        fi
+        sleep 0.05
+    done
+}
+
 # Transit Mbits/s through the VIP (iperf3 receiver side). A run with no
 # receiver summary yields "" and surfaces iperf3's own error on the console.
 run_bw() {
@@ -162,6 +204,7 @@ elif [[ "$hbw1" -lt 100 ]]; then
 fi
 
 # --- E3: transit download unaffected by the egress policer ---
+start_e3_e5_capture
 bw2=$(run_bw 5 -R)
 echo "E3 transit download with egress policer up: ${bw2} Mbits/s"
 if [[ -z "$bw2" || "$bw2" -lt 100 ]]; then
@@ -170,6 +213,7 @@ fi
 
 # --- E5: transit upload IS policed by the egress policer ---
 bw3=$(run_bw 5)
+stop_e3_e5_capture
 echo "E5 transit upload with egress policer up: ${bw3} Mbits/s (CIR 10 Mbps)"
 if [[ -z "$bw3" || "$bw3" -gt 30 ]]; then
     echo "E5 transit-egress NOT policed (got ${bw3} Mbits/s, want <=30 on a 10 Mbps CIR)" ; code=1
