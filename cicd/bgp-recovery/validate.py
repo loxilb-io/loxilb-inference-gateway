@@ -26,6 +26,7 @@ out = a.output.resolve() / ('bgp-recovery-' + uuid.uuid4().hex[:8])
 out.mkdir(parents=True, mode=0o700)
 created = {}
 network = None
+gw = peer = None
 started = time.monotonic()
 results = []
 deleted_items = False
@@ -359,6 +360,14 @@ try:
             checkpoint('pending-state-daemon-crash', lambda: recovered('pending'))
 except BaseException as e:
     results.append(dict(case='failure', result='FAIL', error=repr(e)))
+    if gw and peer:
+        # Record the speaker and observer state before teardown. A peer can
+        # be Established with an empty RIB; the CI traceback cannot tell
+        # whether the speaker lacked the route or failed to export it.
+        try:
+            save_state('failure')
+        except Exception as capture_error:
+            print(f'Could not capture BGP failure state: {capture_error!r}', flush=True)
     raise
 finally:
     for role, cid in created.items():

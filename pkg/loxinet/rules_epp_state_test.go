@@ -18,7 +18,9 @@ import (
 // eppRuleGet returns the GET view of the rule on port.
 func eppRuleGet(t *testing.T, port uint16) cmn.LbServiceArg {
 	t.Helper()
+	mh.mtx.Lock()
 	rules, err := mh.zr.Rules.GetLBRule()
+	mh.mtx.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,10 +96,10 @@ func TestEppStateOnRuleGet(t *testing.T) {
 
 	// No EPP, no fields.
 	serv := cmn.LbServiceArg{ServIP: eppTestVIP, ServPort: 28302, Proto: "tcp", Mode: cmn.LBModeFullProxy, Sel: cmn.LbSelRr}
-	if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, []cmn.LbEndPointArg{ep}); err != nil {
+	if _, err := eppTestAddRule(serv, []cmn.LbEndPointArg{ep}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(serv) })
+	t.Cleanup(func() { eppTestDeleteRule(serv) })
 	if s = eppRuleGet(t, 28302); s.EppState != "" || s.EppStateSince != "" || s.EppLastError != "" {
 		t.Fatalf("rule without an EPP reports EPP state: %+v", s)
 	}
@@ -125,7 +127,7 @@ func TestEppRuleDeleteForgetsTheConnection(t *testing.T) {
 	if n := eppClient.Pooled(); n != base+1 {
 		t.Fatalf("pooled=%d, want %d (two rules, one EPP, one connection)", n, base+1)
 	}
-	if _, err := mh.zr.Rules.DeleteLbRule(r1); err != nil {
+	if _, err := eppTestDeleteRule(r1); err != nil {
 		t.Fatal(err)
 	}
 	if n := eppClient.Pooled(); n != base+1 {
@@ -134,7 +136,7 @@ func TestEppRuleDeleteForgetsTheConnection(t *testing.T) {
 	if s := eppRuleGet(t, 28312); s.EppState == "" {
 		t.Fatal("surviving rule lost its EPP state")
 	}
-	if _, err := mh.zr.Rules.DeleteLbRule(r2); err != nil {
+	if _, err := eppTestDeleteRule(r2); err != nil {
 		t.Fatal(err)
 	}
 	if n := eppClient.Pooled(); n != base {
@@ -149,13 +151,13 @@ func TestEppRuleDeleteForgetsTheConnection(t *testing.T) {
 	}
 	moved := r3
 	moved.EppEndpoint = addr2
-	if _, err := mh.zr.Rules.DeleteLbRule(r3); err != nil {
+	if _, err := eppTestDeleteRule(r3); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mh.zr.Rules.AddLbRule(moved, nil, nil, nil, []cmn.LbEndPointArg{ep}); err != nil {
+	if _, err := eppTestAddRule(moved, []cmn.LbEndPointArg{ep}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(moved) })
+	t.Cleanup(func() { eppTestDeleteRule(moved) })
 	eppRuleGet(t, 28314)
 	if n := eppClient.Pooled(); n != base+1 {
 		t.Fatalf("pooled=%d after moving the rule to another EPP, want %d (old address forgotten, new one pooled)", n, base+1)

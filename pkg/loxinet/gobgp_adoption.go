@@ -3,7 +3,7 @@ package loxinet
 import (
 	"context"
 	"errors"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	api "github.com/osrg/gobgp/v3/api"
 	"google.golang.org/protobuf/proto"
 	"io"

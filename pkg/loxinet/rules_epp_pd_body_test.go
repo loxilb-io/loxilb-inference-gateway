@@ -308,10 +308,10 @@ func TestEppPdBodylessDoesNotHoldRoleCapacity(t *testing.T) {
 	serv := cmn.LbServiceArg{ServIP: eppTestVIP, ServPort: 28262, Proto: "tcp", Mode: cmn.LBModeFullProxy,
 		Sel: cmn.LbSelCHWBL, PDDisaggMode: true, FcMode: "enforce",
 		FcPrefillMaxInflight: 1, FcDecodeMaxInflight: 1}
-	if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, []cmn.LbEndPointArg{prefill, decode}); err != nil {
+	if _, err := eppTestAddRule(serv, []cmn.LbEndPointArg{prefill, decode}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(serv) })
+	t.Cleanup(func() { eppTestDeleteRule(serv) })
 	k := eppPdDial(t, 28262)
 	k.conn.SetDeadline(time.Now().Add(10 * time.Second))
 	fmt.Fprint(k.conn, "GET /metadata-check HTTP/1.1\r\nHost: 127.0.0.1:28262\r\nConnection: close\r\n\r\n")
@@ -404,10 +404,10 @@ func pdBodyTestPlainRule(t *testing.T, port uint16, auth string, ep cmn.LbEndPoi
 	t.Helper()
 	serv := cmn.LbServiceArg{ServIP: eppTestVIP, ServPort: port, Proto: "tcp", Mode: cmn.LBModeFullProxy, SSEMode: true, ApiKeyAuth: auth}
 	ep.EpRole = 0
-	if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, []cmn.LbEndPointArg{ep}); err != nil {
+	if _, err := eppTestAddRule(serv, []cmn.LbEndPointArg{ep}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(serv) })
+	t.Cleanup(func() { eppTestDeleteRule(serv) })
 }
 
 func TestEppPdPipelinedBodyBound(t *testing.T) {
@@ -472,9 +472,9 @@ func TestEppPdNonPdPipelineCredentials(t *testing.T) {
 		sum := sha256.Sum256([]byte(raw))
 		svc.Cache.Set(fmt.Sprintf("ak:%x", sum), &cmn.ApiKeyEntry{Enabled: true, AllowedModels: models}, time.Minute)
 	}
-	saved := mh.AIKeyService
-	mh.AIKeyService = svc
-	t.Cleanup(func() { mh.AIKeyService = saved })
+	saved := mh.AIKeyService.Load()
+	mh.AIKeyService.Store(svc)
+	t.Cleanup(func() { mh.AIKeyService.Store(saved) })
 	ep, seen := eppPdTestEngine(t, "plain-auth", 0, false)
 	pdBodyTestPlainRule(t, 28268, cmn.ApiKeyAuthRequired, ep)
 	body := `{"model":"alias","prompt":"hello"}`

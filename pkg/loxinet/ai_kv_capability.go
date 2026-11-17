@@ -37,9 +37,9 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/enginecontract"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // KvCapabilityInfo is the transport-neutral capability set (also the

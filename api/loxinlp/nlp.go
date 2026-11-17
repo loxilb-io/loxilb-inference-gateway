@@ -29,10 +29,10 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opt "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	"github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 	nlp "github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )

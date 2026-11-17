@@ -21,7 +21,7 @@ extern int llb_map2fd(int mapidx);
 import "C"
 
 import (
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // initL4TraceRingBuffer initializes the L4 trace ring buffer file descriptor

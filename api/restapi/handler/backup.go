@@ -34,9 +34,9 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // DumpFile is the legacy /config/export document shape, kept only so

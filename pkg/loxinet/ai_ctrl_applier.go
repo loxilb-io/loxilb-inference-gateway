@@ -42,8 +42,8 @@ import (
 	"time"
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/aictrl"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // AiCtrlApplierStart is the GLOBAL env-gated start hook for the AI-controller

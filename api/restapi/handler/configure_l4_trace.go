@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/go-openapi/runtime/middleware"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/l4_tracing"

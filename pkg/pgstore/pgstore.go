@@ -48,7 +48,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	pgxconn "github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	// registers the "pgx" driver with database/sql
 	_ "github.com/jackc/pgx/v5/stdlib"

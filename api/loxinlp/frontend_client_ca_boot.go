@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opt "github.com/loxilb-io/loxilb/options"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 func pruneBootFrontendClientCAs() {

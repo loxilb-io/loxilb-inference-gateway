@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-16T13:43:23+00:00",
-  "source_revision": "860dab5238fc63db6e8b7500243cb03deb1fe4e4"
+  "generated_at": "2026-11-16T23:03:33+00:00",
+  "source_revision": "d778bfb31959a031e4869407eebaeacfa24a311d"
  },
  "contract": {
   "total": 359,
@@ -1660,8 +1660,8 @@
      "symbol": "llb_epp_metric_rejected",
      "kind": "func",
      "file": "pkg/loxinet/ai_epp_dp.go",
-     "def_line": 422,
-     "call_line": 424,
+     "def_line": 423,
+     "call_line": 425,
      "calls": "RecordEppCandidateRejected",
      "entry_point": "cgo-export"
     }
@@ -1699,8 +1699,8 @@
      "kind": "method",
      "receiver": "eppFlight",
      "file": "pkg/loxinet/ai_epp_dp.go",
-     "def_line": 210,
-     "call_line": 217,
+     "def_line": 211,
+     "call_line": 218,
      "calls": "RecordEppOutcome",
      "entry_point": "goroutine"
     }
@@ -1781,8 +1781,8 @@
      "symbol": "llb_epp_metric_outcome",
      "kind": "func",
      "file": "pkg/loxinet/ai_epp_dp.go",
-     "def_line": 416,
-     "call_line": 418,
+     "def_line": 417,
+     "call_line": 419,
      "calls": "RecordEppOutcome",
      "entry_point": "cgo-export"
     }
@@ -7391,8 +7391,8 @@
      "symbol": "DpEbpfInit",
      "kind": "func",
      "file": "pkg/loxinet/dpebpf_linux.go",
-     "def_line": 617,
-     "call_line": 720,
+     "def_line": 614,
+     "call_line": 717,
      "calls": "SetConntrackMaxEntries",
      "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this"
     },

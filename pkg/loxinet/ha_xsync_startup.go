@@ -3,7 +3,7 @@ package loxinet
 import (
 	"context"
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"net"
 	"sync"
 	"sync/atomic"

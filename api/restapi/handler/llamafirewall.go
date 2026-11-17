@@ -13,8 +13,8 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/llamafirewall"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // ConfigPostLlamaFirewallEnable - Enable/disable LlamaFirewall AI security scanning

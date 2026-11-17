@@ -26,7 +26,7 @@ import (
 	cmn "github.com/loxilb-io/loxilb/common"
 
 	"github.com/go-openapi/runtime"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 var ApiHooks cmn.NetHookInterface

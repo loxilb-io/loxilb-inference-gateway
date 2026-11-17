@@ -19,7 +19,7 @@ import (
 	"os"
 	"testing"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // packageLogPath is where every test's tk.LogIt output lands. The logger is

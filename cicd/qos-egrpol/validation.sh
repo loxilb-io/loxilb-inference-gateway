@@ -69,10 +69,69 @@ for h in 10.10.10.1 31.31.31.1; do
     fi
 done
 
+# Redirect as the scenario runner so it owns the artifacts.
+# shellcheck disable=SC2024
+capture_e3_timeout() {
+    local dir=/tmp/ci-logs/qos-egrpol
+    mkdir -p "$dir" || return
+    echo "E3 timeout diagnostics for $VIP:2020 in $dir" >&2
+
+    sudo timeout --verbose --kill-after=1 3 ip netns exec l3h1 ss -antopi "dst $VIP and dport = :2020" \
+        >"$dir/e3-client-tcp.txt" 2>&1 &
+    sudo timeout --verbose --kill-after=1 3 ip netns exec l3ep1 ss -antopi 'sport = :8080' \
+        >"$dir/e3-backend-tcp.txt" 2>&1 &
+    # The REST listing triggers GC. Read both VIP and NAT reply tuples from the live map.
+    sudo timeout --verbose --kill-after=1 3 docker exec llb1 bpftool -jp map dump pinned /opt/loxilb/dp/bpf/ct_map \
+        >"$dir/e3-conntrack.txt" 2>&1 &
+    wait
+}
+
+pcap_pids=()
+
+stop_e3_e5_capture() {
+    if ((${#pcap_pids[@]})); then
+        kill -TERM "${pcap_pids[@]}" 2>/dev/null || true
+        wait "${pcap_pids[@]}" 2>/dev/null || true
+        pcap_pids=()
+    fi
+}
+
+start_e3_e5_capture() {
+    local dir=${QOS_EGRPOL_PCAP_DIR:-} point ns dev name attempt
+    [[ -n "$dir" ]] || return 0
+    # Keep control payloads, SYN, FIN and RST. Skip bulk data and the reverse
+    # transfer's ACK stream so recording has little impact on the scenario.
+    local filter='ip and tcp and ((host 20.20.20.1 and port 2020) or (host 31.31.31.1 and port 8080)) and
+        ((tcp[tcpflags] & (tcp-fin|tcp-syn|tcp-rst) != 0) or (ip[2:2] <= 256 and
+            ip[2:2] > (((ip[0] & 0xf) << 2) + ((tcp[12] & 0xf0) >> 2))))'
+    trap stop_e3_e5_capture EXIT
+    for point in l3h1:el3h1llb1:client llb1:ellb1l3h1:gateway-client \
+        llb1:ellb1l3ep1:gateway-backend l3ep1:el3ep1llb1:backend; do
+        IFS=: read -r ns dev name <<< "$point"
+        (
+            umask 022
+            exec ip netns exec "$ns" tcpdump --immediate-mode -nn -U -s 192 -B 4096 -c 32768 \
+                -i "$dev" -w - "$filter" \
+                > "$dir/$name.pcap" 2> "$dir/$name.log"
+        ) &
+        pcap_pids+=("$!")
+    done
+
+    # Give the taps a brief head start for the E3 SYN. A failed tap leaves its
+    # stderr for the artifact and must never determine the scenario verdict.
+    for ((attempt = 0; attempt < 20; attempt++)); do
+        if grep -qs 'listening on' "$dir/client.log" && grep -qs 'listening on' "$dir/gateway-client.log" &&
+           grep -qs 'listening on' "$dir/gateway-backend.log" && grep -qs 'listening on' "$dir/backend.log"; then
+            return 0
+        fi
+        sleep 0.05
+    done
+}
+
 # Transit Mbits/s through the VIP (iperf3 receiver side). A run with no
 # receiver summary yields "" and surfaces iperf3's own error on the console.
 run_bw() {
-    local secs=$1 raw; shift
+    local secs=$1 raw rc=0; shift
     # Two bounds, so a wedged datapath surfaces through the no-receiver-summary
     # branch below instead of hanging: --connect-timeout for a control
     # connection that never establishes, and a hard timeout for the nastier
@@ -98,7 +157,11 @@ run_bw() {
     # stdin is closed for a second, independent reason: -i holds stdin open on
     # the docker client, so an interactive run can stop on SIGTTIN, and a
     # stopped process cannot act on SIGTERM at all.
-    raw=$(sudo timeout $((secs+20)) docker exec -i l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1)
+    raw=$(sudo timeout $((secs+20)) docker exec -i l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" </dev/null 2>&1) || rc=$?
+    # E3 is the only reverse leg. Finish the capture before E5 starts.
+    if [[ $rc == 124 && ${1:-} == -R ]]; then
+        capture_e3_timeout || true
+    fi
     if ! echo "$raw" | grep -q receiver; then
         echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
     fi
@@ -141,6 +204,7 @@ elif [[ "$hbw1" -lt 100 ]]; then
 fi
 
 # --- E3: transit download unaffected by the egress policer ---
+start_e3_e5_capture
 bw2=$(run_bw 5 -R)
 echo "E3 transit download with egress policer up: ${bw2} Mbits/s"
 if [[ -z "$bw2" || "$bw2" -lt 100 ]]; then
@@ -149,6 +213,7 @@ fi
 
 # --- E5: transit upload IS policed by the egress policer ---
 bw3=$(run_bw 5)
+stop_e3_e5_capture
 echo "E5 transit upload with egress policer up: ${bw3} Mbits/s (CIR 10 Mbps)"
 if [[ -z "$bw3" || "$bw3" -gt 30 ]]; then
     echo "E5 transit-egress NOT policed (got ${bw3} Mbits/s, want <=30 on a 10 Mbps CIR)" ; code=1

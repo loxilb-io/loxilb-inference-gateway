@@ -38,10 +38,8 @@ func sent(pc *net.UDPConn, d time.Duration) bool {
 // is done, also when --ka has already set SpawnKa (the boot replay of a saved
 // configuration); a session added after it starts at once.
 //
-// Both sessions are left in place: deleting a session whose ticker is sending
-// races that ticker inside pkg/proto, a teardown defect this test is not
-// about. With no peer answering they stay Down and never notify, and the next
-// run uses other addresses.
+// Each session is stopped and joined before its peer socket is closed, including
+// when an assertion fails. No protocol worker may outlive this fixture.
 func TestBFDSessionWaitsForInitialHASync(t *testing.T) {
 	run := bfdTestRun.Add(1)
 	if run > 250 {

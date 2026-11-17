@@ -21,7 +21,7 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // ConfigGetCors retrieves the list of Cors entries

@@ -34,7 +34,7 @@
 package loxinet
 
 import (
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	daul "github.com/daulet/tokenizers"
 )

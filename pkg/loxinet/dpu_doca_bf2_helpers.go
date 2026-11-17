@@ -31,8 +31,8 @@ import (
 	"sync"
 	"time"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
-	tk "github.com/loxilb-io/loxilib"
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )

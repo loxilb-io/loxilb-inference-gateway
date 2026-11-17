@@ -97,7 +97,7 @@ func aiClassSnapshot() *aikey.ClassSnapshot {
 // aiClassSnapshotSrc is where the snapshot is read from. A variable so the
 // package's tests can stand a snapshot in without a store.
 var aiClassSnapshotSrc = func() *aikey.ClassSnapshot {
-	if svc := mh.AIKeyService; svc != nil {
+	if svc := mh.AIKeyService.Load(); svc != nil {
 		return svc.Classes()
 	}
 	return nil

@@ -310,6 +310,11 @@ func TestKeyStoreIsPublishedBeforeItIsDialled(t *testing.T) {
 					}
 				}
 			case *ast.CallExpr:
+				if call, ok := node.Fun.(*ast.SelectorExpr); ok && call.Sel.Name == "Store" {
+					if field, ok := call.X.(*ast.SelectorExpr); ok && field.Sel.Name == "AIKeyService" && assignLine < 0 {
+						assignLine = fset.Position(node.Pos()).Line
+					}
+				}
 				sel, ok := node.Fun.(*ast.SelectorExpr)
 				if ok && sel.Sel != nil && sel.Sel.Name == "Connect" && connectLine < 0 {
 					connectLine = fset.Position(node.Pos()).Line

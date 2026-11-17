@@ -50,7 +50,7 @@ import (
 	"sync"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // KvEngineContractRef references an engine contract by identity and

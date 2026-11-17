@@ -46,7 +46,7 @@ import (
 
 	"github.com/loxilb-io/loxilb/pkg/enginecontract"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // ---- challenge hasher seam ----

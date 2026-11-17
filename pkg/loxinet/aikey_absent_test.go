@@ -35,7 +35,7 @@ import (
 // a gateway that is configured. These legs pin the decision to the option,
 // which is what the operator actually set.
 func TestAbsentKeyStoreDistinguishesUnconfiguredFromUnreachable(t *testing.T) {
-	if mh.AIKeyService != nil {
+	if mh.AIKeyService.Load() != nil {
 		t.Fatal("a key store is constructed in this test process; these legs are about the window in which none is")
 	}
 	saved := opts.Opts.AIKeyDBHost

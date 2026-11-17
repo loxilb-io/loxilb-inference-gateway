@@ -73,9 +73,9 @@ func TestFcTenantSlotsWarning(t *testing.T) {
 }
 
 func TestFcTenantSlotsWarningNeedsAStore(t *testing.T) {
-	saved := mh.AIKeyService
-	defer func() { mh.AIKeyService = saved }()
-	mh.AIKeyService = nil
+	saved := mh.AIKeyService.Load()
+	defer func() { mh.AIKeyService.Store(saved) }()
+	mh.AIKeyService.Store(nil)
 	na := &NetAPIStruct{}
 	lm := &cmn.LbRuleMod{Serv: cmn.LbServiceArg{FcTenantMaxSharePct: 25}}
 	if msg := na.NetFcTenantSlotsWarning(lm); msg != "" {

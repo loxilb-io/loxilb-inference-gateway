@@ -21,8 +21,8 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/models"
 	auditops "github.com/loxilb-io/loxilb/api/restapi/operations/audit"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/audit"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // AuditGetStatus answers GET /audit/status: the writer's counters, the

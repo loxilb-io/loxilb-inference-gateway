@@ -34,7 +34,7 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // Typed tokenize-bridge return codes. MIRROR of the LLB_KV_TOK_ERR_* values

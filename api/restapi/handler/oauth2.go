@@ -34,9 +34,9 @@ import (
 
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	"github.com/loxilb-io/loxilb/pkg/audit"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 var (

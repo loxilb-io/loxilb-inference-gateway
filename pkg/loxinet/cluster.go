@@ -28,10 +28,10 @@ import (
 
 	nlp "github.com/loxilb-io/loxilb/api/loxinlp"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	opts "github.com/loxilb-io/loxilb/options"
 	bfd "github.com/loxilb-io/loxilb/pkg/proto"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // error codes for cluster module

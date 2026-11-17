@@ -21,7 +21,7 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/loxinlp"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 func ConfigPostNeighbor(params operations.PostConfigNeighborParams, principal interface{}) middleware.Responder {

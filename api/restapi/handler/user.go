@@ -25,9 +25,9 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/users"
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/audit"
 	"github.com/loxilb-io/loxilb/pkg/authz"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // addUserResponse performs an authorized create and maps the outcome.

@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 
 	cmn "github.com/loxilb-io/loxilb/common"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"

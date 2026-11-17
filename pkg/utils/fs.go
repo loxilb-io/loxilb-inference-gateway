@@ -26,7 +26,7 @@ import (
 	"sync"
 	"syscall"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // fileExistsWarned remembers the paths whose stat failed with an error other

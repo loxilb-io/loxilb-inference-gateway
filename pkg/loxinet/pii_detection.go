@@ -124,9 +124,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	pb "github.com/loxilb-io/loxilb/pkg/loxinet/presidio_pb"
 	presidio "github.com/loxilb-io/loxilb/pkg/presidio"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // Operator type constants (must match C enum)

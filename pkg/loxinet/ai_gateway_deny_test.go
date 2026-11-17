@@ -55,9 +55,9 @@ func aiRequests(t *testing.T, model, tenant, status, outcome string) float64 {
 // status the client got. Before MON-02 the gate export counted it too, and
 // the record could not, or every gate refusal would land twice.
 func TestGateRefusalIsCountedOnceByTheDenyRecord(t *testing.T) {
-	saved := mh.AIKeyService
-	mh.AIKeyService = nil // no key store: the gate refuses 503
-	t.Cleanup(func() { mh.AIKeyService = saved })
+	saved := mh.AIKeyService.Load()
+	mh.AIKeyService.Store(nil) // no key store: the gate refuses 503
+	t.Cleanup(func() { mh.AIKeyService.Store(saved) })
 
 	const model = "m-deny-e2e"
 	before := aiRequests(t, model, "", "503", "denied")

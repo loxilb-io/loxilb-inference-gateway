@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,10 +77,10 @@ func eppPdTestRule(t *testing.T, port uint16, eppAddr string, eps ...cmn.LbEndPo
 		PDDisaggMode: true,
 		EppEndpoint:  eppAddr, EppFailureMode: cmn.EppFailureModeFailOpen, EppTimeoutMs: 2000, EppPlaintext: true,
 	}
-	if _, err := mh.zr.Rules.AddLbRule(serv, nil, nil, nil, eps); err != nil {
+	if _, err := eppTestAddRule(serv, eps); err != nil {
 		t.Fatalf("add rule on :%d: %v", port, err)
 	}
-	t.Cleanup(func() { mh.zr.Rules.DeleteLbRule(serv) })
+	t.Cleanup(func() { eppTestDeleteRule(serv) })
 	return serv
 }
 
@@ -244,9 +245,9 @@ func TestEppOnPdDisaggRule(t *testing.T) {
 		eppTestResponsePhase(t, f, "200", eppAddr(sidecar))
 		// The EPP's in-flight cap is full: the next submit is refused before a
 		// stream id exists, the earliest FailOpen there is.
-		saved := eppMaxInflight
-		eppMaxInflight = 0
-		defer func() { eppMaxInflight = saved }()
+		saved := atomic.LoadInt64(&eppMaxInflight)
+		atomic.StoreInt64(&eppMaxInflight, 0)
+		defer func() { atomic.StoreInt64(&eppMaxInflight, saved) }()
 		code, resp, err = k.send(body, 10*time.Second)
 		if err != nil || code != 200 || !strings.Contains(resp, `"served":"decode"`) {
 			t.Fatalf("request 2: code=%d resp=%q err=%v (want the decode engine's answer)", code, resp, err)
@@ -258,7 +259,7 @@ func TestEppOnPdDisaggRule(t *testing.T) {
 		if probe := bodyOf(seenP); !strings.Contains(probe, `"max_tokens":1`) || !strings.Contains(probe, "kv_transfer_params") {
 			t.Fatalf("the pin of request 1 leaked into request 2: prefill leg is not the probe: %q", probe)
 		}
-		eppMaxInflight = saved
+		atomic.StoreInt64(&eppMaxInflight, saved)
 		eppTestSettled(t)
 	})
 }

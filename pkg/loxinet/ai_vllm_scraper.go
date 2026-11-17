@@ -48,8 +48,8 @@ import (
 	"time"
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/aimetrics"
-	tk "github.com/loxilb-io/loxilib"
 )
 
 // VllmScraper polls vLLM /metrics endpoints to extract queue depth and GPU cache

@@ -16,7 +16,7 @@
 package aikey
 
 import (
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // KeyInvalidation names a key that has stopped being valid.

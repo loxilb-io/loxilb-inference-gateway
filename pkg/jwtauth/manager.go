@@ -28,7 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // Lifecycle defaults. Tests override them through Options; production keeps

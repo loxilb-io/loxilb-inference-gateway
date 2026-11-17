@@ -22,7 +22,7 @@ import (
 	"os"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	logrus "github.com/sirupsen/logrus"
 
 	"github.com/loxilb-io/loxilb/api/prometheus"
@@ -44,9 +44,8 @@ const opLogShutdownWait = 2 * time.Second
 // same copy.
 func opLogInstall(lg *tk.Logger, file io.Writer) {
 	var tty io.Writer
-	if lg.LogTTY {
+	if lg.LogItSetTTY(false) {
 		tty = os.Stdout
-		lg.LogTTY = false
 	}
 	r := logring.New(file, tty, os.Stderr, logring.DefaultSize)
 	for _, l := range []struct {

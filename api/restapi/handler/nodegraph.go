@@ -20,7 +20,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // Placeholder definition for prometheus.Meta

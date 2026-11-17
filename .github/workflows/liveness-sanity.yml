@@ -98,8 +98,18 @@ jobs:
              exit $rc
       - run: |
              cd cicd/tcplbepmod/
-             ./config.sh
-             ./validation.sh
+             rc=0
+             ./config.sh && ./validation.sh || rc=$?
+             if [ "$rc" -ne 0 ]; then
+               if mkdir -p /tmp/ci-logs/tcplbepmod; then
+                 for f in /tmp/loxilb.err /tmp/loxilb.out /var/log/loxilbdp.log; do
+                   docker cp "llb1:$f" /tmp/ci-logs/tcplbepmod/ || true
+                 done
+                 docker exec llb1 curl -sS --max-time 5 -i http://127.0.0.1:11111/netlox/v1/audit/status \
+                   > /tmp/ci-logs/tcplbepmod/audit-status.txt 2>&1 || true
+               fi
+               exit "$rc"
+             fi
              ./rmconfig.sh
              cd -
       - run: |

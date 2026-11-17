@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/patrickmn/go-cache"
 
 	cmn "github.com/loxilb-io/loxilb/common"

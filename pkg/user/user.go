@@ -25,9 +25,9 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/loxilb-io/loxilb/pkg/authz"
 	"github.com/loxilb-io/loxilb/pkg/pgstore"
-	tk "github.com/loxilb-io/loxilib"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/crypto/bcrypt"
 )

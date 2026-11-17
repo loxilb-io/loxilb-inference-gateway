@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // TraceParserContext provides metadata for parser routing decisions
