@@ -763,7 +763,8 @@ type RuleH struct {
 	// lbconfig.txt and replays via NetLbRuleAdd -> AddLbRule on boot.
 	opaqueID map[string]*ruleEnt
 	// Only modern rules can conflict with a legacy addition; rebuilt on replay.
-	mcpRules map[string]*ruleEnt
+	mcpRules         map[string]*ruleEnt
+	frontendObserver *haFrontendObserver
 }
 
 // RulesInit - initialize the Rules subsystem
@@ -8119,6 +8120,10 @@ func (R *RuleH) AddRuleVIP(VIP net.IP, pVIP net.IP, inst string, egress bool) {
 		vipEnt.inst = inst
 		vipEnt.egr = egress
 		R.vipMap[VIP.String()] = vipEnt
+		if R.frontendObserver != nil && !egress && (inst == "" || inst == cmn.CIDefault) &&
+			VIP.To4() != nil && !VIP.IsUnspecified() && (pVIP == nil || pVIP.Equal(VIP)) {
+			R.frontendObserver.track(VIP.String())
+		}
 	} else {
 		vipEnt.ref++
 	}
@@ -8166,6 +8171,9 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 			mh.zr.L3.IfaDelete(dev, utils.IPHostCIDRString(xVIP))
 		}
 		delete(R.vipMap, VIP.String())
+		if R.frontendObserver != nil {
+			R.frontendObserver.untrack(VIP.String())
+		}
 	}
 }
 

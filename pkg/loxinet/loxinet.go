@@ -630,6 +630,12 @@ func loxiNetInit() {
 			return
 		}
 
+		if kaArgs.SpawnKa && !opts.Opts.NoNlp && !opts.Opts.Bgp && !opts.Opts.ProxyModeOnly && opts.Opts.Cloud == "on-prem" {
+			observer := newHAFrontendObserver()
+			mh.zr.Rules.frontendObserver = observer
+			go observer.run(mh.shutdownCtx)
+		}
+
 		if clusterMode {
 			// Add cluster nodes if specified
 			cNodes := strings.Split(opts.Opts.ClusterNodes, ",")
