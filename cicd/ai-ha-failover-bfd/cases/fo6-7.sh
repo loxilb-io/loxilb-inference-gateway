@@ -78,7 +78,7 @@ else
   K6=$(key_raw fo6-key)
   pre_ok=1
   # ---- FAILOVER-6 state: two identical streams, one read by the tool, one by curl.
-  tok_before=$($hexec "$M" curl -s -m 5 http://127.0.0.1:11111/netlox/v1/metrics | grep -E '^loxilb_ai_tokens?_' | grep 'fo6-stream')
+  tok_before=$($hexec "$M" curl -s -m 5 http://127.0.0.1:11111/netlox/v1/metrics | grep -e '^loxilb_ai_token_' -e '^loxilb_ai_tokens_' | grep 'fo6-stream')
   sudo ip netns exec $CLIENT python3 "$HAFO_DIR/hafo_tools.py" retry --vip $VIP --port $PORT_WIT \
     --model $MODEL_WIT --header "X-Api-Key: $K6" "${STREAM_HDRS[@]}" --stream --max 0 --timeout 30 \
     --tag "fo6-stream-$$" > "$E_DIR/fo6-stream.json" 2>/dev/null &
@@ -163,7 +163,7 @@ else
     a=$(cat "$E_DIR/fo6-stream.json")
     verdict FAILOVER-6.client RECORDED "the stream cut by the fault, as the client saw it: status line $(echo "$a" | jget "d['first_attempt'].get('status_seen')"), $(echo "$a" | jget "d['first_attempt'].get('events')") events, $(echo "$a" | jget "d['first_attempt'].get('bytes')") bytes, last byte $(echo "$a" | jget "d['first_attempt'].get('t_last_byte', 0) - $T0") ms relative to the fault, ended as $(echo "$a" | jget "d['first_attempt']['cls']") after $(echo "$a" | jget "d['first_attempt']['t_done'] - $T0") ms (the tool gives up after 30 s without a byte); curl for the same request (no idle timeout, --max-time 90): http_code size exit time = $(tr '\n' ' ' < "$E_DIR/fo6-curl.result")"
     verdict FAILOVER-6.backend RECORDED "how the backend saw the two cut streams end: $(echo "$w_end" | jget "'; '.join('%s: %s after %s chunks, %d ms after the fault' % (k.split('-')[1], v.get('how'), v.get('chunks_written'), v['t_end'] - $T0) for k, v in sorted(d['ended'].items()) if k.startswith('fo6-stream') or k.startswith('fo6-curl')) or 'neither had ended when the case finished: the backend kept writing to a gateway that was gone'")"
-    tok_after=$($hexec "$S" curl -s -m 5 http://127.0.0.1:11111/netlox/v1/metrics | grep -E '^loxilb_ai_tokens?_' | grep 'fo6-stream')
+    tok_after=$($hexec "$S" curl -s -m 5 http://127.0.0.1:11111/netlox/v1/metrics | grep -e '^loxilb_ai_token_' -e '^loxilb_ai_tokens_' | grep 'fo6-stream')
     { echo "## $M (old master) before the stream"; echo "$tok_before"; echo "## $S (new master) after the retry"; echo "$tok_after"; } > "$E_DIR/fo6-charge.txt"
     verdict FAILOVER-6.charge RECORDED "token series of tenant fo6-stream on the new master after the cut streams and one completed retry (13 tokens): $(echo "$tok_after" | tr '\n' ' ' | cut -c1-400); full before/after in fo6-7/fo6-charge.txt"
 
