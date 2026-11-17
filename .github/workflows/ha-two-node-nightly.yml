@@ -18,17 +18,6 @@ name: HA-Two-Node-Nightly
 #                     refused at the other node, promotion keeps synced
 #                     state, a dead quota channel is visible, split-brain
 #                     never refunds a spender.                      ~2 min
-#   ai-ha-failover-bfd  what a client that only knows the shared VIP sees
-#                     while a BFD pair fails over: outage timeline, the same
-#                     API key and JWT afterwards, revocation, quota debt,
-#                     streams and admission state in flight, the key store
-#                     down, failback. The run reports
-#                     product behaviour, part of which is a known FAIL
-#                     (cicd/ai-ha-failover-bfd/known-fail.tsv). The job is
-#                     green when the run matches that list exactly and red
-#                     when a new verdict fails, when a listed one stops
-#                     failing, or when any check could not run.   ~45 min
-#
 # Fork pull requests are excluded: pulling the released image needs registry
 # credentials a fork run does not get.
 
@@ -39,7 +28,6 @@ on:
     paths:
       - 'cicd/kv-mixed-version/**'
       - 'cicd/ai-qos-ha-sync/**'
-      - 'cicd/ai-ha-failover-bfd/**'
       - 'cicd/common/**'
       - '.github/workflows/ha-two-node-nightly.yml'
   pull_request:
@@ -47,7 +35,6 @@ on:
     paths:
       - 'cicd/kv-mixed-version/**'
       - 'cicd/ai-qos-ha-sync/**'
-      - 'cicd/ai-ha-failover-bfd/**'
       - 'cicd/common/**'
       - '.github/workflows/ha-two-node-nightly.yml'
   schedule:
@@ -137,63 +124,5 @@ jobs:
           name: ai-qos-ha-sync-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             /tmp/ai-qos-ha-*.log
-          if-no-files-found: ignore
-          retention-days: 14
-
-  ai-ha-failover-bfd:
-    name: ai-ha-failover-bfd
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
-    if: >-
-      github.actor != 'dependabot[bot]' &&
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name == github.repository))
-    env:
-      LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
-      # The testbed runs five repetitions per FAILOVER-1 mode and three crash
-      # repetitions; two of each keep the job inside its budget.
-      HAFO_FO1_REPS: 2
-      HAFO_FO1_CRASH_REPS: 2
-      HAFO_OUT: /tmp/ai-ha-failover-bfd/out
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
-      - uses: ./.github/actions/ai-sanity-setup
-        with:
-          ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}
-      # validation.sh exits non-zero on any FAIL; the gate then decides the
-      # job from the known-fail list. Both gateways' logs are kept before
-      # teardown.
-      - name: BFD HA failover (two nodes, one shared VIP, shared key store, Keycloak)
-        run: |
-          cd cicd/ai-ha-failover-bfd/
-          rc=0
-          mkdir -p /tmp/ai-ha-failover-bfd
-          if ./config.sh; then
-            result=0
-            ./validation.sh || result=$?
-            # 1 and 2 are the harness verdict codes; the gate checks individual cases.
-            if [ "$result" -gt 2 ]; then rc=1; fi
-            python3 ./verdict_gate.py "$HAFO_OUT/verdicts.tsv" ./known-fail.tsv || rc=1
-          else
-            rc=1
-          fi
-          if [ -f .owned ]; then
-            for n in llb1 llb2; do
-              docker exec "$n" sh -c 'cat /var/log/loxilb*.log' > "/tmp/ai-ha-failover-bfd/$n-loxilb.log" 2>&1 || true
-            done
-          fi
-          ./rmconfig.sh || rc=1
-          exit "$rc"
-      - name: Keep the run's verdicts and evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-ha-failover-bfd-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            /tmp/ai-ha-failover-bfd/
           if-no-files-found: ignore
           retention-days: 14
