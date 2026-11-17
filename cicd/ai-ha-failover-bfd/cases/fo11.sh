@@ -1,41 +1,41 @@
-# FO-11  Failback.   (sourced by validation.sh)
+# FAILOVER-11  Failback.   (sourced by validation.sh)
 #
 # The MASTER dies, the survivor serves, a tenant goes into quota debt on it,
 # and then the dead node returns (reboot emulation, list re-applied). The
-# FO-1 probe runs through all of it, a sampler runs in the returning node's
+# FAILOVER-1 probe runs through all of it, a sampler runs in the returning node's
 # new namespace from before its gateway starts, and the tenant in debt keeps
 # asking.
 #
-#   FO-11.single-master  PASS/FAIL  no sample pair (within 100 ms) in which
+#   FAILOVER-11.single-master  PASS/FAIL  no sample pair (within 100 ms) in which
 #                        both nodes report MASTER, from the return on.
-#                        In FO-11r it is RECORDED: there the overlap is
+#                        In FAILOVER-11r it is RECORDED: there the overlap is
 #                        0-100 ms, which a sampler running every 25 ms per
 #                        node cannot judge, so it reports the count and the
 #                        sampling interval instead of a verdict
-#   FO-11.probe          PASS/FAIL  the probe answers 200 from the start of
+#   FAILOVER-11.probe          PASS/FAIL  the probe answers 200 from the start of
 #                        the return until 15 s after the roles hold again
-#   FO-11.debt           PASS/FAIL  the tenant in debt is never admitted
+#   FAILOVER-11.debt           PASS/FAIL  the tenant in debt is never admitted
 #                        earlier than the gateway's own Retry-After allowed
-#   FO-11.return         RECORDED   how long the returning node stays out,
+#   FAILOVER-11.return         RECORDED   how long the returning node stays out,
 #                        the time with no standby, whether traffic moves back
 #
 # The case runs twice (validation.sh sources this file with F11_ID set):
 #
-#   FO-11   as the pair stands
-#   FO-11r  with the pair first brought into the state in which a return
+#   FAILOVER-11   as the pair stands
+#   FAILOVER-11r  with the pair first brought into the state in which a return
 #           changes the roles: the node that wins a fresh election (the one
 #           that was MASTER when the pair first started) is MASTER, and its
 #           standby has been taken away and returned since. On the build this
 #           scenario was written against the returning node then takes MASTER
 #           back, so this failback contains a second role change. Without the
 #           preparation, whether that happens depends on which nodes earlier
-#           cases restarted; FO-11r makes it happen on every run.
+#           cases restarted; FAILOVER-11r makes it happen on every run.
 #
-# Mutation: fo11-no-debt skips the spend, so FO-11.debt has no refusal to
+# Mutation: fo11-no-debt skips the spend, so FAILOVER-11.debt has no refusal to
 # stand on and must end NOT_RUN, never PASS.
 
-F11_ID=${F11_ID:-FO-11}
-echo; echo "$F11_ID  Failback$([ "$F11_ID" = FO-11r ] && echo ' after the standby was restarted first')"
+F11_ID=${F11_ID:-FAILOVER-11}
+echo; echo "$F11_ID  Failback$([ "$F11_ID" = FAILOVER-11r ] && echo ' after the standby was restarted first')"
 F11_DIR="$OUT/$(echo "$F11_ID" | tr 'A-Z' 'a-z' | tr -d '-')"; mkdir -p "$F11_DIR"
 f11_notrun() { for c in $F11_ID.single-master $F11_ID.probe $F11_ID.debt; do verdict "$c" NOT_RUN "$1"; done; }
 f11_hook() { # a sampler in the returning node's new namespace, before its gateway starts
@@ -43,13 +43,13 @@ f11_hook() { # a sampler in the returning node's new namespace, before its gatew
     --out "$F11_DIR/node-$1-returned.jsonl" >/dev/null 2>&1 &
 }
 f11_pre_ok=1
-if [ "$F11_ID" = FO-11r ]; then
+if [ "$F11_ID" = FAILOVER-11r ]; then
   # f11_cycle <node>: node death, return, list re-applied.
   f11_cycle() {
     local ret
     node_death "$1" >/dev/null
     ret=$(node_return "$1" 2>>"$F11_DIR/restore.err") && apply_cfg "$1" "" returning 2>>"$F11_DIR/restore.err" || return 1
-    note "FO-11r preparation: $1 taken away and returned ($ret)"
+    note "FAILOVER-11r preparation: $1 taken away and returned ($ret)"
   }
   F11_FIRST=$(sed -n 's/.*master=\([a-z0-9]*\).*/\1/p' "$OUT/startup-times.txt")
   if [ -z "$F11_FIRST" ] || ! fo_begin; then
@@ -178,7 +178,7 @@ PY
       if [ $ret_rc != 0 ] || [ "$(fb "d['returned_samples']")" -lt 100 ] || [ "$(fb "d['survivor_samples']")" -lt 100 ]; then
         f11_notrun "the return could not be observed (node_return rc=$ret_rc, samples: survivor $(fb "d['survivor_samples']"), returned $(fb "d['returned_samples']"))"
       else
-        if [ "$F11_ID" = FO-11r ]; then
+        if [ "$F11_ID" = FAILOVER-11r ]; then
           verdict $F11_ID.single-master RECORDED "both nodes reported MASTER in $(fb "d['dual_master_samples']") sample pairs$( [ "$(fb "d['dual_master_first_ms']")" != None ] && echo ", first $(fb "d['dual_master_first_ms']") ms after the fault"), over $(fb "d['survivor_samples']") and $(fb "d['returned_samples']") samples from the start of the return to 15 s after the roles held; each node sampled every ${SAMPLE_INTERVAL} s, pairs matched within 100 ms. An overlap shorter than the sampling interval is not always seen, so this is not judged"
         elif [ "$(fb "d['dual_master_samples']")" = 0 ]; then
           verdict $F11_ID.single-master PASS "no sample in which both nodes reported MASTER, over $(fb "d['survivor_samples']") and $(fb "d['returned_samples']") samples from the start of the return to 15 s after the roles held"

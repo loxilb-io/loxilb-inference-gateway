@@ -18,9 +18,9 @@ FAIL, 2 with at least one NOT_RUN. Evidence goes to `out/<timestamp>/`, or to
 
 | Variable / option | Effect |
 |---|---|
-| `--cases FO-0,BED,FO-1,FO-2-4,FO-5-8,FO-6-7,FO-9,FO-10,FO-11,FO-11r,FO-12,FO-13` | select cases (default: all, in this order) |
-| `HAFO_FO1_REPS` (5), `HAFO_FO1_CRASH_REPS` (3) | FO-1 repetitions per mode |
-| `HAFO_LONE_WATCH_S` (300) | how long FO-12 watches a gateway on its own |
+| `--cases FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13` | select cases (default: all, in this order) |
+| `HAFO_FO1_REPS` (5), `HAFO_FO1_CRASH_REPS` (3) | FAILOVER-1 repetitions per mode |
+| `HAFO_LONE_WATCH_S` (300) | how long FAILOVER-12 watches a gateway on its own |
 | `HAFO_MUTATE=<name>` | apply one deliberate break (see Mutations) |
 | `LOXILB_DOCKER_IMAGE` | the gateway image (from `../common.sh`) |
 
@@ -84,29 +84,29 @@ namespace, never through a gateway.
 | API keys, tenant limits | the shared PostgreSQL store | written once through one node, read back through the other |
 
 Runtime state (token-quota buckets, conversation table, flow-control gate) is
-process memory on each node; FO-0 records that the two containers share no
+process memory on each node; FAILOVER-0 records that the two containers share no
 eBPF map.
 
 ## Cases
 
 | Case | Question | Verdict kind |
 |---|---|---|
-| FO-0 | Is the pair healthy before any fault? Roles, a keyed 200 with one backend receipt, a 401 with none, a completed quota sync push, equal read-backs, store and JWKS usable on both. Records the standby's listener state, BFD lines, start-up times, bpffs layout. | PASS/FAIL + RECORDED |
+| FAILOVER-0 | Is the pair healthy before any fault? Roles, a keyed 200 with one backend receipt, a 401 with none, a completed quota sync push, equal read-backs, store and JWKS usable on both. Records the standby's listener state, BFD lines, start-up times, bpffs layout. | PASS/FAIL + RECORDED |
 | BED-1, BED-2 | Harness checks: docker does not restart a killed gateway; a dead node returns and the pair is healthy. | PASS/FAIL |
-| FO-1 | How long is the service down? Open-loop probe (20/s, a new connection per request) through four ways of losing the MASTER: node death, container stop, SIGTERM to loxilb, crash and restart in place. Per repetition: survivor MASTER, VIP, listener, first 200, outcome histogram. | RECORDED; one HARNESS BOUND (200s stable within 60 s) that is not a product budget |
-| FO-2 | Does the same API key keep working with no management call? Then 200 distinct keys at once. | PASS/FAIL + RECORDED |
-| FO-3 | Does a JWT minted before the fault keep working, with the client unable to reach the IdP? Expired and garbage tokens are refused. | PASS/FAIL + RECORDED |
-| FO-4 | Does a key deleted on the old master stay refused on the new one? Control: an undeleted key. | PASS/FAIL |
-| FO-5 | Can a tenant in quota debt buy fresh quota by failing over? | PASS/FAIL (+ RPS RECORDED) |
-| FO-6 | What happens to an SSE stream in flight, and does the same request complete when sent again? | PASS/FAIL (retry) + RECORDED |
-| FO-7 | What happens to a saturated flow-control gate and its queue? | RECORDED |
-| FO-8a / FO-8b | Do 100 pinned conversations land on the same endpoint afterwards? 8a records the share and the mechanism; 8b is PASS/FAIL at 0.90 when the peer held the entries. | RECORDED / PASS/FAIL |
-| FO-9 | Failover while the key store is down; recovery when it returns, with no gateway restart. | PASS/FAIL (recovery) + RECORDED |
-| FO-10 | Promotion of a standby that restarted a moment ago. | RECORDED |
-| FO-11 | Failback: no second MASTER, the probe keeps answering, a tenant in debt stays refused. | PASS/FAIL + RECORDED |
-| FO-11r | The same failback with the pair prepared so that the return changes the roles: the node that wins a fresh election holds MASTER and its standby has been restarted since. The returning node then takes MASTER back. | probe, debt PASS/FAIL; single-master RECORDED (the overlap is shorter than the sampling interval and cannot be judged) |
-| FO-12 | Can one gateway serve the VIP while its peer does not answer (after a restart, after a cold start)? | RECORDED |
-| FO-13 | A node returns with an older configuration than its peer and is promoted. | RECORDED (+ harness restore check) |
+| FAILOVER-1 | How long is the service down? Open-loop probe (20/s, a new connection per request) through four ways of losing the MASTER: node death, container stop, SIGTERM to loxilb, crash and restart in place. Per repetition: survivor MASTER, VIP, listener, first 200, outcome histogram. | RECORDED; one HARNESS BOUND (200s stable within 60 s) that is not a product budget |
+| FAILOVER-2 | Does the same API key keep working with no management call? Then 200 distinct keys at once. | PASS/FAIL + RECORDED |
+| FAILOVER-3 | Does a JWT minted before the fault keep working, with the client unable to reach the IdP? Expired and garbage tokens are refused. | PASS/FAIL + RECORDED |
+| FAILOVER-4 | Does a key deleted on the old master stay refused on the new one? Control: an undeleted key. | PASS/FAIL |
+| FAILOVER-5 | Can a tenant in quota debt buy fresh quota by failing over? | PASS/FAIL (+ RPS RECORDED) |
+| FAILOVER-6 | What happens to an SSE stream in flight, and does the same request complete when sent again? | PASS/FAIL (retry) + RECORDED |
+| FAILOVER-7 | What happens to a saturated flow-control gate and its queue? | RECORDED |
+| FAILOVER-8a / FAILOVER-8b | Do 100 pinned conversations land on the same endpoint afterwards? 8a records the share and the mechanism; 8b is PASS/FAIL at 0.90 when the peer held the entries. | RECORDED / PASS/FAIL |
+| FAILOVER-9 | Failover while the key store is down; recovery when it returns, with no gateway restart. | PASS/FAIL (recovery) + RECORDED |
+| FAILOVER-10 | Promotion of a standby that restarted a moment ago. | RECORDED |
+| FAILOVER-11 | Failback: no second MASTER, the probe keeps answering, a tenant in debt stays refused. | PASS/FAIL + RECORDED |
+| FAILOVER-11r | The same failback with the pair prepared so that the return changes the roles: the node that wins a fresh election holds MASTER and its standby has been restarted since. The returning node then takes MASTER back. | probe, debt PASS/FAIL; single-master RECORDED (the overlap is shorter than the sampling interval and cannot be judged) |
+| FAILOVER-12 | Can one gateway serve the VIP while its peer does not answer (after a restart, after a cold start)? | RECORDED |
+| FAILOVER-13 | A node returns with an older configuration than its peer and is promoted. | RECORDED (+ harness restore check) |
 
 Every cross-node claim has three guards: a control identity that must be
 admitted, backend receipts read out of band, and proof before the fault that
@@ -137,9 +137,9 @@ Every case waits for the roles to hold (one MASTER, one BACKUP, six samples
 in a row). The cases that run the probe also require 3 s of nothing but 200s
 before the fault, and wait up to 30 s for it. The requirement is not relaxed;
 the wait is measured, and when the probe got anything else on the way the
-repetition reports it as its own RECORDED line (`FO-1.<mode>.<n>.before`).
+repetition reports it as its own RECORDED line (`FAILOVER-1.<mode>.<n>.before`).
 When 3 s of 200s are not reached within the 30 s, every verdict of that
-repetition (`FO-1.<mode>.<n>` and `.before`) is NOT_RUN and the repetition does
+repetition (`FAILOVER-1.<mode>.<n>` and `.before`) is NOT_RUN and the repetition does
 not count towards the mode's bound. A
 pair whose roles hold is not always serving: a MASTER that has just taken the
 role refuses quota-limited tenants while its quota state warms.
@@ -152,23 +152,23 @@ NOT_RUN where the oracle refuses to judge).
 | `HAFO_MUTATE` | Break | Must give |
 |---|---|---|
 | `ka-peer` | llb2's `--ka` names a peer nobody holds | every case NOT_RUN |
-| `drop-rule` | llb2 is not sent one rule | FO-0.readback FAIL |
-| `fo1-skip-fault` | no fault is applied | FO-1 NOT_RUN |
-| `fo1-backend-down` | the backend is stopped first | FO-1 NOT_RUN (control) |
-| `fo2-delete-key` | the key is deleted before the fault | FO-2 FAIL |
-| `fo3-wrong-aud` | the JWT profile expects an audience no token has | FO-3 FAIL |
-| `fo4-skip-delete` | the key is not deleted | FO-4 FAIL |
-| `fo5-cut-xsync`, `fo8-cut-xsync` | the sync channel is cut before the state exists | FO-5 FAIL / FO-8b FAIL |
-| `fo8-ep-order` | llb2 has the affinity rule's endpoints reversed | FO-0.readback FAIL; shows what FO-8 depends on |
-| `fo6-backend-down` | the witness backend is stopped before the retry | FO-6 FAIL |
-| `fo9-skip-pg-start` | PostgreSQL is not started again | FO-9 FAIL |
-| `fo11-no-debt` | the tenant is never put in debt | FO-11.debt NOT_RUN |
+| `drop-rule` | llb2 is not sent one rule | FAILOVER-0.readback FAIL |
+| `fo1-skip-fault` | no fault is applied | FAILOVER-1 NOT_RUN |
+| `fo1-backend-down` | the backend is stopped first | FAILOVER-1 NOT_RUN (control) |
+| `fo2-delete-key` | the key is deleted before the fault | FAILOVER-2 FAIL |
+| `fo3-wrong-aud` | the JWT profile expects an audience no token has | FAILOVER-3 FAIL |
+| `fo4-skip-delete` | the key is not deleted | FAILOVER-4 FAIL |
+| `fo5-cut-xsync`, `fo8-cut-xsync` | the sync channel is cut before the state exists | FAILOVER-5 FAIL / FAILOVER-8b FAIL |
+| `fo8-ep-order` | llb2 has the affinity rule's endpoints reversed | FAILOVER-0.readback FAIL; shows what FAILOVER-8 depends on |
+| `fo6-backend-down` | the witness backend is stopped before the retry | FAILOVER-6 FAIL |
+| `fo9-skip-pg-start` | PostgreSQL is not started again | FAILOVER-9 FAIL |
+| `fo11-no-debt` | the tenant is never put in debt | FAILOVER-11.debt NOT_RUN |
 
-`fo5-cut-xsync` cannot discriminate today: FO-5 already fails without it
+`fo5-cut-xsync` cannot discriminate today: FAILOVER-5 already fails without it
 (the new master admits the tenant in debt once whether or not the sync
-channel carried the window). The mutation proves nothing about the FO-5
-oracle until FO-5 passes unmutated; when it does, `fo5-cut-xsync` must be run
-again and must turn FO-5 red before the FO-5 entry leaves `known-fail.tsv`.
+channel carried the window). The mutation proves nothing about the FAILOVER-5
+oracle until FAILOVER-5 passes unmutated; when it does, `fo5-cut-xsync` must be run
+again and must turn FAILOVER-5 red before the FAILOVER-5 entry leaves `known-fail.tsv`.
 
 `drop-limit` is kept as a probe, not a mutation: tenant limits are in the
 shared store, so a node that was never sent one reads it back anyway.
@@ -183,13 +183,13 @@ exactly: an unlisted FAIL or NOT_RUN and a listed verdict that reports
 something else each turn it red. An entry names the one verdict it expects:
 `FAIL`, or `NOT_RUN` for an oracle whose precondition this product cannot
 meet. Matching is exact. A defect shorter than the sampling interval is not
-listed; its case reports it as RECORDED (`FO-11r.single-master`).
+listed; its case reports it as RECORDED (`FAILOVER-11r.single-master`).
 
 | | CI runner | Testbed the numbers in the report come from |
 |---|---|---|
 | OS | ubuntu-22.04 | Ubuntu 24.04 |
 | Image | `latest` | built from the same commit on the `latest-u24` base |
-| FO-1 repetitions | 2 per mode, 2 crash | 5 per mode, 3 crash |
+| FAILOVER-1 repetitions | 2 per mode, 2 crash | 5 per mode, 3 crash |
 
 ## Read-back comparison
 
@@ -222,7 +222,7 @@ describe a node's runtime state, not its configuration (`readback_norm.py`):
 - **A process crash clears nothing.** That variant kills only the gateway
   process; what the gateway does with a VIP still on `lo` is recorded.
 - **eBPF state.** Each container mounts its own bpffs at `/opt/loxilb/dp`;
-  FO-0 records the mount devices and the kernel ids of the pinned maps on
+  FAILOVER-0 records the mount devices and the kernel ids of the pinned maps on
   both nodes so a run shows whether any map is visible to both.
 - **Docker's restart policy** (`unless-stopped`) does not restart a killed
   container on this bed; BED-1 checks it on every run.

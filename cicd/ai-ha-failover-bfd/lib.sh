@@ -461,7 +461,7 @@ PY
 # xsync_cut / xsync_restore: drop the sync channel (TCP 22222/22223) between
 # the two nodes, both directions, on both nodes. xsync_dropped prints how
 # many packets the rules dropped, so a cut that intercepted nothing shows.
-XSYNC_CHAIN=HAFO-XSYNC
+XSYNC_CHAIN=HAFAILOVER-XSYNC
 xsync_cut() {
   local n peer p
   for n in $NODES; do

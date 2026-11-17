@@ -151,7 +151,7 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository))
     env:
       LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
-      # The testbed runs five repetitions per FO-1 mode and three crash
+      # The testbed runs five repetitions per FAILOVER-1 mode and three crash
       # repetitions; two of each keep the job inside its budget.
       HAFO_FO1_REPS: 2
       HAFO_FO1_CRASH_REPS: 2

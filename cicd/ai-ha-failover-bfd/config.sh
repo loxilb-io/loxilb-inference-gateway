@@ -28,7 +28,7 @@
 # The harness never sleeps a fixed time before configuring a node: it polls
 # the REST API, then the roles (see lib.sh wait_api / wait_roles).
 #
-# Mutations (each must make FO-0 fail; used by the mutation table):
+# Mutations (each must make FAILOVER-0 fail; used by the mutation table):
 #   HAFO_MUTATE=ka-peer     llb2's --ka names a peer address nobody holds
 #   HAFO_MUTATE=drop-rule   llb2 is missing the affinity rule
 #   HAFO_MUTATE=fo8-ep-order   llb2 gets the affinity rule with its endpoints reversed
@@ -36,7 +36,7 @@
 #   HAFO_MUTATE=drop-limit  llb2 is not sent one tenant limit. Kept as a
 #                           probe, not as a mutation: tenant limits live in
 #                           the shared store, so llb2 reads the limit back
-#                           anyway and FO-0 is right to stay green.
+#                           anyway and FAILOVER-0 is right to stay green.
 
 source ../common.sh
 echo SCENARIO-ai-ha-failover-bfd
@@ -79,7 +79,7 @@ KC_REALM=aigw
 echo "#########################################"
 echo "Spawning the shared API-key store"
 echo "#########################################"
-# No --rm: FO-9 stops and starts this container and the store must survive.
+# No --rm: FAILOVER-9 stops and starts this container and the store must survive.
 docker run -d --name "$PG_NAME" \
   -e POSTGRES_USER="$PG_OWNER" -e POSTGRES_PASSWORD="$PG_OWNER_PW" \
   -e POSTGRES_DB="$PG_DB" postgres:18.6 >/dev/null || fatal "could not start PostgreSQL"
@@ -271,8 +271,8 @@ rule $PORT_AFF $MODEL_AFF "$EPS4" ',"session_header_name":"X-Conversation-Id"'
 # the cases read it from the Retry-After the gateway itself sends.
 tenant() { cfg POST /config/ai/tenant/ratelimit '{"tenant_id":"'"$1"'","rps":0,"tokens_per_min":'"$2"'}'; }
 tenant fo-seed   100000   # sync-liveness seed: charges, can never be refused
-tenant fo-probe  100000   # FO-1 open-loop probe
-tenant fo6-stream 100000  # FO-6: charged, never refused
+tenant fo-probe  100000   # FAILOVER-1 open-loop probe
+tenant fo6-stream 100000  # FAILOVER-6: charged, never refused
 tenant fo5-debt  10
 tenant fo5-ctl   10
 tenant fo11-debt 10
@@ -347,7 +347,7 @@ mint_key fo10-debt-key fo10-debt 0
 mint_key fo10-ctl-key  fo10-ctl  0
 mint_key fo6-key       fo6-stream 0
 mint_key fo13-key      fo13-tenant 0
-# FO-2's reconnect burst: 200 distinct keys under one unbounded tenant.
+# FAILOVER-2's reconnect burst: 200 distinct keys under one unbounded tenant.
 : > "${CFGDIR}/.burst-headers"
 for i in $(seq 1 200); do
   resp=$(api_get_post llb1 "fo2-burst-$i" fo2-burst 0 0)

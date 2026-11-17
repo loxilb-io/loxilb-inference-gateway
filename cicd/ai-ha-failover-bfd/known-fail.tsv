@@ -2,7 +2,7 @@
 # <verdict id> TAB <FAIL | NOT_RUN> TAB <why>. verdict_gate.py makes the CI job green only
 # when a run matches this list exactly; an entry that starts passing must leave the list
 # in the same change. README.md, section CI, describes the gate.
-FO-5	FAIL	a tenant in token-quota debt is admitted once on the new master: its quota state starts empty at promotion and opens after the 3 s warm-up
-FO-8b	NOT_RUN	conversation affinity on a session_header_name rule is not synced state (the share survives with the sync channel cut and the peer table empty), so the synced-state oracle has nothing to judge
-FO-11r.probe	FAIL	a returning node that takes MASTER back interrupts service: connection refused, then 3 s of 429 token_quota_warming
-FO-11r.debt	FAIL	the node that takes MASTER back starts with empty quota state and admits a tenant in debt once
+FAILOVER-5	FAIL	a tenant in token-quota debt is admitted once on the new master: its quota state starts empty at promotion and opens after the 3 s warm-up
+FAILOVER-8b	NOT_RUN	conversation affinity on a session_header_name rule is not synced state (the share survives with the sync channel cut and the peer table empty), so the synced-state oracle has nothing to judge
+FAILOVER-11r.probe	FAIL	a returning node that takes MASTER back interrupts service: connection refused, then 3 s of 429 token_quota_warming
+FAILOVER-11r.debt	FAIL	the node that takes MASTER back starts with empty quota state and admits a tenant in debt once

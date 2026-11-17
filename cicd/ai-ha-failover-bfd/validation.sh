@@ -10,19 +10,19 @@
 # Exit status: 0 no FAIL and no NOT_RUN; 1 at least one FAIL; 2 at least one
 # NOT_RUN (a precondition or the harness itself failed).
 #
-# usage: ./validation.sh [--cases FO-0,BED]   (default: every case)
-# Case selectors: FO-0 BED FO-1 FO-2-4 FO-5-8 FO-6-7 FO-9 FO-10 FO-11 FO-11r FO-12 FO-13
+# usage: ./validation.sh [--cases FAILOVER-0,BED]   (default: every case)
+# Case selectors: FAILOVER-0 BED FAILOVER-1 FAILOVER-2-4 FAILOVER-5-8 FAILOVER-6-7 FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13
 
 source ../common.sh >/dev/null
 source ./lib.sh
 CFGDIR="$HAFO_DIR"
-ALL_CASES="FO-0 BED-1 BED-2 FO-1 FO-2 FO-3 FO-4 FO-5 FO-6 FO-7 FO-8a FO-8b FO-9 FO-10 FO-11 FO-11r FO-12 FO-13"
+ALL_CASES="FAILOVER-0 BED-1 BED-2 FAILOVER-1 FAILOVER-2 FAILOVER-3 FAILOVER-4 FAILOVER-5 FAILOVER-6 FAILOVER-7 FAILOVER-8a FAILOVER-8b FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13"
 if [ ! -f "${CFGDIR}/.unhealthy" ]; then
   [ -s "${CFGDIR}/.keys" ] && [ -f "${CFGDIR}/.env" ] || { echo "FATAL: run config.sh first"; exit 2; }
   . "${CFGDIR}/.env"
 fi
 
-CASES_WANTED="FO-0,BED,FO-1,FO-2-4,FO-5-8,FO-6-7,FO-9,FO-10,FO-11,FO-11r,FO-12,FO-13"
+CASES_WANTED="FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13"
 while [ $# -gt 0 ]; do
   case "$1" in
     --cases) CASES_WANTED=$2; shift 2 ;;
@@ -149,14 +149,14 @@ if [ "$PRE_OK" != 1 ]; then
 fi
 
 ##############################################################################
-if want FO-0; then
-echo; echo "FO-0  Is the pair healthy before any fault?"
+if want FAILOVER-0; then
+echo; echo "FAILOVER-0  Is the pair healthy before any fault?"
 ##############################################################################
 r1=$(role llb1); r2=$(role llb2)
 if { [ "$r1" = MASTER ] && [ "$r2" = BACKUP ]; } || { [ "$r1" = BACKUP ] && [ "$r2" = MASTER ]; }; then
-  verdict FO-0.roles PASS "llb1=$r1 llb2=$r2"
+  verdict FAILOVER-0.roles PASS "llb1=$r1 llb2=$r2"
 else
-  verdict FO-0.roles FAIL "llb1=$r1 llb2=$r2"
+  verdict FAILOVER-0.roles FAIL "llb1=$r1 llb2=$r2"
 fi
 
 # The service answers through the VIP, and the request reached a backend.
@@ -164,17 +164,17 @@ new_nonce
 code=$(req $PORT_KEY $MODEL_KEY "X-Api-Key: $(key_raw fo-seed-key)")
 got=$(receipts "$LAST_NONCE")
 if [ "$code" = 200 ] && [ "$got" = 1 ]; then
-  verdict FO-0.vip-serves PASS "HTTP 200 through $VIP:$PORT_KEY, backend receipts=1"
+  verdict FAILOVER-0.vip-serves PASS "HTTP 200 through $VIP:$PORT_KEY, backend receipts=1"
 else
-  verdict FO-0.vip-serves FAIL "HTTP $code, backend receipts=$got (want 200 and 1)"
+  verdict FAILOVER-0.vip-serves FAIL "HTTP $code, backend receipts=$got (want 200 and 1)"
 fi
 new_nonce
 code=$(req $PORT_KEY $MODEL_KEY "X-Api-Key: not-a-key")
 got=$(receipts "$LAST_NONCE")
 if [ "$code" = 401 ] && [ "$got" = 0 ]; then
-  verdict FO-0.vip-refuses PASS "an unknown key is answered 401 with receipts=0 (the 200 above is not a gateway that admits everything)"
+  verdict FAILOVER-0.vip-refuses PASS "an unknown key is answered 401 with receipts=0 (the 200 above is not a gateway that admits everything)"
 else
-  verdict FO-0.vip-refuses FAIL "unknown key: HTTP $code, receipts=$got (want 401 and 0)"
+  verdict FAILOVER-0.vip-refuses FAIL "unknown key: HTTP $code, receipts=$got (want 401 and 0)"
 fi
 
 # A completed RateLimiterSync push, observed AFTER state exists to carry.
@@ -187,22 +187,22 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 if [ -n "$adv" ]; then
-  verdict FO-0.sync-push PASS "RateLimiterSync push count on $MASTER_NODE advanced $mark -> $adv after a charged request"
+  verdict FAILOVER-0.sync-push PASS "RateLimiterSync push count on $MASTER_NODE advanced $mark -> $adv after a charged request"
 else
-  verdict FO-0.sync-push FAIL "RateLimiterSync push count on $MASTER_NODE stayed at $mark for 10 s after a charged request"
+  verdict FAILOVER-0.sync-push FAIL "RateLimiterSync push count on $MASTER_NODE stayed at $mark for 10 s after a charged request"
 fi
 
 # Identical read-backs.
 snapshot_readbacks fo0
 if differ=$(readbacks_equal fo0); then
-  verdict FO-0.readback PASS "rule, profile, key and limit read-backs are equal on both nodes (dropped fields: see readback_norm.py)"
+  verdict FAILOVER-0.readback PASS "rule, profile, key and limit read-backs are equal on both nodes (dropped fields: see readback_norm.py)"
 else
-  verdict FO-0.readback FAIL "read-backs differ:$differ (see readback-fo0/*.diff)"
+  verdict FAILOVER-0.readback FAIL "read-backs differ:$differ (see readback-fo0/*.diff)"
 fi
 if diff -u "$OUT/readback-fo0/llb1/fc_effective.json" "$OUT/readback-fo0/llb2/fc_effective.json" > "$OUT/readback-fo0/fc_effective.diff" 2>&1; then
-  verdict FO-0.fc-effective RECORDED "fc_effective is equal on both nodes"
+  verdict FAILOVER-0.fc-effective RECORDED "fc_effective is equal on both nodes"
 else
-  verdict FO-0.fc-effective RECORDED "fc_effective differs between MASTER and BACKUP ($(grep -c '^[-+] ' "$OUT/readback-fo0/fc_effective.diff") lines; readback-fo0/fc_effective.diff)"
+  verdict FAILOVER-0.fc-effective RECORDED "fc_effective differs between MASTER and BACKUP ($(grep -c '^[-+] ' "$OUT/readback-fo0/fc_effective.diff") lines; readback-fo0/fc_effective.diff)"
 fi
 
 # Key store reachable and JWKS usable, on both nodes.
@@ -217,32 +217,32 @@ for n in $NODES; do
   [ "$ju" = "1.000000" ] || bad="$bad $n:jwks_usable=$ju"
 done
 if [ -z "$bad" ]; then
-  verdict FO-0.store-jwks PASS "both nodes read a key from the store and report a usable JWKS"
+  verdict FAILOVER-0.store-jwks PASS "both nodes read a key from the store and report a usable JWKS"
 else
-  verdict FO-0.store-jwks FAIL "$bad"
+  verdict FAILOVER-0.store-jwks FAIL "$bad"
 fi
 
 # RECORDED observations.
 for n in $NODES; do
   echo "$n role=$(role "$n") $(vip_state "$n")" | tee -a "$OUT/fo0-vip-state.txt"
 done
-verdict FO-0.standby-listener RECORDED "$BACKUP_NODE (BACKUP): $(vip_state "$BACKUP_NODE"); $MASTER_NODE (MASTER): $(vip_state "$MASTER_NODE")"
+verdict FAILOVER-0.standby-listener RECORDED "$BACKUP_NODE (BACKUP): $(vip_state "$BACKUP_NODE"); $MASTER_NODE (MASTER): $(vip_state "$MASTER_NODE")"
 for n in $NODES; do
   docker exec "$n" sh -c 'grep -h -E "Added BFD|using bfd bind|BFD State|HA stage=ka-gate|kept without a listener|ci-change instance" /var/log/loxilb$(hostname).log' 2>/dev/null | sed "s/^/$n: /"
 done > "$OUT/fo0-ha-log-lines.txt"
 for n in $NODES; do
-  verdict "FO-0.bfd-line.$n" RECORDED "$(grep "^$n: .*Added BFD" "$OUT/fo0-ha-log-lines.txt" | tail -1 | sed 's/^[^:]*: //' | cut -c1-140)"
+  verdict "FAILOVER-0.bfd-line.$n" RECORDED "$(grep "^$n: .*Added BFD" "$OUT/fo0-ha-log-lines.txt" | tail -1 | sed 's/^[^:]*: //' | cut -c1-140)"
 done
-verdict FO-0.kept-rules RECORDED "'kept without a listener' lines: llb1=$(grep -c '^llb1: .*kept without' "$OUT/fo0-ha-log-lines.txt") llb2=$(grep -c '^llb2: .*kept without' "$OUT/fo0-ha-log-lines.txt")"
+verdict FAILOVER-0.kept-rules RECORDED "'kept without a listener' lines: llb1=$(grep -c '^llb1: .*kept without' "$OUT/fo0-ha-log-lines.txt") llb2=$(grep -c '^llb2: .*kept without' "$OUT/fo0-ha-log-lines.txt")"
 {
   echo "client neighbour table:"; $hexec $CLIENT ip neigh
   for n in $NODES; do echo "$n client-side MAC: $($hexec "$n" cat /sys/class/net/e${n}${SW_C}/address)"; done
 } > "$OUT/fo0-neigh.txt"
 vmac=$($hexec $CLIENT ip neigh show "$VIP" | awk '{print $5}')
 mmac=$($hexec "$MASTER_NODE" cat "/sys/class/net/e${MASTER_NODE}${SW_C}/address")
-verdict FO-0.client-neigh RECORDED "the client resolves $VIP to $vmac; the MASTER's ($MASTER_NODE) MAC is $mmac"
-verdict FO-0.cold-open RECORDED "loxilb_ai_token_quota_cold_open_total at FO-0: llb1=$(metric llb1 loxilb_ai_token_quota_cold_open_total) llb2=$(metric llb2 loxilb_ai_token_quota_cold_open_total) (later readings are deltas from these)"
-verdict FO-0.startup RECORDED "$(tr '\n' ' ' < "$OUT/startup-times.txt")"
+verdict FAILOVER-0.client-neigh RECORDED "the client resolves $VIP to $vmac; the MASTER's ($MASTER_NODE) MAC is $mmac"
+verdict FAILOVER-0.cold-open RECORDED "loxilb_ai_token_quota_cold_open_total at FAILOVER-0: llb1=$(metric llb1 loxilb_ai_token_quota_cold_open_total) llb2=$(metric llb2 loxilb_ai_token_quota_cold_open_total) (later readings are deltas from these)"
+verdict FAILOVER-0.startup RECORDED "$(tr '\n' ' ' < "$OUT/startup-times.txt")"
 
 # Where the state under test lives (bpffs sharing on a single host).
 {
@@ -263,7 +263,7 @@ shared=$(LC_ALL=C comm -12 <(echo "$ids1") <(echo "$ids2") | grep -c .)
 dev1=$(docker exec llb1 sh -c 'grep " - bpf " /proc/self/mountinfo' | awk '{print $3}' | tr '\n' ' ')
 dev2=$(docker exec llb2 sh -c 'grep " - bpf " /proc/self/mountinfo' | awk '{print $3}' | tr '\n' ' ')
 sockprogs=$(sudo bpftool cgroup tree 2>/dev/null | grep -c -E "sock_ops|cgroup_sock|connect4|sk_msg")
-verdict FO-0.bpffs RECORDED "bpffs devices llb1=[$dev1] llb2=[$dev2]; pinned maps llb1=$(echo "$ids1" | grep -c .) llb2=$(echo "$ids2" | grep -c .), kernel map ids in common=$shared; cgroup-attached socket programs on the host=$sockprogs"
+verdict FAILOVER-0.bpffs RECORDED "bpffs devices llb1=[$dev1] llb2=[$dev2]; pinned maps llb1=$(echo "$ids1" | grep -c .) llb2=$(echo "$ids2" | grep -c .), kernel map ids in common=$shared; cgroup-attached socket programs on the host=$sockprogs"
 fi
 
 ##############################################################################
@@ -309,16 +309,16 @@ else
 fi
 fi
 
-if want FO-1; then . "$CFGDIR/cases/fo1.sh"; fi
-if want FO-2-4; then . "$CFGDIR/cases/fo2-4.sh"; fi
-if want FO-5-8; then . "$CFGDIR/cases/fo5-8.sh"; fi
-if want FO-6-7; then . "$CFGDIR/cases/fo6-7.sh"; fi
-if want FO-9; then . "$CFGDIR/cases/fo9.sh"; fi
-if want FO-10; then . "$CFGDIR/cases/fo10.sh"; fi
-if want FO-11; then F11_ID=FO-11; . "$CFGDIR/cases/fo11.sh"; fi
-if want FO-11r; then F11_ID=FO-11r; . "$CFGDIR/cases/fo11.sh"; fi
-# The two record-only cases go last: FO-13 changes a node's configuration.
-if want FO-12 || want FO-13; then . "$CFGDIR/cases/fo12-13.sh"; fi
+if want FAILOVER-1; then . "$CFGDIR/cases/fo1.sh"; fi
+if want FAILOVER-2-4; then . "$CFGDIR/cases/fo2-4.sh"; fi
+if want FAILOVER-5-8; then . "$CFGDIR/cases/fo5-8.sh"; fi
+if want FAILOVER-6-7; then . "$CFGDIR/cases/fo6-7.sh"; fi
+if want FAILOVER-9; then . "$CFGDIR/cases/fo9.sh"; fi
+if want FAILOVER-10; then . "$CFGDIR/cases/fo10.sh"; fi
+if want FAILOVER-11; then F11_ID=FAILOVER-11; . "$CFGDIR/cases/fo11.sh"; fi
+if want FAILOVER-11r; then F11_ID=FAILOVER-11r; . "$CFGDIR/cases/fo11.sh"; fi
+# The two record-only cases go last: FAILOVER-13 changes a node's configuration.
+if want FAILOVER-12 || want FAILOVER-13; then . "$CFGDIR/cases/fo12-13.sh"; fi
 wait_roles 60 6 || note "end of run: roles did not hold ($ROLE_LAST)"
 
 finish
