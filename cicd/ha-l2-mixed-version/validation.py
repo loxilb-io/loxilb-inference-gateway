@@ -59,7 +59,9 @@ class Trial:
             raise RuntimeError("legacy and candidate resolve to the same image")
         self.old, self.new, self.backend = old, new, backend
         self.containers, self.networks, self.volumes = {}, {}, {}
-        self.endpoints = {f"echo-{i}": f"{BACK}.{30+i}" for i in (1, 2, 3)}
+        # Keep FullNAT return traffic on the VIP segment. Crossing two Docker
+        # bridges puts backend replies through the runner's host firewall.
+        self.endpoints = {f"echo-{i}": f"{FRONT}.{30+i}" for i in (1, 2, 3)}
         self.log = (out / "timeline.jsonl").open("x", encoding="utf-8")
 
     def record(self, event, **fields):
@@ -284,7 +286,7 @@ class Trial:
         for name, ip in self.endpoints.items():
             self.containers[name] = docker(
                 "run", "-d", "--pull=never", "--label", self.label, "--name", f"{self.name}-{name}",
-                "--network", self.back, "--ip", ip, "-e", f"ECHO_NAME={name}", self.images[self.backend])
+                "--network", self.front, "--ip", ip, "-e", f"ECHO_NAME={name}", self.images[self.backend])
             wait_for(f"{name} ready", lambda: self.probe(ip, 80) == name, 15)
         for node in self.nodes:
             self.create_node(node, self.old)

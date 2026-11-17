@@ -1,8 +1,8 @@
 # L2 BFD mixed-version regression
 
-This GPU-free scenario uses two on-prem IPv4 L4 nodes with separate frontend
-and BFD links, one FullNAT/HASH VIP, and three HTTP echo backends. The
-AI-HA-Failover-BFD workflow runs it for relevant in-repository pull requests,
+This GPU-free scenario uses two on-prem IPv4 L4 nodes, one FullNAT/HASH VIP,
+and three HTTP echo backends on one data segment. A separate link carries BFD
+and peer sync. The AI-HA-Failover-BFD workflow runs it for relevant in-repository pull requests,
 every night, and on demand. The [same-version suite](../ai-ha-failover-bfd/README.md)
 runs alongside it and covers isolated election, process loss, and frontend
 eligibility including both frontends down and same-name recreation.
