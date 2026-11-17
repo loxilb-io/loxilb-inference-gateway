@@ -19,11 +19,14 @@ package loxinet
 import (
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	nlp "github.com/loxilb-io/loxilb/api/loxinlp"
@@ -111,7 +114,13 @@ type CIStateH struct {
 	// back before the existing hello/timeout gate. This is not proof of full
 	// conntrack transfer. Sessions added after it
 	// start at once. A nil channel means there is no initial sync to wait for.
-	initSync chan struct{}
+	initSync          chan struct{}
+	initSyncExpired   bool // published by closing initSync
+	l2PairPeer        string
+	haPairState       atomic.Uint32
+	haWithdrawPending atomic.Bool
+	haTransitionMu    sync.Mutex
+	haWithdrawVIPs    map[string]struct{} // guarded by mh.mtx
 }
 
 func (ch *CIStateH) BFDSessionNotify(instance string, _ string, ciState string) {
@@ -126,13 +135,54 @@ func (ch *CIStateH) BFDSessionNotify(instance string, _ string, ciState string) 
 	ch.CIStateUpdate(sm)
 }
 
+var haElectionEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "loxilb_ha_election_events_total",
+	Help: "HA role decisions and refused role operations by reason.",
+}, []string{"reason"})
+
+func (ch *CIStateH) BFDSessionElectionNotify(instance, remote, role, reason string) {
+	haElectionEvents.WithLabelValues(reason).Inc()
+	if reason == "active_alone" {
+		tk.LogIt(tk.LogWarning, "HA reason=%s instance=%s peer=%s start_wait_seconds=%.0f\n",
+			reason, instance, remote, (xsyncReadyTimeout + KAInitTiVal*time.Second).Seconds())
+	} else {
+		tk.LogIt(tk.LogInfo, "HA reason=%s instance=%s peer=%s role=%s\n", reason, instance, remote, role)
+	}
+	ch.BFDSessionNotify(instance, remote, role)
+}
+
+func (ch *CIStateH) protectsL2VIP(instance string) bool {
+	return ch.l2PairPeer != "" && (instance == "" || instance == cmn.CIDefault)
+}
+
+func (ch *CIStateH) pairState() bfd.PairState {
+	return bfd.PairState(ch.haPairState.Load())
+}
+
+func (ch *CIStateH) l2VIPBlocked(instance string) bool {
+	return ch.protectsL2VIP(instance) && ch.pairState() != bfd.PairEligible
+}
+
+func (ch *CIStateH) pairConfig(args bfd.ConfigArgs) bfd.ConfigArgs {
+	args.PairElection = ch.protectsL2VIP(args.Instance) && args.RemoteIP == ch.l2PairPeer
+	if args.PairElection {
+		args.PairState = ch.pairState
+		if ch.initSync != nil {
+			args.StartGate = ch.initSync
+			args.StartExpired = func() bool { return ch.initSyncExpired }
+		}
+	}
+	return args
+}
+
 func (ch *CIStateH) startBFDProto(bfdSessConfigArgs bfd.ConfigArgs) {
 
 	if ch.Bs == nil {
 		return
 	}
 
-	if ch.initSync != nil {
+	bfdSessConfigArgs = ch.pairConfig(bfdSessConfigArgs)
+	if !bfdSessConfigArgs.PairElection && ch.initSync != nil {
 		select {
 		case <-ch.initSync:
 		case <-bgpOperationContext().Done():
@@ -174,6 +224,7 @@ func (ch *CIStateH) waitInitialSync() {
 	case <-timer.C:
 	}
 	tk.LogIt(tk.LogInfo, "HA stage=ka-gate result=%s elapsed=%s ct_complete=unverified\n", result, time.Since(begin))
+	ch.initSyncExpired = result == xsyncTimeout
 	close(ch.initSync)
 }
 
@@ -193,7 +244,9 @@ func (ch *CIStateH) bfdStartGate() <-chan struct{} {
 
 // CITicker - Periodic ticker for Cluster module
 func (ch *CIStateH) CITicker() {
-	// Nothing to do currently
+	if ch.haWithdrawPending.Load() {
+		ch.sweepWithdrawnVIPs()
+	}
 }
 
 // CISpawn - Spawn CI application
@@ -238,6 +291,9 @@ func CIInit(args CIKAArgs) *CIStateH {
 	nCIh.StateMap[cmn.CIStopStateString] = cmn.CIStateNotDefined
 	nCIh.StateMap[cmn.CIUnDefStateString] = cmn.CIStateNotDefined
 	nCIh.SpawnKa = args.SpawnKa
+	if args.SpawnKa && args.RemoteIP.To4() != nil && !opts.Opts.Bgp && !opts.Opts.BgpPeerMode && opts.Opts.Cloud == "on-prem" {
+		nCIh.l2PairPeer = args.RemoteIP.String()
+	}
 	nCIh.RemoteIP = args.RemoteIP
 	nCIh.SourceIP = args.SourceIP
 	nCIh.Interval = args.Interval
@@ -583,6 +639,9 @@ func (ch *CIStateH) IsCIKAMode() bool {
 
 // CIStateUpdate - routine to update cluster state
 func (ch *CIStateH) CIStateUpdate(cm cmn.HASMod) (int, error) {
+	if cm.State == cmn.CIMasterStateString && ch.l2VIPBlocked(cm.Instance) {
+		return -1, errors.New("local node is not eligible for the BFD election")
+	}
 
 	// A valid role-control request is a sticky signal, even if the state is unchanged.
 	// CIInit calls UpdateCIState directly and must not enable this gate.
@@ -617,7 +676,16 @@ func (ch *CIStateH) CIStateUpdate(cm cmn.HASMod) (int, error) {
 		if mh.bgp != nil {
 			mh.bgp.UpdateCIState(cm.Instance, ci.State, ci.Vip)
 		}
-		go mh.zr.Rules.RulesSyncToClusterState(cm.Instance, cm.State)
+		if ch.protectsL2VIP(cm.Instance) {
+			go func() {
+				mh.mtx.Lock()
+				defer mh.mtx.Unlock()
+				role, _ := ch.CIStateGetInst(cm.Instance)
+				mh.zr.Rules.RulesSyncToClusterState(cm.Instance, role)
+			}()
+		} else {
+			go mh.zr.Rules.RulesSyncToClusterState(cm.Instance, cm.State)
+		}
 
 		// Update Call the ka_hook.sh script
 		hookScrptCall := func(cm cmn.HASMod) {
@@ -707,6 +775,7 @@ func (ch *CIStateH) CIBFDSessionAdd(bm cmn.BFDMod) (int, error) {
 	// whether this is the first session: a boot replay finds SpawnKa already
 	// set by --ka and would otherwise start ungated.
 	bfdSessConfigArgs.StartGate = ch.bfdStartGate()
+	bfdSessConfigArgs = ch.pairConfig(bfdSessConfigArgs)
 	if err := ch.Bs.BFDAddRemote(bfdSessConfigArgs, ch); err != nil {
 		tk.LogIt(tk.LogCritical, "KA - Cant add BFD remote: %s\n", err.Error())
 		if first {

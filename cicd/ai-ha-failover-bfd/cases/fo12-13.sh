@@ -1,5 +1,5 @@
 # FAILOVER-12, FAILOVER-13  A gateway on its own, and a node that returns with an old
-# configuration.   (sourced by validation.sh; both record-only)
+# configuration.   (sourced by validation.sh)
 #
 #   FAILOVER-12b  after a node-death failover the survivor's gateway is restarted
 #           while the peer is still dead. Recorded for 5 minutes: role, each
@@ -19,6 +19,10 @@
 # FAILOVER-12 runs b, c, a so that one node death serves b and c.
 
 LONE_WATCH_S=${HAFO_LONE_WATCH_S:-300}
+HAFO_START_GATE_MS=95000
+HAFO_START_MARGIN_MS=25000
+PEER_RETURN_WATCH_S=120
+declare -A LONE_RESULT
 F12_DIR="$OUT/fo12"; F13_DIR="$OUT/fo13"; mkdir -p "$F12_DIR" "$F13_DIR"
 
 # apply_record <node> <file>: every write of the list, never stopping; one
@@ -32,48 +36,90 @@ apply_record() {
   done < "$HAFO_DIR/.cfg-list"
   awk '{c[$1]++} END{for (k in c) printf "%s x%d ", k, c[k]}' "$f"
 }
-# lone_watch <node> <seconds> <file> <t0-ms>: every 5 s the node's role, VIP
-# and listeners, and what one keyed request through the VIP gets.
-lone_watch() {
-  local n=$1 max=$2 f=$3 t0=$4 a
-  while [ $(( $(now_ms) - t0 )) -lt $(( max * 1000 )) ]; do
-    vreq $PORT_KEY $MODEL_KEY "X-Api-Key: $(key_raw fo-seed-key)" lone; a=$VREQ_OUT
-    echo "$(( $(now_ms) - t0 )) role=$(role "$n") $(vip_state "$n") client=[${a% }]" >> "$f"
-    sleep 5
-  done
+gateway_start_ms() {
+  local pid
+  pid=$(loxilb_pid "$1")
+  [ -n "$pid" ] || return 1
+  python3 - "$pid" <<'PY2'
+import os, sys, time
+with open(f"/proc/{sys.argv[1]}/stat") as stat:
+    ticks = int(stat.read().rsplit(") ", 1)[1].split()[19])
+boot_epoch = time.time() - time.clock_gettime(time.CLOCK_BOOTTIME)
+print(round(1000 * (boot_epoch + ticks / os.sysconf("SC_CLK_TCK"))))
+PY2
 }
-# lone_summary <file> -> role sequence, first listener, first 200, last line
-lone_summary() {
-  python3 - "$1" <<'PY'
-import re, sys
-rows = [ln.rstrip("\n") for ln in open(sys.argv[1]) if ln.strip()]
-roles, last, first_listen, first_200, n200 = [], None, None, None, 0
-for ln in rows:
-    ms = int(ln.split()[0]); r = re.search(r"role=(\S+)", ln).group(1)
-    if r != last:
-        roles.append("%s@%d" % (r, ms)); last = r
-    if first_listen is None and "listeners=none" not in ln:
-        first_listen = ms
-    if "client=[200" in ln:
-        n200 += 1
-        if first_200 is None:
-            first_200 = ms
-cl = {}
-for ln in rows:
-    c = re.search(r"client=\[([^\]]*)\]", ln).group(1)
-    cl[c] = cl.get(c, 0) + 1
-print("roles %s; first listener on the VIP at %s ms; first 200 at %s ms; client answers over %d samples: %s; last sample: %s"
-      % (" -> ".join(roles), first_listen, first_200, len(rows),
-         ", ".join("%s x%d" % kv for kv in sorted(cl.items())), rows[-1] if rows else "none"))
-print("SERVED=%d" % n200)
-PY
+
+lone_node_monitor() {
+  sudo ip netns exec "$1" python3 "$HAFO_DIR/hafo_tools.py" node --vip "$VIP" \
+    --interval "${3:-0.25}" --out "$2/node.jsonl" >/dev/null 2>&1 &
 }
+lone_cold_hook() { lone_node_monitor "$1" "$F12_DIR/a"; }
+peer_return_hook() { lone_node_monitor "$1" "$peer_monitor_dir" 0.5; }
+
+lone_http_monitor() {
+  sudo ip netns exec "$CLIENT" python3 "$HAFO_DIR/hafo_tools.py" probe --vip "$VIP" \
+    --port "$PORT_KEY" --model "$MODEL_KEY" --header "X-Api-Key: $(key_raw fo-seed-key)" \
+    --rate 5 --tag "lone-$(basename "$1")" --out "$1/probe.jsonl" >/dev/null 2>&1 &
+}
+
+lone_verdict() {
+  local id=$1 prefix=$2 start=$3 finish=$4 limit result
+  limit=$((HAFO_START_GATE_MS + HAFO_START_MARGIN_MS))
+  while [ "$(( $(now_ms) - finish ))" -lt "$((LONE_WATCH_S * 1000))" ]; do sleep 1; done
+  sudo touch "$F12_DIR/$prefix/"{node,probe}.jsonl.stop
+  wait 2>/dev/null
+  ha_lines "$5" "$F12_DIR/$prefix-ha-lines.txt"
+  result=$(python3 "$HAFO_DIR/lone_oracle.py" "$F12_DIR/$prefix" "$start" "$limit" "$PORT_KEY")
+  local status detail
+  read -r status detail <<< "${result%%$'\n'*}"
+  LONE_RESULT[$id]=${status:-FAIL}
+  verdict "$id" "${LONE_RESULT[$id]}" "${detail:-missing process or role data}"
+  verdict "$id.http" RECORDED "${result#*$'\n'}"
+}
+
+peer_return_verdict() {
+  local id=$1 owner=$2 peer=$3 prefix=$4
+  local d="$F12_DIR/$prefix" t0 pid probe status attempts ok losses exec_ms api_end writes_end settled
+  local returned=0 peer_monitor_dir="$F12_DIR/$prefix/peer"
+  mkdir -p "$peer_monitor_dir"
+  lone_node_monitor "$owner" "$d"
+  sudo ip netns exec "$CLIENT" python3 "$HAFO_DIR/hafo_tools.py" debtwatch --vip "$VIP" --port "$PORT_KEY" --model "$MODEL_KEY" \
+    --header "X-Api-Key: $(key_raw fo-seed-key)" --max 300 --tag "fo12-$prefix-$$" \
+    --out "$d/http.jsonl" --interval 0.5 > "$d/http.json" 2>/dev/null &
+  pid=$!
+  t0=$(now_ms)
+  exec_ms=unknown
+  if NODE_RETURN_HOOK=peer_return_hook node_return "$peer" >> "$d/return.log" 2>&1; then
+    returned=1
+    exec_ms=$(gateway_start_ms "$peer")
+    api_end=$(now_ms)
+    apply_cfg "$peer" "" returning >> "$d/return.log" 2>&1
+  fi
+  writes_end=$(now_ms)
+  wait_roles "$PEER_RETURN_WATCH_S" 6
+  sleep 10
+  sudo touch "$d/"{http,node}.jsonl.stop "$peer_monitor_dir/node.jsonl.stop"; wait "$pid"; wait 2>/dev/null
+  settled=$(python3 "$HAFO_DIR/peer_observe.py" "$d" "$t0")
+  ha_lines "$peer" "$d/peer-ha-lines.txt"
+  probe="$d/http.json"
+  attempts=$(jget "d['attempts']" < "$probe")
+  ok=$(jget "d['ok_after_mark']" < "$probe")
+  losses=$(python3 -c 'import json,sys; a=list(map(json.loads,open(sys.argv[1]))); print(sum(r["vip"]!=1 for r in a) if a else -1)' "$d/node.jsonl")
+  status=FAIL
+  if [[ "$attempts" =~ ^[0-9]+$ && "$ok" == "$attempts" && "$losses" == 0 ]] &&
+     [ "$returned" = 1 ] && [ "$attempts" -ge 10 ] && [ "$(role "$owner")" = MASTER ] &&
+     [[ "$(vip_state "$peer")" == vip_on_lo=0\ * ]]; then status=PASS; fi
+  LONE_RESULT[$id]=$status
+  verdict "$id" "$status" "$owner retains VIP (missing samples=$losses); ${ok:-0}/${attempts:-0} HTTP 200, minimum 10 with zero failures"
+  verdict "$id.stabilisation" RECORDED "return to six stable roles: $settled ms; return_epoch_ms=$t0 process_epoch_ms=$exec_ms API_epoch_ms=${api_end:-unknown} writes_done_epoch_ms=$writes_end; $ROLE_LAST"
+}
+
 ha_lines() { # <node> <file>: the gateway's own HA lines
-  docker exec "$1" sh -c 'grep -h -E "Added BFD|BFD State|HA stage|ka-gate|kept without a listener|ci-change instance|snapshot|not an address of this gateway" /var/log/loxilb$(hostname).log | tail -n 200' > "$2" 2>&1
+  docker exec "$1" sh -c 'grep -h -E "Added BFD|BFD State|HA stage|ka-gate|kept without a listener|ci-change instance|reason=active_(alone|without_bfd)|snapshot|not an address of this gateway" /var/log/loxilb$(hostname).log | tail -n 200' > "$2" 2>&1
 }
 
 if want FAILOVER-12; then
-echo; echo "FAILOVER-12  Lone start (record-only)"
+echo; echo "FAILOVER-12  Lone start"
 if ! fo_begin; then
   verdict FAILOVER-12 NOT_RUN "roles did not hold before the case ($ROLE_LAST)"
 elif ! fo_fault; then
@@ -87,53 +133,93 @@ else
   sudo kill -TERM "$pid"
   while [ -e "/proc/$pid" ] && [ $(( $(now_ms) - r0 )) -lt 40000 ]; do sleep 0.05; done
   echo "after SIGTERM, before the start: exit after $(( $(now_ms) - r0 )) ms; $(vip_state "$S")" > "$F12_DIR/b-watch.head"
+  mkdir -p "$F12_DIR/b"
   r0=$(now_ms)
+  lone_node_monitor "$S" "$F12_DIR/b"
+  lone_http_monitor "$F12_DIR/b"
   docker exec -d "$S" bash -c "$(cat "$HAFO_DIR/.${S}-cmdline") >> /tmp/loxilb.out 2>> /tmp/loxilb.err"
   ams=$(wait_api "$S" 120) || ams="timeout($ams)"
-  w=$(apply_record "$S" "$F12_DIR/b-writes.txt")
-  lone_watch "$S" "$LONE_WATCH_S" "$F12_DIR/b-watch.txt" "$r0"
-  ha_lines "$S" "$F12_DIR/b-ha-lines.txt"
-  sum=$(lone_summary "$F12_DIR/b-watch.txt"); b_served=$(echo "$sum" | sed -n 's/^SERVED=//p')
-  verdict FAILOVER-12b RECORDED "gateway on $S restarted with its peer dead ($(cat "$F12_DIR/b-watch.head")): REST API ready after $ams ms; the list's writes were answered [$w]; over $LONE_WATCH_S s: $(echo "$sum" | head -1)"
-  # ---- c: the peer returns.
-  # A client that keeps asking every 0.5 s through the whole return.
-  sudo ip netns exec $CLIENT python3 "$HAFO_DIR/hafo_tools.py" debtwatch --vip $VIP --port $PORT_KEY --model $MODEL_KEY \
-    --header "X-Api-Key: $(key_raw fo-seed-key)" --max 300 --tag "fo12-c-$$" --out "$F12_DIR/c-watch.jsonl" --interval 0.5 \
-    > "$F12_DIR/c-watch.json" 2>/dev/null &
-  c0=$(now_ms)
-  fo_restore; wait_roles 240 6; c_roles=$(( $(now_ms) - c0 ))
-  sleep 10
-  sudo touch "$F12_DIR/c-watch.jsonl.stop"; wait 2>/dev/null; sudo rm -f "$F12_DIR/c-watch.jsonl.stop"
-  verdict FAILOVER-12c RECORDED "the peer $M returned: the roles read [$ROLE_LAST] $c_roles ms after its return began; a client asking every 0.5 s from the start of the return until 10 s after the roles held saw: $(jget "' '.join('%s x%d' % (a, b) for a, b in d['sequence'])" < "$F12_DIR/c-watch.json")"
+  process_start=$(gateway_start_ms "$S")
+  apply_record "$S" "$F12_DIR/b-writes.txt" >/dev/null
+  lone_verdict FAILOVER-12b b "${process_start:-0}" "$r0" "$S"
+  peer_return_verdict FAILOVER-12c "$S" "$M" c
 
   # ---- a: both down, one starts, its peer never answers.
   if ! wait_roles 60 6; then
     verdict FAILOVER-12a NOT_RUN "the pair was not healthy after FAILOVER-12c ($ROLE_LAST)"
-    a_served=unknown
+    LONE_RESULT[FAILOVER-12a]=NOT_RUN
   else
     LONE=llb1; PEER=llb2
     node_death "$BACKUP_NODE" >/dev/null; node_death "$MASTER_NODE" >/dev/null
+    mkdir -p "$F12_DIR/a"
     a0=$(now_ms)
-    ret=$(node_return "$LONE" 2>>"$F12_DIR/a-restore.err") || ret="node_return failed: $(tail -1 "$F12_DIR/a-restore.err")"
-    w=$(apply_record "$LONE" "$F12_DIR/a-writes.txt")
-    lone_watch "$LONE" "$LONE_WATCH_S" "$F12_DIR/a-watch.txt" "$a0"
-    ha_lines "$LONE" "$F12_DIR/a-ha-lines.txt"
-    sum=$(lone_summary "$F12_DIR/a-watch.txt"); a_served=$(echo "$sum" | sed -n 's/^SERVED=//p')
-    verdict FAILOVER-12a RECORDED "$LONE started alone after both nodes were down ($ret); the list's writes were answered [$w]; over $LONE_WATCH_S s: $(echo "$sum" | head -1)"
-    vretry $PORT_KEY $MODEL_KEY "X-Api-Key: $(key_raw fo-seed-key)" 300 fo12-a2 0.5 > "$F12_DIR/a-peer-retry.json" &
-    p0=$(now_ms)
-    if ret=$(node_return "$PEER" 2>>"$F12_DIR/a-restore.err") && apply_cfg "$PEER" "" returning 2>>"$F12_DIR/a-restore.err"; then
-      wait_roles 240 6
-      # The lone node refused or held its writes; give it the list again now.
-      apply_cfg "$LONE" "" returning 2>>"$F12_DIR/a-restore.err"
-      echo "after the peer returned, list on $LONE: created=$APPLY_NEW already-held=$APPLY_HELD" >> "$F12_DIR/a-writes.txt"
-    fi
-    wait 2>/dev/null
-    verdict FAILOVER-12a.peer-up RECORDED "then $PEER started ($ret): roles [$ROLE_LAST] $(( $(now_ms) - p0 )) ms later; a client asking every 0.5 s saw: $(jget "' '.join('%s x%d' % (a, b) for a, b in d['sequence'])" < "$F12_DIR/a-peer-retry.json"), first 200 after $(jget "d['first_200_after_ms']" < "$F12_DIR/a-peer-retry.json") ms"
+    lone_http_monitor "$F12_DIR/a"
+    NODE_RETURN_HOOK=lone_cold_hook node_return "$LONE" >> "$F12_DIR/a-restore.log" 2>&1
+    process_start=$(gateway_start_ms "$LONE")
+    apply_record "$LONE" "$F12_DIR/a-writes.txt" >/dev/null
+    lone_verdict FAILOVER-12a a "${process_start:-0}" "$a0" "$LONE"
+    peer_return_verdict FAILOVER-12a.peer-up "$LONE" "$PEER" a-peer
   fi
-  verdict FAILOVER-12 RECORDED "can one healthy gateway started with --ka serve the VIP while its peer does not answer? Keyed requests answered 200 in $b_served of the samples after a restart of the survivor, and in $a_served of the samples after a cold start of one node (one sample every 5 s for $LONE_WATCH_S s each)"
+  f12_status=PASS
+  for id in FAILOVER-12b FAILOVER-12c FAILOVER-12a FAILOVER-12a.peer-up; do
+    [ "${LONE_RESULT[$id]:-NOT_RUN}" = PASS ] || f12_status=FAIL
+  done
+  verdict FAILOVER-12 "$f12_status" "both lone starts and both peer returns must pass their ownership and service limits"
 fi
 fi
+
+bfd_cut_at_start() {
+  sudo ip netns exec "$1" iptables -w -I INPUT -p udp --dport 3784 -j DROP &&
+  sudo ip netns exec "$1" iptables -w -I OUTPUT -p udp --dport 3784 -j DROP &&
+  touch "$F12_DIR/$1.bfd-cut"
+}
+
+fo12_bfd_only_at_start() {
+  local n low high status=FAIL launch1 launch2 rc1=0 rc2=0
+  wait_roles 60 6 || { verdict FAILOVER-12.bfd-only NOT_RUN "$ROLE_LAST"; return; }
+  read -r low high < <(for n in $NODES; do echo "$(node_eth0 "$n") $n"; done |
+    sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | awk '{print $2}' | xargs)
+  # loxilb uses the higher IPv4 address as the tiebreak for two active ranks.
+  node_death "$BACKUP_NODE" >/dev/null; node_death "$MASTER_NODE" >/dev/null
+  if ! node_start_pair > "$F12_DIR/bfd-pair-start.log" 2>&1; then
+    verdict FAILOVER-12.bfd-only NOT_RUN "could not start both BFD test containers"
+    return
+  fi
+  NODE_RETURN_HOOK=bfd_cut_at_start node_return "$low" > "$F12_DIR/$low.bfd-cut.log" 2>&1 &
+  launch1=$!
+  NODE_RETURN_HOOK=bfd_cut_at_start node_return "$high" > "$F12_DIR/$high.bfd-cut.log" 2>&1 &
+  launch2=$!
+  wait "$launch1" || rc1=$?
+  wait "$launch2" || rc2=$?
+  if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ]; then
+    verdict FAILOVER-12.bfd-only NOT_RUN "the BFD test gateways failed to start"
+    return
+  fi
+  local start clean=1
+  start=$(now_ms)
+  while [ "$(( $(now_ms) - start ))" -lt 100000 ]; do
+    if [ "$(role "$low")" = MASTER ] && [ "$(role "$high")" = MASTER ] &&
+       [[ "$(vip_state "$low")" == vip_on_lo=1\ * && "$(vip_state "$high")" == vip_on_lo=1\ * ]]; then break; fi
+    sleep .5
+  done
+  for n in "$low" "$high"; do
+    ha_lines "$n" "$F12_DIR/$n.bfd-only-ha.txt"
+    if [ ! -f "$F12_DIR/$n.bfd-cut" ] ||
+       ! grep -q 'HA stage=ka-gate result=ready' "$F12_DIR/$n.bfd-only-ha.txt" ||
+       ! docker exec "$n" cat "$(node_log "$n")" | grep -q 'reason=active_without_bfd'; then clean=0; fi
+  done
+  if [ "$(role "$low")" != MASTER ] || [ "$(role "$high")" != MASTER ]; then clean=0; fi
+  for n in "$low" "$high"; do
+    sudo ip netns exec "$n" iptables -w -D INPUT -p udp --dport 3784 -j DROP || clean=0
+    sudo ip netns exec "$n" iptables -w -D OUTPUT -p udp --dport 3784 -j DROP || clean=0
+  done
+  if wait_roles 60 6 && [ "$clean" = 1 ] && [ "$MASTER_NODE" = "$high" ] &&
+     [[ "$(vip_state "$high")" == vip_on_lo=1\ * && "$(vip_state "$low")" == vip_on_lo=0\ * ]]; then status=PASS; fi
+  for n in "$low" "$high"; do apply_cfg "$n" "" returning >> "$F12_DIR/$n.bfd-cut.log" 2>&1; done
+  verdict FAILOVER-12.bfd-only "$status" "XSync-ready starts became active_without_bfd in the cut; after reconnect expected $high alone with the VIP, observed $ROLE_LAST"
+}
+
+if want FAILOVER-12; then fo12_bfd_only_at_start; fi
 
 if want FAILOVER-13; then
 echo; echo "FAILOVER-13  Stale snapshot (record-only)"

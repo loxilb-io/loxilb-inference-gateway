@@ -11,18 +11,18 @@
 # NOT_RUN (a precondition or the harness itself failed).
 #
 # usage: ./validation.sh [--cases FAILOVER-0,BED]   (default: every case)
-# Case selectors: FAILOVER-0 BED FAILOVER-1 FAILOVER-2-4 FAILOVER-5-8 FAILOVER-6-7 FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13
+# Case selectors: FAILOVER-0 BED FAILOVER-1 FAILOVER-2-4 FAILOVER-5-8 FAILOVER-6-7 FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13 FAILOVER-FRONTEND
 
 source ../common.sh >/dev/null
 source ./lib.sh
 CFGDIR="$HAFO_DIR"
-ALL_CASES="FAILOVER-0 BED-1 BED-2 FAILOVER-1 FAILOVER-2 FAILOVER-3 FAILOVER-4 FAILOVER-5 FAILOVER-6 FAILOVER-7 FAILOVER-8a FAILOVER-8b FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13"
+ALL_CASES="FAILOVER-0 BED-1 BED-2 FAILOVER-1 FAILOVER-2 FAILOVER-3 FAILOVER-4 FAILOVER-5 FAILOVER-6 FAILOVER-7 FAILOVER-8a FAILOVER-8b FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13 FAILOVER-FRONTEND"
 if [ ! -f "${CFGDIR}/.unhealthy" ]; then
   [ -s "${CFGDIR}/.keys" ] && [ -f "${CFGDIR}/.env" ] || { echo "FATAL: run config.sh first"; exit 2; }
   . "${CFGDIR}/.env"
 fi
 
-CASES_WANTED="FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13"
+CASES_WANTED="FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13,FAILOVER-FRONTEND"
 while [ $# -gt 0 ]; do
   case "$1" in
     --cases) CASES_WANTED=$2; shift 2 ;;
@@ -226,6 +226,15 @@ fi
 for n in $NODES; do
   echo "$n role=$(role "$n") $(vip_state "$n")" | tee -a "$OUT/fo0-vip-state.txt"
 done
+forced=$(api "$BACKUP_NODE" POST /config/cistate '{"instance":"llb-inst0","state":"MASTER","vip":"0.0.0.0"}')
+forced_code=$(printf '%s\n' "$forced" | sed -n 's/^http_code=//p')
+if [[ "$forced_code" =~ ^[45][0-9][0-9]$ ]] &&
+   [ "$(role "$BACKUP_NODE")" = BACKUP ] && [ "$(role "$MASTER_NODE")" = MASTER ]; then
+  verdict FAILOVER-0.cistate-gate PASS "the BFD BACKUP refused a forced MASTER request and the incumbent stayed active"
+else
+  verdict FAILOVER-0.cistate-gate FAIL "HTTP ${forced_code:-none}; roles: $(role "$BACKUP_NODE") / $(role "$MASTER_NODE")"
+fi
+
 verdict FAILOVER-0.standby-listener RECORDED "$BACKUP_NODE (BACKUP): $(vip_state "$BACKUP_NODE"); $MASTER_NODE (MASTER): $(vip_state "$MASTER_NODE")"
 for n in $NODES; do
   docker exec "$n" sh -c 'grep -h -E "Added BFD|using bfd bind|BFD State|HA stage=ka-gate|kept without a listener|ci-change instance" /var/log/loxilb$(hostname).log' 2>/dev/null | sed "s/^/$n: /"
@@ -319,6 +328,7 @@ if want FAILOVER-11; then F11_ID=FAILOVER-11; . "$CFGDIR/cases/fo11.sh"; fi
 if want FAILOVER-11r; then F11_ID=FAILOVER-11r; . "$CFGDIR/cases/fo11.sh"; fi
 # The two record-only cases go last: FAILOVER-13 changes a node's configuration.
 if want FAILOVER-12 || want FAILOVER-13; then . "$CFGDIR/cases/fo12-13.sh"; fi
+if want FAILOVER-FRONTEND; then . "$CFGDIR/cases/frontend.sh"; fi
 wait_roles 60 6 || note "end of run: roles did not hold ($ROLE_LAST)"
 
 finish

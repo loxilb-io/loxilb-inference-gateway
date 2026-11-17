@@ -206,6 +206,12 @@ inference:
 | `hooks.drain.*` | the pre-delete drain (§7) |
 | `tests.*` | the `helm test` pods and the loxilb URL they call |
 
+For a separate on-prem IPv4 L2 HA pair, add `--ha-frontend-interface=<ifname>`
+to each L4 gateway's arguments after both nodes are upgraded. If this chart
+deploys those L4 processes, use `loxilb-igw.loxilb.extraArgs` in umbrella
+values or `loxilb.extraArgs` in subchart values. In a split L4 and IGW
+deployment, set the flag on the L4 units. [Two-node L2 HA operations](operations/ha-l2-election.md)
+
 Each pool field maps to an annotation kube-loxilb reads:
 
 | Pool field | Annotation | Meaning |

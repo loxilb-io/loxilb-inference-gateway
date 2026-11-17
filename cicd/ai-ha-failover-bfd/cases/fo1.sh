@@ -11,13 +11,11 @@
 #           when an operator stops the service; what the gateway does on its
 #           way out is recorded. The node is powered off afterwards.
 #   crash   kill -9 loxilb (t0), container and namespace stay, nothing is
-#           cleared. Record-only.
+#           cleared.
 #
 # Per repetition the timeline is: t0, survivor reports MASTER, VIP on the
 # survivor, listener on the VIP, first 200, and the probe's outcome histogram
-# in between. All RECORDED. The one PASS/FAIL is a HARNESS BOUND, not a
-# product budget: 200s are stable again within 60 s. A PASS on it does not
-# say the outage is acceptable.
+# in between. Each repetition judges promotion and records stable HTTP recovery.
 #
 # Mutations: HAFO_MUTATE=fo1-skip-fault skips the fault, and
 # HAFO_MUTATE=fo1-backend-down stops the backend first; every repetition must
@@ -25,7 +23,7 @@
 
 FO1_REPS=${HAFO_FO1_REPS:-5}
 FO1_CRASH_REPS=${HAFO_FO1_CRASH_REPS:-3}
-FO1_BOUND_MS=60000
+FO1_HANDOVER_MS=2000
 FO1_DIR="$OUT/fo1"
 mkdir -p "$FO1_DIR"
 : > "$FO1_DIR/summary.jsonl"
@@ -44,7 +42,7 @@ fo1_wait_settled() {
 
 # fo1_rep <mode> <index>
 fo1_rep() {
-  local mode=$1 i=$2 d="$FO1_DIR/$1-$2" M S t0 pid t_exit="" t_off="" extra=""
+  local mode=$1 i=$2 d="$FO1_DIR/$1-$2" M S t0 pid t_exit="" t_off=""
   echo; echo "--- FAILOVER-1 $mode #$i"
   if ! wait_roles 240 6; then
     verdict "FAILOVER-1.$mode.$i" NOT_RUN "roles did not hold before the fault ($ROLE_LAST)"
@@ -63,8 +61,7 @@ fo1_rep() {
   monitors_start "$d"
   if ! probe_control "$d" 30; then
     monitors_stop "$d"
-    # Every verdict of this repetition is NOT_RUN; it also does not count
-    # towards the mode's bound, which then needs another repetition.
+    # Without a healthy control the repetition cannot judge recovery.
     verdict "FAILOVER-1.$mode.$i.before" NOT_RUN "with roles holding ($M MASTER, $S BACKUP) the probe did not reach 3 s of 200s within 30 s; it got: ${PROBE_PRE_HIST:-nothing}"
     verdict "FAILOVER-1.$mode.$i" NOT_RUN "control failed: the probe was not all-200 for 3 s within 30 s before the fault (it got: ${PROBE_PRE_HIST:-nothing})"
     return 1
@@ -87,7 +84,7 @@ fo1_rep() {
         t0=$(now_ms)
         sudo kill -TERM "$pid"
         while [ -e "/proc/$pid" ] && [ $(( $(now_ms) - t0 )) -lt 40000 ]; do sleep 0.02; done
-        [ -e "/proc/$pid" ] && extra="loxilb_still_alive_after_40s" || t_exit=$(now_ms) ;;
+        [ -e "/proc/$pid" ] || t_exit=$(now_ms) ;;
       crash)
         t0=$(now_ms)
         sudo kill -9 "$pid" ;;
@@ -122,32 +119,40 @@ fo1_rep() {
   python3 "$HAFO_DIR/hafo_tools.py" timeline --dir "$d" --t0 "$t0" --mode "$mode" --dead "$M" --survivor "$S" \
     --dead-ip "$(node_eth0 "$M")" --survivor-ip "$(node_eth0 "$S")" --dead-mac "$mmac" --survivor-mac "$smac" \
     --port $PORT_KEY --nports $NPORTS > "$d/timeline.json"
-  python3 - "$d/timeline.json" "$mode" "$i" "${t_exit:+$((t_exit - t0))}" "${t_off:+$((t_off - t0))}" "$extra" >> "$FO1_DIR/summary.jsonl" <<'PY'
+  python3 - "$d/timeline.json" "$mode" "$i" "${t_exit:+$((t_exit - t0))}" "${t_off:+$((t_off - t0))}" "$settled" >> "$FO1_DIR/summary.jsonl" <<'PY'
 import json, sys
 tl = json.load(open(sys.argv[1]))
 tl["rep"] = int(sys.argv[3])
 tl["exit_ms"] = int(sys.argv[4]) if sys.argv[4] else None
 tl["links_down_ms"] = int(sys.argv[5]) if sys.argv[5] else None
-tl["extra"] = sys.argv[6]
+tl["settled"] = sys.argv[6] == "1"
 print(json.dumps(tl, sort_keys=True))
 PY
-  # The repetition counts only if a fault actually happened.
-  local became
-  became=$(python3 -c "import json,sys; t=json.load(open(sys.argv[1])); print(t['survivor_master_ms'] if t['survivor_role_before']!='MASTER' else '')" "$d/timeline.json")
-  if [ -z "$became" ] || [ "$became" = None ]; then
-    verdict "FAILOVER-1.$mode.$i" NOT_RUN "no failover observed: the survivor never changed to MASTER after t0"
-  else
-    verdict "FAILOVER-1.$mode.$i" RECORDED "$(python3 - "$d/timeline.json" <<'PY'
-import json, sys
-t = json.load(open(sys.argv[1]))
-g = lambda k: t.get(k)
-print("master +%s ms, VIP +%s ms, listener +%s ms, first 200 +%s ms, stable 200 from +%s ms, VIP-without-listener %s ms; fault..stable: %s"
-      % (g("survivor_master_ms"), g("survivor_vip_ms"), g("survivor_listen_ms"), g("first_200_after_fault_ms"),
-         g("stable_200_from_ms"), g("vip_without_listener_ms"),
-         ", ".join("%s=%d" % kv for kv in sorted(g("histogram_fault_to_stable").items()))))
-PY
-)"
-  fi
+  local judgment status detail
+  judgment=$(python3 - "$FO1_DIR/summary.jsonl" "$FO1_HANDOVER_MS" <<'PY2'
+import json
+import sys
+
+with open(sys.argv[1]) as samples:
+    t = json.loads(list(samples)[-1])
+handover_limit = int(sys.argv[2])
+master, stable = t["survivor_master_ms"], t["stable_200_from_ms"]
+# docker stop includes its grace period. Use container exit as the start of
+# the service budget. Other fault modes start when the link or process is hit.
+anchor = t["exit_ms"] if t["mode"] == "stop" else 0
+if t["survivor_role_before"] != "BACKUP" or anchor is None:
+    print("NOT_RUN pre-fault BACKUP or stop exit sample is missing")
+else:
+    passed = master is not None and master - anchor <= handover_limit
+    print("PASS" if passed else "FAIL",
+          f"master={master} ms, anchor={anchor} ms; promotion <= {handover_limit} ms")
+delay = max(0, stable - master) if master is not None and stable is not None and t["settled"] else "unobserved"
+print(f"promotion to sustained HTTP 200: {delay} ms (campaign A)")
+PY2
+)
+  read -r status detail <<< "${judgment%%$'\n'*}"
+  verdict "FAILOVER-1.$mode.$i" "${status:-FAIL}" "${detail:-timeline judgment failed}"
+  verdict "FAILOVER-1.$mode.$i.http" RECORDED "${judgment#*$'\n'}"
   # Restore the pair for the next repetition.
   case "$mode" in
     crash)
@@ -175,11 +180,10 @@ done
 for i in $(seq 1 "$FO1_CRASH_REPS"); do fo1_rep crash "$i"; done
 wait_roles 240 6 || note "FAILOVER-1: roles did not hold after the last repetition ($ROLE_LAST)"
 
-# Per-mode summary: median and worst of each interval, and the harness bound.
-python3 - "$FO1_DIR/summary.jsonl" "$FO1_BOUND_MS" > "$FO1_DIR/summary.txt" <<'PY'
+# Per-mode measurement summary. The per-repetition verdicts above drive the gate.
+python3 - "$FO1_DIR/summary.jsonl" > "$FO1_DIR/summary.txt" <<'PY'
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-bound = int(sys.argv[2])
 keys = ["bfd_detection_ms", "survivor_master_ms", "survivor_vip_ms", "survivor_listen_ms",
         "vip_without_listener_ms", "client_neigh_to_survivor_ms", "first_non200_ms",
         "first_200_after_fault_ms", "stable_200_from_ms", "exit_ms", "links_down_ms",
@@ -206,20 +210,6 @@ for mode in ["death", "stop", "term", "crash"]:
     sp = [r.get("bfd_tx_spacing_ms_dead", {}).get("median") for r in rs if r.get("bfd_tx_spacing_ms_dead")]
     if sp:
         print("  BFD TX spacing median per rep (ms): %s" % sp)
-    worst = [r.get("stable_200_from_ms") for r in rs]
-    ok = bool(rs) and all(x is not None and x <= bound for x in worst)
-    print("  BOUND %s %s" % (mode, "PASS" if ok else "FAIL"))
 PY
 cat "$FO1_DIR/summary.txt"
-for mode in death stop term; do
-  want_n=$FO1_REPS
-  got_n=$(sed -n "s/^MODE $mode reps=//p" "$FO1_DIR/summary.txt")
-  if [ "${got_n:-0}" -lt "$want_n" ]; then
-    verdict "FAILOVER-1.$mode.bound" NOT_RUN "only ${got_n:-0} of $want_n repetitions produced a failover"
-  elif grep -q "BOUND $mode PASS" "$FO1_DIR/summary.txt"; then
-    verdict "FAILOVER-1.$mode.bound" PASS "HARNESS BOUND, not a product budget: 200s were stable again within $((FO1_BOUND_MS / 1000)) s in all $got_n repetitions"
-  else
-    verdict "FAILOVER-1.$mode.bound" FAIL "HARNESS BOUND: in at least one of $got_n repetitions 200s were not stable again within $((FO1_BOUND_MS / 1000)) s"
-  fi
-done
 verdict FAILOVER-1.params RECORDED "probe ${PROBE_RATE}/s open loop, connect timeout ${PROBE_CONNECT_TIMEOUT} s, request timeout ${PROBE_TIMEOUT} s; node sampler every ${SAMPLE_INTERVAL} s; neighbour sampler every 0.05 s; ARP observer every 0.1 s"

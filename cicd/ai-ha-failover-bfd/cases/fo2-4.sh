@@ -27,9 +27,13 @@ else
   # between the two is captured from here to the end of FAILOVER-3. The harness
   # mints the tokens from the host, before this point.
   CLIENT_ETH0=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CLIENT)
-  sudo tcpdump -i docker0 -nn -tt -l "host $CLIENT_ETH0 and host $KC_IP" > "$C_DIR/client-idp-packets.txt" 2>/dev/null &
+  sudo tcpdump -i docker0 -nn -tt -l "host $CLIENT_ETH0 and host $KC_IP" > "$C_DIR/client-idp-packets.txt" 2>"$C_DIR/client-idp-capture.log" &
   IDP_CAP=$!
   sleep 1
+  if ! grep -q 'listening on ' "$C_DIR/client-idp-capture.log" || ! sudo kill -0 "$IDP_CAP" 2>/dev/null; then
+    pre_ok=0
+    note "FAILOVER-3: could not start the client-to-IdP packet capture"
+  fi
 
   # Before the fault: every credential is used once on the old master.
   vreq $PORT_KEY $MODEL_KEY "X-Api-Key: $K2" fo2-pre; a=$VREQ_OUT;    [ "${a%% *}" = 200 ] || { pre_ok=0; note "FAILOVER-2 pre: key answered $a on the old master"; }
@@ -52,7 +56,7 @@ else
   jwks_before="$M=$(metric "$M" loxilb_ai_jwks_refresh_total 'outcome="success"') $S=$(metric "$S" loxilb_ai_jwks_refresh_total 'outcome="success"')"
   sync_mark
   vreq $PORT_KEY $MODEL_KEY "X-Api-Key: $(key_raw fo-seed-key)" c-seed
-  sync_advanced || { pre_ok=0; note "sync liveness: push count on $M did not advance ($SYNC_MARK)"; }
+  sync_advanced || { pre_ok=0; note "sync liveness: push count on $M did not advance ($SYNC_MARK), seed request answered $VREQ_OUT"; }
 
   if [ "$pre_ok" != 1 ]; then
     c_notrun "a precondition failed before the fault; see notes.log"

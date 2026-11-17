@@ -7,8 +7,7 @@ name: HA-Two-Node-Nightly
 #                     this build, llb2 is varied per case (the released "old"
 #                     image, a divergent or corrupt profile registry, dark),
 #                     and attestation is earned through the vLLM attestation
-#                     simulator (cicd/common/kv_hash). The only mixed-version
-#                     HA coverage in the tree. The old side is the repository
+#                     simulator (cicd/common/kv_hash). The old side is the repository
 #                     variable PERSIST_UPGRADE_OLD_TAG, the same knob as
 #                     persist-upgrade, or the dispatch input oldTag. The suite
 #                     fails on purpose when old and new resolve to the same

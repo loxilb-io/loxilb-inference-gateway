@@ -861,6 +861,17 @@ func (na *NetAPIStruct) NetCIStateMod(hm *cmn.HASMod) (int, error) {
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 
+	if mh.has.protectsL2VIP(hm.Instance) {
+		role, _ := mh.has.CIStateGetInst(cmn.CIDefault)
+		if hm.State != role {
+			haElectionEvents.WithLabelValues("external_role_refused").Inc()
+			tk.LogIt(tk.LogWarning, "HA reason=external_role_refused instance=%s current=%s request=%s\n",
+				hm.Instance, role, hm.State)
+			return -1, errors.New("cluster role is controlled by the BFD election")
+		}
+		return 0, nil
+	}
+
 	_, err := mh.has.CIStateUpdate(*hm)
 	if err != nil {
 		return -1, err

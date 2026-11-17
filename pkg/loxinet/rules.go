@@ -763,7 +763,9 @@ type RuleH struct {
 	// lbconfig.txt and replays via NetLbRuleAdd -> AddLbRule on boot.
 	opaqueID map[string]*ruleEnt
 	// Only modern rules can conflict with a legacy addition; rebuilt on replay.
-	mcpRules map[string]*ruleEnt
+	mcpRules         map[string]*ruleEnt
+	frontendObserver *haFrontendObserver
+	frontendGate     *haFrontendGate
 }
 
 // RulesInit - initialize the Rules subsystem
@@ -7954,8 +7956,17 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 	if IP.String() == "0.0.0.0" || IP.String() == "::" {
 		return nil
 	}
+	if !egress && IP.To4() != nil && mh.has.protectsL2VIP(inst) {
+		if mh.has.l2VIPBlocked(inst) || (R.frontendGate != nil && !R.frontendGate.allows(IP.String())) {
+			return nil
+		}
+	}
 
 	ciState, _ := mh.has.CIStateGetInst(inst)
+	// An unelected L2 HA node must not publish a VIP on a dummy device.
+	if ciState == cmn.CIUnDefStateString && !egress && tk.IsNetIPv4(IP.String()) && mh.has.protectsL2VIP(inst) {
+		ciState = cmn.CIBackupStateString
+	}
 	if ciState == cmn.CIMasterStateString {
 		dev := fmt.Sprintf("llb-rule-%s", IP.String())
 		ret, _ := R.zone.L3.IfaFindAddr(dev, IP)
@@ -7987,6 +7998,9 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
+			if !egress && IP.To4() != nil && mh.has.l2VIPBlocked(inst) {
+				return nil
+			}
 			rCh := make(chan int, 1)
 			go utils.NetAdvertiseVIPReqWithCtx(ctx, rCh, IP, iface)
 			select {
@@ -8119,6 +8133,13 @@ func (R *RuleH) AddRuleVIP(VIP net.IP, pVIP net.IP, inst string, egress bool) {
 		vipEnt.inst = inst
 		vipEnt.egr = egress
 		R.vipMap[VIP.String()] = vipEnt
+		if R.frontendObserver != nil && !egress && (inst == "" || inst == cmn.CIDefault) &&
+			VIP.To4() != nil && !VIP.IsUnspecified() && (pVIP == nil || pVIP.Equal(VIP)) {
+			R.frontendObserver.track(VIP.String())
+			if R.frontendGate != nil && mh.has.l2VIPBlocked(inst) {
+				mh.has.haWithdrawPending.Store(true)
+			}
+		}
 	} else {
 		vipEnt.ref++
 	}
@@ -8144,6 +8165,9 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 		if vipEnt.pVIP != nil {
 			xVIP = vipEnt.pVIP
 		}
+		if mh.has != nil && !vipEnt.egr && xVIP.To4() != nil && mh.has.l2VIPBlocked(vipEnt.inst) && mh.has.haWithdrawPending.Load() {
+			mh.has.rememberWithdrawVIP(xVIP.String())
+		}
 		if vipEnt.ownsHostAddr(xVIP) {
 			ifname := "lo"
 			ev, _, iface := R.zone.L3.IfaSelectAny(xVIP, false)
@@ -8166,6 +8190,9 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 			mh.zr.L3.IfaDelete(dev, utils.IPHostCIDRString(xVIP))
 		}
 		delete(R.vipMap, VIP.String())
+		if R.frontendObserver != nil {
+			R.frontendObserver.untrack(VIP.String())
+		}
 	}
 }
 
