@@ -20,6 +20,36 @@ elected role use the existing error response. Readiness retains its
 configuration-recovery meaning. The log and `loxilb_ha_election_events_total`
 record transition reasons. The lone-start log records the 95-second allowance.
 
+## Clean shutdown and frontend failure
+
+On SIGTERM or SIGINT, a node in a managed pair stops advertising its IPv4 service
+VIPs and attempts to remove them. It publishes withdrawal rank 1 on the
+existing BFD session before the remaining shutdown stages. A peer that misses
+the signal can still take over on the normal BFD timeout. A SIGKILL leaves any
+kernel state to the existing recovery path.
+
+On both upgraded L4 nodes, pass `--ha-frontend-interface=<ifname>` to make that
+local interface part of the election. Leave it unset during the mixed-version
+upgrade. Supply the interface to the L4 process itself (for example through
+`loxilb.extraArgs` in the L4 gateway's Helm values). The option requires an
+on-prem IPv4 default L2 HA pair started with `--ka`. The process refuses to
+start if the interface is missing or is the actual kernel egress to the BFD
+peer. It starts ineligible if the frontend is down or the VIPs do not resolve
+to unique directly connected IPv4 prefixes on that interface.
+
+The node withdraws after 300 ms of observed frontend loss. Link deletion and
+rename invalidate the previous interface identity. Same-name replacement must
+match the customer prefixes and pass five continuous seconds of Up before
+the node returns as a candidate. Recovery does not preempt a healthy MASTER.
+The kernel address prefix is used during recovery so loss of a connected
+route cannot select a different customer interface.
+
+VIP removal is attempted up to three times within 300 ms. If it fails, the
+node still sends withdrawal rank 1. This can leave a temporary duplicate VIP.
+The periodic sweep retries removing the local addresses. This node remains
+ineligible until the sweep confirms removal. The same removal budget is used
+at clean shutdown, followed by the existing shutdown cleanup.
+
 ## Startup and recovery timing
 
 Budget gateway initialization, the **95 s start gate**, and VIP
@@ -45,6 +75,8 @@ series appears when its reason is used. The reason values are fixed.
 | `peer_withdrawn` | The peer has a withdrawn rank. |
 | `waiting_for_peer` | No settled peer decision yet. |
 | `ineligible`, `invalid_local_rank`, `shutdown_withdrawal` | The local node cannot be selected by that election decision. |
+| `frontend_down` | The configured frontend is down or its identity and VIP prefixes cannot be confirmed. |
+| `vip_withdrawal_failed` | The removal attempt left local VIP addresses unconfirmed. |
 | `external_role_refused` | A role write conflicts with the current BFD election. |
 
 If BFD alone is cut at startup, XSync can be ready on both nodes and both

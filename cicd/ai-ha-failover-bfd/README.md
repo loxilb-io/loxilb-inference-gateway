@@ -18,7 +18,7 @@ FAIL, 2 with at least one NOT_RUN. Evidence goes to `out/<timestamp>/`, or to
 
 | Variable / option | Effect |
 |---|---|
-| `--cases FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13` | select cases (default: all, in this order) |
+| `--cases FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13,FAILOVER-FRONTEND` | select cases (default: all, in this order) |
 | `HAFO_FO1_REPS` (5), `HAFO_FO1_CRASH_REPS` (3) | FAILOVER-1 repetitions per mode |
 | `HAFO_LONE_WATCH_S` (300) | how long FAILOVER-12 watches a gateway on its own |
 | `HAFO_MUTATE=<name>` | apply one deliberate break (see Mutations) |
@@ -107,6 +107,7 @@ eBPF map.
 | FAILOVER-11r | Repeat after restarting the standby before the fault. The survivor keeps MASTER and the returning node remains BACKUP. | PASS/FAIL + RECORDED |
 | FAILOVER-12 | Does an isolated start serve the VIP, and does the peer rejoin without taking ownership or interrupting service? | PASS/FAIL |
 | FAILOVER-13 | A node returns with an older configuration than its peer and is promoted. | RECORDED (+ harness restore check) |
+| FAILOVER-FRONTEND | Restart both fixture nodes with frontend election enabled, then cut the customer link while BFD stays UP, cut both frontends, restore eligibility, and replace the elected node's frontend with a new ifindex. | PASS when there is no VIP with both frontends down and each handoff or recovery has the expected sole owner |
 
 Every cross-node claim has three guards: a control identity that must be
 admitted, backend receipts read out of band, and proof before the fault that

@@ -211,3 +211,48 @@ func TestElectionDoesNotPromoteOnXSyncFailureWithRecentBFD(t *testing.T) {
 		t.Fatalf("XSync-only failure changed the role: %v", n.roles)
 	}
 }
+
+func TestPairWithdrawalAndSimultaneousRecovery(t *testing.T) {
+	now := time.Now()
+	lowState, highState := PairWithdrawn, PairWithdrawn
+	makeSession := func(rank uint32, state *PairState) *bfdSession {
+		return &bfdSession{
+			pairElection: true, pairState: func() PairState { return *state },
+			backupRank: rank, MyDisc: rank, CiState: common.CIBackupStateString,
+			State: BFDUp, LastRxTS: now, openAt: now, TimeOut: 100,
+			MyMulti: 3, ReqMinRxInt: 100, Fin: make(chan bool), ops: make(chan struct{}, 1),
+		}
+	}
+	low := makeSession(lowBackupRank, &lowState)
+	high := makeSession(highBackupRank, &highState)
+	feed := func(s *bfdSession, r, ack uint32) {
+		for range 4 {
+			s.RunSessionSM(&WireRaw{Disc: r, RDisc: ack, State: BFDUp, Multi: 3, DesMinTxInt: 100})
+		}
+	}
+	feed(low, withdrawnRank, withdrawnRank)
+	feed(high, withdrawnRank, withdrawnRank)
+	low.checkSessTimeoutAt(now.Add(time.Second))
+	high.checkSessTimeoutAt(now.Add(time.Second))
+	if low.MyDisc != withdrawnRank || high.MyDisc != withdrawnRank {
+		t.Fatalf("ineligible peers changed their rank: %d/%d", low.MyDisc, high.MyDisc)
+	}
+	lowState, highState = PairEligible, PairEligible
+	feed(low, withdrawnRank, withdrawnRank)
+	feed(high, withdrawnRank, withdrawnRank)
+	if low.MyDisc != lowBackupRank || high.MyDisc != highBackupRank {
+		t.Fatalf("rejoining peers did not stay candidates: %d/%d", low.MyDisc, high.MyDisc)
+	}
+	feed(low, high.MyDisc, low.MyDisc)
+	feed(high, low.MyDisc, high.MyDisc)
+	feed(low, high.MyDisc, low.MyDisc)
+	if low.CiState != common.CIBackupStateString || high.CiState != common.CIMasterStateString {
+		t.Fatalf("peers did not converge: %s/%s", low.CiState, high.CiState)
+	}
+	highState = PairWithdrawn
+	feed(high, low.MyDisc, high.MyDisc)
+	feed(low, high.MyDisc, low.MyDisc)
+	if low.CiState != common.CIMasterStateString || high.MyDisc != withdrawnRank {
+		t.Fatalf("withdrawal failed: %s/%d", low.CiState, high.MyDisc)
+	}
+}

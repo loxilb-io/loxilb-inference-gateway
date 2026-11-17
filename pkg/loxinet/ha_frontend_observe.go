@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -85,6 +85,14 @@ func (o *haFrontendObserver) event(event netlink.LinkUpdate) {
 // Use the address prefix because the kernel can withdraw its connected route
 // during a fault. Host addresses, including loxilb's VIPs, are not candidates.
 func haFrontendCandidate(vip net.IP, links map[int]netlink.Link, addrs []netlink.Addr) *netlink.LinkAttrs {
+	selected := haFrontendPrefixLink(vip, links, addrs)
+	if selected != nil && haFrontendLinkState(selected) == "up" {
+		return selected
+	}
+	return nil
+}
+
+func haFrontendPrefixLink(vip net.IP, links map[int]netlink.Link, addrs []netlink.Addr) *netlink.LinkAttrs {
 	var selected *netlink.LinkAttrs
 	for _, addr := range addrs {
 		link := links[addr.LinkIndex]
@@ -102,10 +110,7 @@ func haFrontendCandidate(vip net.IP, links map[int]netlink.Link, addrs []netlink
 		}
 		selected = attrs
 	}
-	if selected != nil && haFrontendLinkState(selected) == "up" {
-		return selected
-	}
-	return nil
+	return selected
 }
 
 func (o *haFrontendObserver) reconcile(links []netlink.Link, addrs []netlink.Addr) {

@@ -3,7 +3,59 @@
 
 package bfd
 
-import "github.com/loxilb-io/loxilb/common"
+import (
+	"errors"
+
+	"github.com/loxilb-io/loxilb/common"
+)
+
+// PairState controls the local two-node election while the gateway changes
+// VIP ownership. Holding freezes the elected rank until address withdrawal
+// is attempted. Withdrawn publishes rank 1 on the existing BFD session.
+type PairState uint32
+
+const (
+	PairEligible PairState = iota
+	PairHolding
+	PairWithdrawn
+)
+
+func (b *bfdSession) syncPairStateLocked() PairState {
+	if !b.pairElection || b.pairState == nil {
+		return PairEligible
+	}
+	state := b.pairState()
+	if state == PairWithdrawn {
+		b.withdrawn = true
+		b.MyDisc = withdrawnRank
+	} else if state == PairEligible && b.withdrawn {
+		b.withdrawn = false
+		b.rejoining = true
+		b.peerLost = false
+		b.MyDisc = b.backupRank
+		b.CiState = common.CIBackupStateString
+	}
+	return state
+}
+
+// AnnouncePair sends the new rank immediately on a running paired session.
+// If the startup gate is still closed, the ticker will send it when it opens.
+func (bs *Struct) AnnouncePair(peer string) error {
+	bs.BFDMtx.RLock()
+	sess := bs.BFDSessMap[peer]
+	bs.BFDMtx.RUnlock()
+	if sess == nil || !sess.pairElection {
+		return errors.New("paired BFD session unavailable")
+	}
+	if !sess.beginWork() {
+		return errors.New("paired BFD session is stopping")
+	}
+	defer sess.work.Done()
+	if !sess.active() {
+		return nil
+	}
+	return sess.sendBFDPacket()
+}
 
 // electionState describes what the BFD session knows about peer availability.
 // Loss and gate expiry are separate from ordinary BFD Down during negotiation.

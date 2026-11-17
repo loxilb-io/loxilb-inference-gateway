@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	nlp "github.com/loxilb-io/loxilb/api/loxinlp"
@@ -113,9 +114,13 @@ type CIStateH struct {
 	// back before the existing hello/timeout gate. This is not proof of full
 	// conntrack transfer. Sessions added after it
 	// start at once. A nil channel means there is no initial sync to wait for.
-	initSync        chan struct{}
-	initSyncExpired bool // published by closing initSync
-	l2PairPeer      string
+	initSync          chan struct{}
+	initSyncExpired   bool // published by closing initSync
+	l2PairPeer        string
+	haPairState       atomic.Uint32
+	haWithdrawPending atomic.Bool
+	haTransitionMu    sync.Mutex
+	haWithdrawVIPs    map[string]struct{} // guarded by mh.mtx
 }
 
 func (ch *CIStateH) BFDSessionNotify(instance string, _ string, ciState string) {
@@ -150,11 +155,22 @@ func (ch *CIStateH) protectsL2VIP(instance string) bool {
 	return ch.l2PairPeer != "" && (instance == "" || instance == cmn.CIDefault)
 }
 
+func (ch *CIStateH) pairState() bfd.PairState {
+	return bfd.PairState(ch.haPairState.Load())
+}
+
+func (ch *CIStateH) l2VIPBlocked(instance string) bool {
+	return ch.protectsL2VIP(instance) && ch.pairState() != bfd.PairEligible
+}
+
 func (ch *CIStateH) pairConfig(args bfd.ConfigArgs) bfd.ConfigArgs {
 	args.PairElection = ch.protectsL2VIP(args.Instance) && args.RemoteIP == ch.l2PairPeer
-	if args.PairElection && ch.initSync != nil {
-		args.StartGate = ch.initSync
-		args.StartExpired = func() bool { return ch.initSyncExpired }
+	if args.PairElection {
+		args.PairState = ch.pairState
+		if ch.initSync != nil {
+			args.StartGate = ch.initSync
+			args.StartExpired = func() bool { return ch.initSyncExpired }
+		}
 	}
 	return args
 }
@@ -228,7 +244,9 @@ func (ch *CIStateH) bfdStartGate() <-chan struct{} {
 
 // CITicker - Periodic ticker for Cluster module
 func (ch *CIStateH) CITicker() {
-	// Nothing to do currently
+	if ch.haWithdrawPending.Load() {
+		ch.sweepWithdrawnVIPs()
+	}
 }
 
 // CISpawn - Spawn CI application
@@ -621,6 +639,9 @@ func (ch *CIStateH) IsCIKAMode() bool {
 
 // CIStateUpdate - routine to update cluster state
 func (ch *CIStateH) CIStateUpdate(cm cmn.HASMod) (int, error) {
+	if cm.State == cmn.CIMasterStateString && ch.l2VIPBlocked(cm.Instance) {
+		return -1, errors.New("local node is not eligible for the BFD election")
+	}
 
 	// A valid role-control request is a sticky signal, even if the state is unchanged.
 	// CIInit calls UpdateCIState directly and must not enable this gate.
