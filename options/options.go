@@ -8,30 +8,31 @@ import (
 )
 
 var Opts struct {
-	DatapathState     string         `long:"datapath-state" env:"LOXILB_DATAPATH_STATE" description:"Absolute path in a trusted directory for the offline datapath cleanup record"`
-	DetachDatapath    string         `long:"detach-datapath" description:"Detach recorded programs in the current network namespace and exit"`
-	Bgp               bool           `short:"b" long:"bgp" description:"Connect and Sync with GoBGP server"`
-	Ka                string         `short:"k" long:"ka" description:"KeepAlive/BFD RemoteIP:SourceIP:Interval" default:"none"`
-	Version           bool           `short:"v" long:"version" description:"Show loxilb version"`
-	NoAPI             bool           `short:"a" long:"api" description:"Do not run the Rest API server (the API runs by default; this flag disables it)"`
-	NoNlp             bool           `short:"n" long:"nonlp" description:"Do not register with nlp"`
-	Host              string         `long:"host" description:"the IP to listen on" default:"0.0.0.0" env:"HOST"`
-	Port              int            `long:"port" description:"the port to listen on for insecure connections" default:"11111" env:"PORT"`
-	MgmtProfile       string         `long:"mgmt-profile" description:"Management API listener profile: legacy keeps the current listener behavior unchanged; appliance-local serves the plaintext API on loopback only; remote-tls disables the plaintext listener entirely and refuses to start unless TLS and an authentication service are both enabled" default:"legacy" choice:"legacy" choice:"appliance-local" choice:"remote-tls" env:"MGMT_PROFILE"`
-	TLS               bool           `long:"tls" description:"enable TLS " env:"TLS"`
-	TLSHost           string         `long:"tls-host" description:"the IP to listen on for tls" default:"0.0.0.0" env:"TLS_HOST"`
-	TLSPort           int            `long:"tls-port" description:"the port to listen on for secure connections" default:"8091" env:"TLS_PORT"`
-	TLSCertificate    flags.Filename `long:"tls-certificate" description:"the certificate to use for secure connections" default:"/opt/loxilb/cert/server.crt" env:"TLS_CERTIFICATE"`
-	TLSCertificateKey flags.Filename `long:"tls-key" description:"the private key to use for secure connections" default:"/opt/loxilb/cert/server.key" env:"TLS_PRIVATE_KEY"`
-	ClusterNodes      string         `long:"cluster" description:"Comma-separated list of cluter-node IP Addresses" default:"none"`
-	ClusterSelf       int            `long:"self" description:"annonation of self in cluster" default:"0"`
-	LogLevel          string         `long:"loglevel" description:"One of trace,debug,info,error,warning,notice,critical,emergency,alert" default:"info"`
-	LogDir            string         `long:"log-dir" description:"Directory for loxilb structured log files" default:"/var/log/loxilb/" env:"LOXILB_LOG_DIR"`
-	LogFormat         string         `long:"log-format" description:"Log output format: json, text, or both" default:"both" env:"LOXILB_LOG_FORMAT"`
-	LogMaxSize        int            `long:"log-max-size" description:"Rotate a log file when it exceeds this many MB (0 disables rotation)" default:"50" env:"LOXILB_LOG_MAX_SIZE"`
-	LogMaxBackups     int            `long:"log-max-backups" description:"Rotated files to keep per log, oldest deleted first (0 keeps all until log-max-age)" default:"4" env:"LOXILB_LOG_MAX_BACKUPS"`
-	LogMaxAge         int            `long:"log-max-age" description:"Days to retain rotated log files (0 keeps forever)" default:"28" env:"LOXILB_LOG_MAX_AGE"`
-	LogNoCompress     bool           `long:"log-no-compress" description:"Do not gzip rotated log files" env:"LOXILB_LOG_NO_COMPRESS"`
+	DatapathState       string         `long:"datapath-state" env:"LOXILB_DATAPATH_STATE" description:"Absolute path in a trusted directory for the offline datapath cleanup record"`
+	DetachDatapath      string         `long:"detach-datapath" description:"Detach recorded programs in the current network namespace and exit"`
+	Bgp                 bool           `short:"b" long:"bgp" description:"Connect and Sync with GoBGP server"`
+	Ka                  string         `short:"k" long:"ka" description:"KeepAlive/BFD RemoteIP:SourceIP:Interval" default:"none"`
+	HAFrontendInterface string         `long:"ha-frontend-interface" description:"Customer-facing IPv4 L2 HA interface to gate BFD election eligibility"`
+	Version             bool           `short:"v" long:"version" description:"Show loxilb version"`
+	NoAPI               bool           `short:"a" long:"api" description:"Do not run the Rest API server (the API runs by default; this flag disables it)"`
+	NoNlp               bool           `short:"n" long:"nonlp" description:"Do not register with nlp"`
+	Host                string         `long:"host" description:"the IP to listen on" default:"0.0.0.0" env:"HOST"`
+	Port                int            `long:"port" description:"the port to listen on for insecure connections" default:"11111" env:"PORT"`
+	MgmtProfile         string         `long:"mgmt-profile" description:"Management API listener profile: legacy keeps the current listener behavior unchanged; appliance-local serves the plaintext API on loopback only; remote-tls disables the plaintext listener entirely and refuses to start unless TLS and an authentication service are both enabled" default:"legacy" choice:"legacy" choice:"appliance-local" choice:"remote-tls" env:"MGMT_PROFILE"`
+	TLS                 bool           `long:"tls" description:"enable TLS " env:"TLS"`
+	TLSHost             string         `long:"tls-host" description:"the IP to listen on for tls" default:"0.0.0.0" env:"TLS_HOST"`
+	TLSPort             int            `long:"tls-port" description:"the port to listen on for secure connections" default:"8091" env:"TLS_PORT"`
+	TLSCertificate      flags.Filename `long:"tls-certificate" description:"the certificate to use for secure connections" default:"/opt/loxilb/cert/server.crt" env:"TLS_CERTIFICATE"`
+	TLSCertificateKey   flags.Filename `long:"tls-key" description:"the private key to use for secure connections" default:"/opt/loxilb/cert/server.key" env:"TLS_PRIVATE_KEY"`
+	ClusterNodes        string         `long:"cluster" description:"Comma-separated list of cluter-node IP Addresses" default:"none"`
+	ClusterSelf         int            `long:"self" description:"annonation of self in cluster" default:"0"`
+	LogLevel            string         `long:"loglevel" description:"One of trace,debug,info,error,warning,notice,critical,emergency,alert" default:"info"`
+	LogDir              string         `long:"log-dir" description:"Directory for loxilb structured log files" default:"/var/log/loxilb/" env:"LOXILB_LOG_DIR"`
+	LogFormat           string         `long:"log-format" description:"Log output format: json, text, or both" default:"both" env:"LOXILB_LOG_FORMAT"`
+	LogMaxSize          int            `long:"log-max-size" description:"Rotate a log file when it exceeds this many MB (0 disables rotation)" default:"50" env:"LOXILB_LOG_MAX_SIZE"`
+	LogMaxBackups       int            `long:"log-max-backups" description:"Rotated files to keep per log, oldest deleted first (0 keeps all until log-max-age)" default:"4" env:"LOXILB_LOG_MAX_BACKUPS"`
+	LogMaxAge           int            `long:"log-max-age" description:"Days to retain rotated log files (0 keeps forever)" default:"28" env:"LOXILB_LOG_MAX_AGE"`
+	LogNoCompress       bool           `long:"log-no-compress" description:"Do not gzip rotated log files" env:"LOXILB_LOG_NO_COMPRESS"`
 	// Hidden: a measurement entry point, not an operator knob. It runs the
 	// producer-cost harness and exits, so it never appears in --help beside
 	// the flags that configure a running gateway.

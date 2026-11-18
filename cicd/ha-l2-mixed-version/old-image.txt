@@ -1,0 +1,1 @@
+ghcr.io/loxilb-io/loxilb-inference-gateway@sha256:b77dc1e3c2e1c0e2545e3cec2c64b0b22b80082fa35eeeab558880e73bbd12b6

@@ -569,6 +569,15 @@ func (n *NeighH) NeighDeleteByPort(port string) {
 	}
 }
 
+// refreshPortSourceMAC updates next hops that copied the old port MAC.
+func (n *NeighH) refreshPortSourceMAC(port *Port) {
+	for _, ne := range n.NeighMap {
+		if ne.OifPort == port && ne.Resolved && !ne.Inactive {
+			ne.DP(DpCreate)
+		}
+	}
+}
+
 // NeighFind - Find a neighbor entry
 func (n *NeighH) NeighFind(Addr net.IP, Zone string, Link int) (*Neigh, int) {
 	key := NeighKey{Addr.String(), Zone, Link}

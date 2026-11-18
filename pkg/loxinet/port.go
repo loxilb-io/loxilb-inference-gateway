@@ -110,11 +110,11 @@ type PortSwInfo struct {
 	// PortPolNumEgr - egress-direction policer id (needs --egr-hooks)
 	PortPolNumEgr int
 	PortMirNum    int
-	PortActive bool
-	PortReal   *Port
-	PortOvl    *Port
-	SessMark   uint64
-	BpfLoaded  bool
+	PortActive    bool
+	PortReal      *Port
+	PortOvl       *Port
+	SessMark      uint64
+	BpfLoaded     bool
 }
 
 // PortLayer2Info - layer2 information related to an interface
@@ -125,15 +125,16 @@ type PortLayer2Info struct {
 
 // Port - holds all information related to an interface
 type Port struct {
-	Name   string
-	PortNo int
-	Zone   string
-	SInfo  PortSwInfo
-	HInfo  PortHwInfo
-	Stats  PortStatsInfo
-	L3     PortLayer3Info
-	L2     PortLayer2Info
-	Sync   DpStatusT
+	Name            string
+	PortNo          int
+	Zone            string
+	SInfo           PortSwInfo
+	HInfo           PortHwInfo
+	Stats           PortStatsInfo
+	L3              PortLayer3Info
+	L2              PortLayer2Info
+	Sync            DpStatusT
+	refreshVIPsOnUp bool
 }
 
 // PortsH - the port context container
@@ -209,16 +210,49 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 		return PortZoneErr, errors.New("no-zone error")
 	}
 
-	if P.portSmap[name] != nil {
-		p := P.portSmap[name]
+	if p := P.portSmap[name]; p != nil {
+		// A recreated link keeps the logical LoxiLB port and its rules, but
+		// its kernel and datapath bindings belong to the new ifindex.
+		replaced := portIndexChanged(p.SInfo.OsID, osid)
+		if replaced {
+			// A netns move can deliver the replacement under a temporary
+			// name before it acquires the final name.
+			if alias := P.portOmap[osid]; alias != nil && alias != p {
+				if ret, err := P.PortDel(alias.Name, alias.SInfo.PortType); err != nil {
+					return ret, err
+				}
+			}
+			tk.LogIt(tk.LogInfo, "port replace - %s ifindex %d -> %d\n", name, p.SInfo.OsID, osid)
+			p.DP(DpRemove)
+			delete(P.portOmap, p.SInfo.OsID)
+			p.SInfo.OsID = osid
+			P.portOmap[osid] = p
+			p.refreshVIPsOnUp = true
+		}
+
 		p.HInfo.Link = hwi.Link
 		p.HInfo.State = hwi.State
 		p.HInfo.Mtu = hwi.Mtu
-		if !p.IsL3TunPort() && !bytes.Equal(hwi.MacAddr[:], p.HInfo.MacAddr[:]) {
+		if p.refreshVIPsOnUp && hwi.Link && hwi.State && zn.Rules != nil {
+			p.refreshVIPsOnUp = false
+			// Queue after PortAdd has submitted all replacement work,
+			// including any work done by the port-type branches below.
+			defer zn.Rules.queuePortVIPRefresh(p)
+		}
+		macChanged := !p.IsL3TunPort() && p.HInfo.MacAddr != hwi.MacAddr
+		var oldSrcMAC [6]uint8
+		if macChanged {
+			if p.SInfo.PortType == cmn.PortReal && p.L2.IsPvid {
+				oldSrcMAC = p.HInfo.MacAddr
+			}
 			p.HInfo.MacAddr = hwi.MacAddr
-			p.DP(DpCreate)
-
 			tk.LogIt(tk.LogInfo, "port add - %s addr-changed\n", name)
+		}
+		if replaced || macChanged {
+			if oldSrcMAC != ([6]uint8{}) {
+				zn.Nh.refreshPortSourceMAC(p)
+			}
+			p.dp(DpCreate, oldSrcMAC)
 			zn.L3.IfasTicker(true)
 		}
 		if p.SInfo.PortType == cmn.PortReal {
@@ -300,6 +334,9 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 				p.DP(DpCreate)
 				return 0, nil
 			}
+		}
+		if replaced {
+			return 0, nil
 		}
 		tk.LogIt(tk.LogTrace, "port add - %s exists\n", name)
 		return PortExistsErr, errors.New("port exists")
@@ -411,6 +448,18 @@ func (P *PortsH) PortAdd(name string, osid int, ptype int, zone string,
 	tk.LogIt(tk.LogDebug, "port added - %s:%d OSID %d\n", name, p.PortNo, osid)
 
 	return 0, nil
+}
+
+// Zero/negative indices are used by internal callers that have no kernel identity.
+func portIndexChanged(current, event int) bool {
+	return current > 0 && event > 0 && current != event
+}
+
+func (P *PortsH) portDeleteLink(name string, ptype, ifindex int) (int, error) {
+	if current := P.portSmap[name]; current != nil && portIndexChanged(current.SInfo.OsID, ifindex) {
+		return 0, nil
+	}
+	return P.PortDel(name, ptype)
 }
 
 // PortDel - delete a port from loxinet realm
@@ -884,7 +933,10 @@ func (P *PortsH) PortDestructAll() {
 
 // DP - sync state of port entities in loxinet realm to data-path
 func (p *Port) DP(work DpWorkT) int {
+	return p.dp(work, [6]uint8{})
+}
 
+func (p *Port) dp(work DpWorkT, oldSrcMAC [6]uint8) int {
 	zn, zoneNum := mh.zn.Zonefind(p.Zone)
 	if zoneNum < 0 {
 		return -1
@@ -1005,6 +1057,7 @@ func (p *Port) DP(work DpWorkT) int {
 	}
 
 	pWq.SetBD = p.L2.Vid
+	pWq.oldSrcMAC = oldSrcMAC
 	_, pWq.SetZoneNum = mh.zn.Zonefind(p.Zone)
 	pWq.Prop = p.SInfo.PortProp
 	pWq.SetPol = p.SInfo.PortPolNum

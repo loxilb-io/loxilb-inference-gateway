@@ -763,7 +763,9 @@ type RuleH struct {
 	// lbconfig.txt and replays via NetLbRuleAdd -> AddLbRule on boot.
 	opaqueID map[string]*ruleEnt
 	// Only modern rules can conflict with a legacy addition; rebuilt on replay.
-	mcpRules map[string]*ruleEnt
+	mcpRules         map[string]*ruleEnt
+	frontendObserver *haFrontendObserver
+	frontendGate     *haFrontendGate
 }
 
 // RulesInit - initialize the Rules subsystem
@@ -7879,6 +7881,73 @@ func (r *ruleEnt) DP(work DpWorkT) int {
 
 }
 
+// queuePortVIPRefresh is called with mh.mtx held after submitting port work.
+// Wait outside the lock for the new datapath binding, then check the live
+// port and role again before using the existing VIP advertisement.
+func (R *RuleH) queuePortVIPRefresh(port *Port) {
+	dp, ctx := mh.dp, mh.shutdownCtx
+	if dp == nil || ctx == nil || mh.has == nil || len(R.vipMap) == 0 {
+		return
+	}
+	name, ifindex := port.Name, port.SInfo.OsID
+	go func() {
+		barrier := &DpSyncBarrier{Done: make(chan struct{})}
+		select {
+		case dp.ToDpCh <- barrier:
+		case <-ctx.Done():
+			return
+		}
+		select {
+		case <-barrier.Done:
+		case <-ctx.Done():
+			return
+		}
+
+		mh.mtx.Lock()
+		defer mh.mtx.Unlock()
+		current := R.zone.Ports.PortFindByName(name)
+		if ctx.Err() != nil || current != port || current.SInfo.OsID != ifindex ||
+			!current.HInfo.Link || !current.HInfo.State {
+			return
+		}
+		R.refreshPortVIPs(name, ifindex)
+	}()
+}
+
+// refreshPortVIPs advertises only the IPv4 service VIPs that the normal VIP
+// path would send over the replaced port. BACKUPs have nothing to refresh.
+func (R *RuleH) refreshPortVIPs(name string, ifindex int) {
+	for vip, entry := range R.vipMap {
+		if entry.egr {
+			continue
+		}
+		inst := entry.inst
+		if inst == "" {
+			inst = cmn.CIDefault
+		}
+		role, _ := mh.has.CIStateGetInst(inst)
+		if role != cmn.CIMasterStateString {
+			continue
+		}
+		externalIP := net.ParseIP(vip)
+		ip := entry.pVIP
+		if ip == nil {
+			ip = externalIP
+		}
+		if ip.To4() == nil || ip.IsUnspecified() {
+			continue
+		}
+		ret, _, iface := R.zone.L3.IfaSelectAny(ip, false)
+		if ret != 0 || iface != name {
+			continue
+		}
+		tk.LogIt(tk.LogInfo, "lb-rule vip %s re-advertise after port replacement: %s ifindex=%d\n", ip, name, ifindex)
+		if err := R.AdvRuleVIP(ip, externalIP, inst, false); err != nil {
+			tk.LogIt(tk.LogWarning, "lb-rule vip %s port replacement re-advertise failed: %v\n", ip, err)
+		}
+	}
+}
+
 func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) error {
 	if inst == "" {
 		inst = cmn.CIDefault
@@ -7887,8 +7956,17 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 	if IP.String() == "0.0.0.0" || IP.String() == "::" {
 		return nil
 	}
+	if !egress && IP.To4() != nil && mh.has.protectsL2VIP(inst) {
+		if mh.has.l2VIPBlocked(inst) || (R.frontendGate != nil && !R.frontendGate.allows(IP.String())) {
+			return nil
+		}
+	}
 
 	ciState, _ := mh.has.CIStateGetInst(inst)
+	// An unelected L2 HA node must not publish a VIP on a dummy device.
+	if ciState == cmn.CIUnDefStateString && !egress && tk.IsNetIPv4(IP.String()) && mh.has.protectsL2VIP(inst) {
+		ciState = cmn.CIBackupStateString
+	}
 	if ciState == cmn.CIMasterStateString {
 		dev := fmt.Sprintf("llb-rule-%s", IP.String())
 		ret, _ := R.zone.L3.IfaFindAddr(dev, IP)
@@ -7920,7 +7998,10 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
-			rCh := make(chan int)
+			if !egress && IP.To4() != nil && mh.has.l2VIPBlocked(inst) {
+				return nil
+			}
+			rCh := make(chan int, 1)
 			go utils.NetAdvertiseVIPReqWithCtx(ctx, rCh, IP, iface)
 			select {
 			case <-rCh:
@@ -8052,6 +8133,13 @@ func (R *RuleH) AddRuleVIP(VIP net.IP, pVIP net.IP, inst string, egress bool) {
 		vipEnt.inst = inst
 		vipEnt.egr = egress
 		R.vipMap[VIP.String()] = vipEnt
+		if R.frontendObserver != nil && !egress && (inst == "" || inst == cmn.CIDefault) &&
+			VIP.To4() != nil && !VIP.IsUnspecified() && (pVIP == nil || pVIP.Equal(VIP)) {
+			R.frontendObserver.track(VIP.String())
+			if R.frontendGate != nil && mh.has.l2VIPBlocked(inst) {
+				mh.has.haWithdrawPending.Store(true)
+			}
+		}
 	} else {
 		vipEnt.ref++
 	}
@@ -8077,6 +8165,9 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 		if vipEnt.pVIP != nil {
 			xVIP = vipEnt.pVIP
 		}
+		if mh.has != nil && !vipEnt.egr && xVIP.To4() != nil && mh.has.l2VIPBlocked(vipEnt.inst) && mh.has.haWithdrawPending.Load() {
+			mh.has.rememberWithdrawVIP(xVIP.String())
+		}
 		if vipEnt.ownsHostAddr(xVIP) {
 			ifname := "lo"
 			ev, _, iface := R.zone.L3.IfaSelectAny(xVIP, false)
@@ -8099,6 +8190,9 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 			mh.zr.L3.IfaDelete(dev, utils.IPHostCIDRString(xVIP))
 		}
 		delete(R.vipMap, VIP.String())
+		if R.frontendObserver != nil {
+			R.frontendObserver.untrack(VIP.String())
+		}
 	}
 }
 

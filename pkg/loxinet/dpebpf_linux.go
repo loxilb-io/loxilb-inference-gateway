@@ -34,6 +34,34 @@ package loxinet
 #include <net/if.h>
 #include <pthread.h>
 #include "../../loxilb-ebpf/kernel/loxilb_libdp.h"
+
+struct port_fc_match {
+  uint8_t smac[6];
+  uint16_t bd;
+};
+
+static int port_fc_uses_old_source(int table, void *key, void *arg) {
+  dp_map_ita_t *it = arg;
+  const struct port_fc_match *match = it->uarg;
+  const struct dp_fc_tacts *flow = it->val;
+  const struct dp_fc_tact *action = &flow->fcta[DP_SET_NEIGH_L2];
+
+  return action->ca.act_type == DP_SET_NEIGH_L2 &&
+         action->nl2.bd == match->bd &&
+         memcmp(action->nl2.smac, match->smac, sizeof(match->smac)) == 0;
+}
+
+static void invalidate_port_fc_source(const uint8_t *smac, uint16_t bd) {
+  struct port_fc_match match = { .bd = bd };
+  struct dp_fcv4_key key = {0};
+  struct dp_fc_tacts value;
+  dp_map_ita_t it = { .next_key = &key, .key_sz = sizeof(key), .val = &value, .uarg = &match };
+  memcpy(match.smac, smac, sizeof(match.smac));
+  llb_xh_lock();
+  llb_map_loop_and_delete(LL_DP_FCV4_MAP, port_fc_uses_old_source, &it);
+  llb_xh_unlock();
+}
+
 // Define proxy_ent structure for health updates (avoid pulling in full sockproxy.h with uthash)
 struct proxy_ent {
   uint32_t xip;
@@ -1088,6 +1116,9 @@ func (e *DpEbpfH) DpPortPropMod(w *PortDpWorkQ) int {
 			return EbpfErrPortPropAdd
 		}
 		tk.LogIt(tk.LogDebug, "ebpf txintfmap added - %d -> %d\n", w.PortNum, w.OsPortNum)
+		if w.oldSrcMAC != ([6]uint8{}) {
+			C.invalidate_port_fc_source((*C.uint8_t)(unsafe.Pointer(&w.oldSrcMAC[0])), C.uint16_t(w.SetBD))
+		}
 		return 0
 	} else if w.Work == DpRemove {
 
