@@ -102,7 +102,7 @@ func invalidationFixture(t *testing.T, srv *mockInvalidationServer) *SockproxySy
 	client, cleanup := startMockInvalidationServer(t, srv)
 	t.Cleanup(cleanup)
 
-	coord := NewSockproxySync()
+	coord := newTestCoordinator(nil)
 	peer := DpPeer{Peer: net.ParseIP("127.0.0.21"), CapMask: 0xFFFFFFFF}
 	coord.peersFn = func() []DpPeer { return []DpPeer{peer} }
 	coord.StoreGRPCClient(peer.Peer.String(), client)

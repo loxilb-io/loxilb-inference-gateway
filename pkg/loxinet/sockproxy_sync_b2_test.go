@@ -78,11 +78,7 @@ func (m *mockRateLimiterServer) RateLimiterSync(ctx context.Context, req *RateLi
 	}
 	m.mu.Lock()
 	// Deep-copy the batch so the caller can mutate freely.
-	cp := &RateLimiterBatch{IsDelta: req.IsDelta, Entries: make([]*RateLimiterEntry, len(req.Entries))}
-	for i, e := range req.Entries {
-		cp.Entries[i] = proto.Clone(e).(*RateLimiterEntry)
-	}
-	m.batches = append(m.batches, cp)
+	m.batches = append(m.batches, proto.Clone(req).(*RateLimiterBatch))
 	m.mu.Unlock()
 	if m.blockingCh != nil {
 		<-m.blockingCh
@@ -218,7 +214,7 @@ func TestRateLimiterSendBatchChunking(t *testing.T) {
 		}
 	}
 
-	if err := coord.sendRateLimiterBatch(peer, client, entries, false); err != nil {
+	if err := coord.sendRateLimiterBatch(peer, client, entries, false, 1); err != nil {
 		t.Fatalf("sendRateLimiterBatch returned error: %v", err)
 	}
 
@@ -247,6 +243,10 @@ func TestRateLimiterSendBatchChunking(t *testing.T) {
 	// that consequence at the receiver.
 	wantSizes := []int{500, 500, 203}
 	for i, b := range srv.batches {
+		if b.GetSnapshotId() != 1 || b.GetSnapshotChunks() != uint32(len(wantSizes)) || b.GetSnapshotIndex() != uint32(i) {
+			t.Errorf("batch %d: invalid snapshot coordinates: id=%d parts=%d index=%d", i,
+				b.GetSnapshotId(), b.GetSnapshotChunks(), b.GetSnapshotIndex())
+		}
 		if len(b.Entries) != wantSizes[i] {
 			t.Errorf("batch %d: expected %d entries, got %d", i, wantSizes[i], len(b.Entries))
 		}
@@ -274,7 +274,7 @@ func TestRateLimiterCapDegrade(t *testing.T) {
 		{KeyID: "t:degrade-tenant", IsTenant: true, Consumed: 5},
 	}
 
-	err := coord.sendRateLimiterBatch(peer, client, entries, false)
+	err := coord.sendRateLimiterBatch(peer, client, entries, false, 0)
 	if err != nil {
 		t.Errorf("expected nil-err on Unimplemented (graceful degrade), got %v", err)
 	}
@@ -560,7 +560,7 @@ func TestChunkedPushDoesNotSelfReportAsOldPeer(t *testing.T) {
 			Consumed: int64(i),
 		}
 	}
-	if err := sender.sendRateLimiterBatch(peer, client, entries, false); err != nil {
+	if err := sender.sendRateLimiterBatch(peer, client, entries, false, 0); err != nil {
 		t.Fatalf("sendRateLimiterBatch returned error: %v", err)
 	}
 
@@ -797,7 +797,7 @@ func TestSnapshotImportDoesNotResetTheReceiversRpsBuckets(t *testing.T) {
 
 	sender := newTestCoordinator(newMockApplier(0))
 	peer := &DpPeer{Peer: net.ParseIP("127.0.0.9"), CapMask: 0xFFFFFFFF}
-	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false); err != nil {
+	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false, 0); err != nil {
 		t.Fatalf("sendRateLimiterBatch: %v", err)
 	}
 
@@ -984,7 +984,7 @@ func TestRateLimiterPushDoesNotStarveQuotaRowsBehindUnusableRows(t *testing.T) {
 	defer armCleanup()
 	sender := newTestCoordinator(newMockApplier(0))
 	armPeer := &DpPeer{Peer: net.ParseIP("127.0.0.21"), CapMask: 0xFFFFFFFF}
-	if err := sender.sendRateLimiterBatch(armPeer, armClient, rlWireEntries(full), false); err != nil {
+	if err := sender.sendRateLimiterBatch(armPeer, armClient, rlWireEntries(full), false, 0); err != nil {
 		t.Fatalf("sendRateLimiterBatch (filtered): %v", err)
 	}
 	armWire := drainBatches(armSrv)
@@ -994,7 +994,7 @@ func TestRateLimiterPushDoesNotStarveQuotaRowsBehindUnusableRows(t *testing.T) {
 	rawClient, rawCleanup := startMockRLServer(t, rawSrv)
 	defer rawCleanup()
 	rawPeer := &DpPeer{Peer: net.ParseIP("127.0.0.22"), CapMask: 0xFFFFFFFF}
-	if err := sender.sendRateLimiterBatch(rawPeer, rawClient, full, false); err != nil {
+	if err := sender.sendRateLimiterBatch(rawPeer, rawClient, full, false, 0); err != nil {
 		t.Fatalf("sendRateLimiterBatch (unfiltered): %v", err)
 	}
 	rawWire := drainBatches(rawSrv)
@@ -1196,7 +1196,7 @@ func TestEveryLadderScopeSurvivesTheWire(t *testing.T) {
 
 	sender := newTestCoordinator(newMockApplier(0))
 	peer := &DpPeer{Peer: net.ParseIP("127.0.0.13"), CapMask: 0xFFFFFFFF}
-	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false); err != nil {
+	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false, 0); err != nil {
 		t.Fatalf("sendRateLimiterBatch: %v", err)
 	}
 	srv.mu.Lock()
@@ -1295,5 +1295,104 @@ func TestRateLimiterPushStopsWhenThePeerIsNoLongerOurs(t *testing.T) {
 		t.Errorf("a demoted node pushed %d more RateLimiterSync batches over %v; "+
 			"the role gate is only consulted when the loop is spawned",
 			after-mark, 6*rlPushIntervalAP)
+	}
+}
+
+// Managed pairs publish readiness only after the last chunk of a compatible
+// snapshot. Counter rows can arrive before then without releasing admission.
+func TestManagedQuotaSnapshotCompletion(t *testing.T) {
+	const host = "192.0.2.92"
+	const connection = host + ":40319"
+	coord := newTestCoordinator(newMockApplier(0))
+	store := rl.New()
+	store.StartQuotaSnapshotWarmup(0, nil)
+	coord.quotaSnapshotPeer = host
+	coord.quotaSnapshotStrict = true
+	coord.SetRateLimiterStore(store)
+
+	sentinel := &RateLimiterEntry{KeyId: rl.ScopeSentinelKeyID, IsTenant: true}
+	full := []*RateLimiterEntry{sentinel}
+	for i := 0; i < rlPushBatchMax-1; i++ {
+		full = append(full, &RateLimiterEntry{KeyId: "t:managed-quota-" + itoaT(i), IsTenant: true})
+	}
+	last := []*RateLimiterEntry{sentinel, {KeyId: "t:remaining-quota", IsTenant: true}}
+	send := func(peer string, batch *RateLimiterBatch) {
+		t.Helper()
+		if err := coord.ApplyRateLimiterBatch(peer, batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	requireWarming := func(why string, want bool) {
+		t.Helper()
+		if got := store.QuotaWarming(); got != want {
+			t.Fatalf("%s: warming=%t, want %t", why, got, want)
+		}
+	}
+	send(connection, &RateLimiterBatch{Entries: full})
+	send(connection, &RateLimiterBatch{IsDelta: true, SnapshotId: 1, SnapshotChunks: 1, Entries: full})
+	send("192.0.2.93:40319", &RateLimiterBatch{SnapshotId: 1, SnapshotChunks: 1, Entries: []*RateLimiterEntry{sentinel}})
+	send(connection, &RateLimiterBatch{SnapshotId: 1, SnapshotChunks: 1, Entries: []*RateLimiterEntry{{KeyId: "ver:99", IsTenant: true}}})
+	send(connection, &RateLimiterBatch{SnapshotId: 1, SnapshotChunks: 1, Entries: []*RateLimiterEntry{
+		sentinel, {KeyId: "unsupported:bucket", IsTenant: true},
+	}})
+	requireWarming("legacy, delta, unconfigured, and unsupported scope batches", true)
+
+	start := &RateLimiterBatch{SnapshotId: 2, SnapshotChunks: 2, Entries: full}
+	finish := &RateLimiterBatch{SnapshotId: 2, SnapshotChunks: 2, SnapshotIndex: 1, Entries: last}
+	send(connection, finish)
+	requireWarming("final chunk without prefix", true)
+	send(connection, start)
+	send(connection, start)
+	requireWarming("duplicated first chunk", true)
+	send(host+":40320", finish)
+	requireWarming("complete snapshot across reconnect", false)
+
+	coord.updateQuotaSnapshotRole(true)
+	requireWarming("fresh takeover", false)
+	coord.updateQuotaSnapshotRole(false)
+	send(connection, start)
+	send(connection, finish)
+	requireWarming("previous snapshot replay after demotion", true)
+	send(connection, &RateLimiterBatch{SnapshotId: 3, SnapshotChunks: 1, Entries: []*RateLimiterEntry{sentinel}})
+	requireWarming("complete empty snapshot", false)
+	coord.quotaSnapshotAt = time.Now().Add(-2 * quotaSnapshotMaxAge)
+	coord.updateQuotaSnapshotRole(true)
+	requireWarming("stale takeover", true)
+	send(connection, &RateLimiterBatch{SnapshotId: 4, SnapshotChunks: 1, Entries: []*RateLimiterEntry{sentinel}})
+	requireWarming("peer cannot release a strict cold master", true)
+}
+
+type failedQuotaTransport struct {
+	XSyncClient
+	closed int
+}
+
+func (c *failedQuotaTransport) RateLimiterSync(context.Context, *RateLimiterBatch, ...grpc.CallOption) (*XSyncReply, error) {
+	return nil, status.Error(codes.Unavailable, "peer restarted")
+}
+
+func (c *failedQuotaTransport) Close() error {
+	c.closed++
+	return nil
+}
+
+func TestManagedQuotaReconnectsAfterTransportError(t *testing.T) {
+	coord := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("192.0.2.94"), CapMask: capRateLimiterSync}
+	host := peer.Peer.String()
+	stale := &failedQuotaTransport{}
+	coord.StoreGRPCClient(host, stale)
+
+	if err := coord.sendRateLimiterBatch(peer, stale, nil, false, 1); status.Code(err) != codes.Unavailable {
+		t.Fatalf("managed quota push returned %v", err)
+	}
+	if _, ok := coord.spClients.Load(host); ok || stale.closed != 1 {
+		t.Fatalf("failed transport still cached=%t, close calls=%d", ok, stale.closed)
+	}
+	fresh := &failedQuotaTransport{}
+	coord.StoreGRPCClient(host, fresh)
+	coord.discardSockproxyClient(host, stale)
+	if got, _ := coord.spClients.Load(host); got != fresh || fresh.closed != 0 {
+		t.Fatal("late failure evicted a concurrent reconnect")
 	}
 }

@@ -102,7 +102,7 @@ eBPF map.
 | FAILOVER-7 | What happens to a saturated flow-control gate and its queue? | RECORDED |
 | FAILOVER-8a / FAILOVER-8b | Do 100 pinned conversations land on the same endpoint afterwards? 8a records the share and the mechanism; 8b is PASS/FAIL at 0.90 when the peer held the entries. | RECORDED / PASS/FAIL |
 | FAILOVER-9 | Failover while the key store is down; recovery when it returns, with no gateway restart. | PASS/FAIL (recovery) + RECORDED |
-| FAILOVER-10 | Promotion of a standby that restarted a moment ago. | RECORDED |
+| FAILOVER-10 | Does the restarted standby enforce the old master's quota debt on promotion while admitting the control tenant? | PASS/FAIL (quota) + RECORDED |
 | FAILOVER-11 | Failback: no second MASTER, the probe keeps answering, a tenant in debt stays refused. | PASS/FAIL + RECORDED |
 | FAILOVER-11r | Repeat after restarting the standby before the fault. The survivor keeps MASTER and the returning node remains BACKUP. | PASS/FAIL + RECORDED |
 | FAILOVER-12 | Does an isolated start serve the VIP, and does the peer rejoin without taking ownership or interrupting service? | PASS/FAIL |
@@ -183,11 +183,9 @@ NOT_RUN where the oracle refuses to judge).
 | `fo9-skip-pg-start` | PostgreSQL is not started again | FAILOVER-9 FAIL |
 | `fo11-no-debt` | the tenant is never put in debt | FAILOVER-11.debt NOT_RUN |
 
-`fo5-cut-xsync` cannot discriminate today: FAILOVER-5 already fails without it
-(the new master admits the tenant in debt once whether or not the sync
-channel carried the window). The mutation proves nothing about the FAILOVER-5
-oracle until FAILOVER-5 passes unmutated; when it does, `fo5-cut-xsync` must be run
-again and must turn FAILOVER-5 red before the FAILOVER-5 entry leaves `known-fail.tsv`.
+The `fo5-cut-xsync` control cuts quota replication before the active
+gateway builds debt. In the default profile, the FAILOVER-5 oracle must
+detect an admission before the original Retry-After expires.
 
 `drop-limit` is kept as a probe, not a mutation: tenant limits are in the
 shared store, so a node that was never sent one reads it back anyway.
