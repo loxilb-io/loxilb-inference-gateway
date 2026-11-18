@@ -3215,8 +3215,10 @@ gw_tasks() {
 # other_sys). It grows in 256 KiB chunks at moments the runtime chooses and is
 # never returned; it is not stream state, and the runtime reports it exactly
 # when it maps it, so it is READ here, not inferred from a jump. The heap
-# (heap_sys) and goroutine stacks (stack_sys) are deliberately NOT in this
-# sum: a Go-side leak lands there and must stay scored.
+# (heap_sys) and goroutine stacks (stack_sys) are not in this sum. H2-LIFE-003
+# no longer scores with it: it is printed as the previous formula's figure,
+# and the score subtracts the runtime's total instead (see the case's header
+# for what that means for a Go-side leak: below a large rate, it is not seen).
 gw_go_bookkeeping_kb() {
   local body
   body=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null)
@@ -3239,23 +3241,36 @@ gw_go_heap_kb() {
   esac
   printf '%s\n' "$body" | awk '/^go_memstats_heap_sys_bytes / { printf "%d", ($2 + 0) / 1024 }'
 }
-# gw_go_pageheap_kb -- heap_sys + stack_sys + gc_sys: everything the runtime
-# carves from its page heap, so it grows only when the runtime maps more.
-# heap_sys alone is not that: the runtime computes it as the page heap MINUS
-# in-use stack spans and GC work buffers, so it falls and rises again as
-# goroutine stacks and GC work buffers are taken from the heap and returned,
-# without a byte being mapped. H2-LIFE-003 reads this sum around every
-# data-segment read to tell a round in which the runtime mapped memory.
-gw_go_pageheap_kb() {
+# gw_go_pageheap_sys_kb -- two numbers from ONE scrape, "<page heap> <sys>":
+#
+#   * the page heap, heap_sys + stack_sys + gc_sys: everything the runtime
+#     carves from its page heap, so it grows only when the runtime maps more.
+#     heap_sys alone is not that: the runtime computes it as the page heap
+#     MINUS in-use stack spans and GC work buffers, so it falls and rises
+#     again as goroutine stacks and GC work buffers are taken from the heap
+#     and returned, without a byte being mapped;
+#   * sys (go_memstats_sys_bytes): the runtime's own total of everything it
+#     has mapped from the OS, heap, stacks and bookkeeping alike.
+#
+# H2-LIFE-003 reads this around every data-segment read: the page heap tells
+# a round in which the runtime grew its heap, and sys at the window's two ends
+# is what the score subtracts. One scrape for both, so the case scrapes the
+# endpoint exactly as often as before. Either number that cannot be read is
+# printed as "unreadable".
+gw_go_pageheap_sys_kb() {
   local body
   body=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null)
   case "$body" in
-    *go_memstats_heap_sys_bytes*go_memstats_stack_sys_bytes*|*go_memstats_stack_sys_bytes*go_memstats_heap_sys_bytes*) ;;
-    *) echo unreadable; return ;;
+    *go_memstats_heap_sys_bytes*) ;;
+    *) echo "unreadable unreadable"; return ;;
   esac
   printf '%s\n' "$body" | awk '
     /^go_memstats_(heap|stack|gc)_sys_bytes / { sum += $2 + 0; n++ }
-    END { if (n == 3) printf "%d", sum / 1024; else print "unreadable" }'
+    /^go_memstats_sys_bytes /                 { sys = $2 + 0; s = 1 }
+    END {
+      if (n == 3) printf "%d ", sum / 1024; else printf "unreadable "
+      if (s)      printf "%d", sys / 1024;  else printf "unreadable"
+    }'
 }
 
 # gw_maps_snapshot -- one line per private writable mapping of the gateway
@@ -3594,10 +3609,11 @@ echo "             climbing with the stream count."
 # window therefore runs on a constant thread count AND a constant page heap,
 # so its VmData growth is C-side state and the runtime's other bookkeeping,
 # as before, and the oracle and ceiling over it are unchanged. A Go-side leak
-# large enough to grow the heap every few rounds never gets six quiet rounds,
-# never settles, and fails on that; a C-side leak still moves VmData on a
-# constant heap and fails as before. A reading that is not a number flags
-# nothing.
+# that grows the heap every round never gets six quiet rounds, never
+# settles, and fails on that (a smaller one can pass: see "A GO-SIDE LEAK IS
+# NOT SEEN HERE" below); a C-side leak still moves VmData on a
+# constant heap and fails as before. A page-heap reading that is not a
+# number is handled like a step: it restarts the window, never subtracts one.
 #
 # The page heap is read as heap_sys + stack_sys + gc_sys, not heap_sys. The
 # runtime computes heap_sys as the page heap minus in-use stack spans and GC
@@ -3611,6 +3627,64 @@ echo "             climbing with the stream count."
 # draws the line itself: mheap.grow maps whole 4 MiB chunks (npage rounded
 # up to pallocChunkPages), never less. So a round is a heap event only when
 # the page heap grew by at least 4096 kB.
+#
+# 🚨 THE SUBTRACTION IS READ ON BOTH SIDES OF THE READING IT CORRECTS.
+#
+# The bookkeeping above was read on ONE side of each end's VmData read: after
+# it at the open, before it at the close, on the argument that a chunk mapped
+# in between could then only be scored, never subtracted. That made the case
+# strict in exactly the wrong place. On a stock build the runtime maps 64 KiB
+# pieces of its own (heap metadata and the like) at moments it chooses, and
+# the metrics scrape this case makes between the two reads is one of the
+# things that triggers them. Measured with an mmap ledger on the bed, every
+# map attributed to its caller:
+#
+#   closing gap  two 64 KiB runtime maps between the bookkeeping read and the
+#                VmData read; VmData +128, bookkeeping +0: scored +132, RED
+#                (two runs of ten); the runtime's total moved the same +128
+#   opening gap  three 64 KiB runtime maps between the VmData read and the
+#                bookkeeping read: scored +216 (a 24-round window), RED;
+#                the total moved +384, the bookkeeping +192
+#
+# Every VmData step of 64 kB or more in those runs was the runtime's own and
+# inside its total. So the window now subtracts the runtime's TOTAL
+# (go_memstats_sys_bytes: heap, stacks and bookkeeping alike), read in the
+# same two scrapes that already bracket every VmData read: the smaller of the
+# pair at the open, the larger at the close. Whatever the runtime maps around
+# either read is then the runtime's on both edges. Re-scored from the saved
+# readings, all seventeen instrumented runs are green (ten six-round windows,
+# the largest +24 kB; seven 24-round windows, the largest +56 kB). The
+# previous formula is still printed beside the score.
+#
+# What the wider subtraction does not give away: a heap step restarts the
+# window (above), and so does a round whose page heap could not be read on
+# both sides, so a completed window has no heap growth to subtract. What
+# remains scored is what C and glibc map, which is what this case is for.
+# Its price, at both edges: a runtime map
+# that lands between the scrape before the opening VmData read and that read
+# is already inside the opening VmData yet counted in the runtime's growth,
+# and one that lands after the closing VmData read but before the scrape that
+# follows it is counted although VmData never saw it. Either way the score can
+# be low by what the runtime mapped in that gap (64 KiB pieces; three of
+# them, 192 kB, in the opening gap measured above). And the limit stated earlier stands: growth INSIDE
+# memory already mapped -- a kilobyte-scale leak served from the allocator's
+# free pool -- does not move VmData and is not seen here at all.
+#
+# 🚨 A GO-SIDE LEAK IS NOT SEEN HERE, EVEN AT MEGABYTE SCALE.
+#
+# Measured on a throwaway build that keeps 16 KiB of Go heap per refusal
+# (2.4 MB per 150-stream round, on this case's own drive). The page heap
+# grew in bursts, +4 to +16 MiB in rounds 7-8 and 16-19, and not at all in
+# between: the GC pacer raises its heap goal in steps, and the leak then
+# fills pages the runtime has already mapped. Eight quiet rounds (about
+# 19 MB of leak) passed without a step, the window opened and closed inside
+# them, and the case PASSED at +0 kB; the previous formula read +0 kB too.
+# A leak four times that size (64 KiB per refusal, above) stepped the heap
+# every round and never settled. So the heap-step restart catches a Go-side
+# leak only while it outruns the pacer's headroom in every eight rounds;
+# below that, nothing in this suite sees a Go-side leak on this path, and
+# the Go unit tests have no leak check on the refusal path either. This case
+# guards C and glibc growth; it is not a Go leak check.
 #
 # An UNSETTLED run is a failed MEASUREMENT, not a detected leak, and says so.
 # So is a round that could not be read, and a series shorter than the rounds
@@ -3664,29 +3738,29 @@ H2L_SETTLED_AT=0
 H2L_HEAP_EVENTS=""
 H2L_HEAP_RESTARTS=0
 h2l_num() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
-H2L_HA_PREV=$(gw_go_pageheap_kb)
+read -r H2L_HA_PREV H2L_SA <<< "$(gw_go_pageheap_sys_kb)"
 H2L_PREV=$(gw_vmdata_kb)
-H2L_HB_PREV=$(gw_go_pageheap_kb)
+read -r H2L_HB_PREV H2L_SB <<< "$(gw_go_pageheap_sys_kb)"
 H2L_THR_PREV=$(gw_threads)
 H2L_TASKS_PREV=$(gw_tasks)
 while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
   h2l_round_drive
-  # On the round that would close the window, the runtime's counters are read
-  # BEFORE the data segment, and at the open they are read AFTER it. A chunk
-  # the runtime maps between the two reads (the metrics scrape itself can
-  # trigger one) then lands in the scored growth and not in the subtracted
-  # number, never the other way round: the ordering can only make the case
-  # stricter. A thread event on this round restarts the window and these two
-  # readings are simply taken again on the next closing round.
+  # The previous formula's bookkeeping reading, kept as a printed diagnostic
+  # only (see the header): at the close it is read BEFORE the data segment and
+  # at the open AFTER it, so a runtime chunk mapped in between lands in the
+  # growth and not in the subtraction. That ordering is what made this case
+  # flake; the score now uses the runtime's total read on BOTH sides of the
+  # data-segment read, below.
   if [ "$H2L_PHASE" = measure ] && [ $((H2L_WINDOW + 1)) -ge "$H2L_MEAS_ROUNDS" ]; then
     H2L_BOOK3=$(gw_go_bookkeeping_kb)
     H2L_HEAP3=$(gw_go_heap_kb)
   fi
-  # The page heap brackets every data-segment read: once before, once after.
-  H2L_HA=$(gw_go_pageheap_kb)
+  # The page heap and the runtime's total bracket every data-segment read:
+  # once before (A), once after (B), from the same two scrapes.
+  read -r H2L_HA H2L_SA <<< "$(gw_go_pageheap_sys_kb)"
   H2L_NOW=$(gw_vmdata_kb)
-  H2L_HB=$(gw_go_pageheap_kb)
+  read -r H2L_HB H2L_SB <<< "$(gw_go_pageheap_sys_kb)"
   H2L_THR=$(gw_threads)
   H2L_TASKS_NOW=$(gw_tasks)
   # Did the runtime map memory inside the interval this round's VmData step covers,
@@ -3694,8 +3768,14 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   # round's closing read shows as B moving since that read; a step between
   # the previous VmData read and that closing read shows as the previous
   # round's own pair disagreeing. The two cover the interval with no
-  # gap. A reading that is not a number flags nothing -- the round is then
-  # scored exactly as before.
+  # gap. A page-heap reading that is not a number cannot rule a step out,
+  # and the window subtracts the runtime's total, which would contain one: so
+  # a round without both of its own readings and both of the previous round's
+  # is handled like a heap step (H2L_HUNREAD), never counted as quiet.
+  H2L_HUNREAD=0
+  if ! h2l_num "$H2L_HA" || ! h2l_num "$H2L_HB" || ! h2l_num "$H2L_HA_PREV" || ! h2l_num "$H2L_HB_PREV"; then
+    H2L_HUNREAD=1
+  fi
   H2L_HGROW=0
   if h2l_num "$H2L_HB" && h2l_num "$H2L_HB_PREV" && [ "$H2L_HB" -gt "$H2L_HB_PREV" ]; then
     H2L_HGROW=$(( H2L_HB - H2L_HB_PREV ))
@@ -3706,7 +3786,7 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   H2L_HA_PREV=$H2L_HA
   H2L_HB_PREV=$H2L_HB
   # Below one whole chunk the page heap did not grow: that is GC metadata
-  # (gc_sys), which stays scored and is subtracted with the bookkeeping.
+  # (gc_sys), which the window's subtraction of the runtime's total covers.
   [ "$H2L_HGROW" -lt "$H2L_HEAP_STEP_KB" ] && H2L_HGROW=0
   if [ "$H2L_PREV" = unreadable ] || [ -z "$H2L_NOW" ] || [ -z "$H2L_THR" ] ||
      [ "$H2L_THR_PREV" = unreadable ] || [ "$H2L_THR" = unreadable ]; then
@@ -3734,8 +3814,12 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
     continue
   fi
   H2L_TASKS_PREV=$H2L_TASKS_NOW
-  if [ "$H2L_HGROW" -gt 0 ]; then
-    H2L_HEAP_EVENTS="$H2L_HEAP_EVENTS round $H2L_ROUNDS: Go page heap +$H2L_HGROW kB, VmData +$H2L_D kB;"
+  if [ "$H2L_HGROW" -gt 0 ] || [ "$H2L_HUNREAD" = 1 ]; then
+    if [ "$H2L_HUNREAD" = 1 ]; then
+      H2L_HEAP_EVENTS="$H2L_HEAP_EVENTS round $H2L_ROUNDS: Go page heap unreadable, VmData +$H2L_D kB;"
+    else
+      H2L_HEAP_EVENTS="$H2L_HEAP_EVENTS round $H2L_ROUNDS: Go page heap +$H2L_HGROW kB, VmData +$H2L_D kB;"
+    fi
     if [ "$H2L_PHASE" = measure ]; then
       H2L_HEAP_RESTARTS=$((H2L_HEAP_RESTARTS + 1))
       H2L_PHASE=warm
@@ -3758,6 +3842,13 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
       H2L_DATA0=$H2L_NOW
       H2L_RSS0=$(gw_rss_kb)
       H2L_THR0=$H2L_THR
+      # the runtime's total at the open: the SMALLER of the two readings
+      # bracketing this data-segment read, so anything the runtime mapped
+      # around the read counts as the runtime's, never as unexplained growth
+      H2L_SYS0=unreadable
+      if h2l_num "$H2L_SA" && h2l_num "$H2L_SB"; then
+        H2L_SYS0=$H2L_SA; [ "$H2L_SB" -lt "$H2L_SYS0" ] && H2L_SYS0=$H2L_SB
+      fi
       H2L_BOOK0=$(gw_go_bookkeeping_kb)
       H2L_HEAP0=$(gw_go_heap_kb)
       gw_maps_snapshot .h2l_maps_before
@@ -3769,6 +3860,11 @@ while [ "$H2L_ROUNDS" -lt "$H2L_ROUND_CAP" ]; do
   if [ "$H2L_WINDOW" -ge "$H2L_MEAS_ROUNDS" ]; then
     H2L_DONE=1
     H2L_DATA3=$H2L_NOW
+    # and at the close: the LARGER of the two bracketing readings
+    H2L_SYS3=unreadable
+    if h2l_num "$H2L_SA" && h2l_num "$H2L_SB"; then
+      H2L_SYS3=$H2L_SA; [ "$H2L_SB" -gt "$H2L_SYS3" ] && H2L_SYS3=$H2L_SB
+    fi
     H2L_THR3=$H2L_THR
     break
   fi
@@ -3839,14 +3935,28 @@ else
      [ -n "$H2L_HEAP0" ] && [ -n "$H2L_HEAP3" ]; then
     H2L_HEAP=$(( H2L_HEAP3 - H2L_HEAP0 ))
   fi
-  H2L_NET=$(( H2L_GROW - H2L_BOOK ))
+  # The previous formula, printed beside the score and NOT scored.
+  H2L_OLDNET=$(( H2L_GROW - H2L_BOOK ))
+  [ "$H2L_OLDNET" -lt 0 ] && H2L_OLDNET=0
+  # The score: VmData growth minus what the runtime itself mapped over the
+  # window, its total (sys) read on both sides of each end's data-segment read.
+  # Unreadable accounting attributes nothing: the whole growth stays scored.
+  H2L_RT=0
+  if h2l_num "${H2L_SYS0:-}" && h2l_num "${H2L_SYS3:-}"; then
+    H2L_RT=$(( H2L_SYS3 - H2L_SYS0 ))
+    [ "$H2L_RT" -lt 0 ] && H2L_RT=0
+    echo "         of which the Go runtime mapped (go_memstats_sys_bytes, read before and after each end's VmData read): +${H2L_RT} kB"
+  else
+    echo "         Go runtime total unreadable on the metrics endpoint: nothing attributed, the whole growth is scored"
+  fi
+  H2L_NET=$(( H2L_GROW - H2L_RT ))
   [ "$H2L_NET" -lt 0 ] && H2L_NET=0
   if [ "$H2L_BOOK0" = unreadable ] || [ "$H2L_BOOK3" = unreadable ] || [ -z "$H2L_BOOK0" ] || [ -z "$H2L_BOOK3" ]; then
-    echo "         Go runtime accounting unreadable on the metrics endpoint: nothing attributed, the whole growth is scored"
+    echo "         previous formula (bookkeeping read on one side of each end): unreadable (diagnostic, not scored)"
   else
-    echo "         of which the Go runtime's own bookkeeping (mspan/mcache/gc/buckhash/other sys, from its metrics): +${H2L_BOOK} kB"
-    echo "         Go heap sys moved ${H2L_HEAP} kB (inside the scored number, never subtracted)"
+    echo "         previous formula (mspan/mcache/gc/buckhash/other sys +${H2L_BOOK} kB, read on one side of each end): +${H2L_OLDNET} kB (diagnostic, not scored)"
   fi
+  echo "         Go heap sys moved ${H2L_HEAP} kB (diagnostic)"
   echo "         unaccounted growth: +${H2L_NET} kB (ceiling ${H2L_DATA_KB} kB)"
   if [ "$H2L_NET" -le "$H2L_DATA_KB" ]; then
     echo "  [PASS] H2-LIFE-003 data segment flat across $H2L_MEAS_STREAMS reset streams on a settled"
@@ -3855,8 +3965,8 @@ else
     echo "         late in the suite absorbs a kilobyte-per-stream leak; see the header"
     PASS=$((PASS + 1))
   else
-    echo "  [FAIL] H2-LIFE-003 - the data segment grew +${H2L_NET} kB beyond the Go runtime's own"
-    echo "         bookkeeping over $H2L_MEAS_STREAMS reset streams on a settled process with a constant"
+    echo "  [FAIL] H2-LIFE-003 - the data segment grew +${H2L_NET} kB beyond what the Go runtime"
+    echo "         itself mapped over $H2L_MEAS_STREAMS reset streams on a settled process with a constant"
     echo "         thread count ($H2L_THR0 -> $H2L_THR3; ceiling ${H2L_DATA_KB} kB; about $(( H2L_NET * 1000 / H2L_MEAS_STREAMS )) bytes per stream). VmData is never"
     echo "         scavenged back, so this is memory allocated and not returned, not"
     echo "         resident-page noise"
