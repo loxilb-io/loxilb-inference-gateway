@@ -1,62 +1,14 @@
 # Run last. The two nodes use --ha-frontend-interface on their existing
 # customer veths while BFD continues on the Docker bridge.
-frontend_vip() {
-  $hexec "$1" ip -o -4 addr show | grep -q " $VIP/"
-}
-
-frontend_bfd_up() {
-  api_get "$1" /config/bfd/all | grep -q '"BFDUp"'
-}
-
-frontend_owned() {
-  local m=$1 b=$2
-  [ "$(role "$m")" = MASTER ] && [ "$(role "$b")" = BACKUP ] &&
-    frontend_vip "$m" && ! frontend_vip "$b"
-}
-
-frontend_wait() {
-  local duration=$1 deadline
-  shift
-  deadline=$(( $(now_ms) + duration ))
-  while [ "$(now_ms)" -lt "$deadline" ]; do
-    "$@" && return 0
-    sleep 0.1
-  done
-  return 1
-}
-
-frontend_no_owner() {
-  local n
-  for n in $NODES; do
-    [ "$(role "$n")" = BACKUP ] && ! frontend_vip "$n" || return 1
-  done
-}
-
 frontend_case() (
-  local dir="$OUT/frontend" n m b t0 elapsed old_index new_index pid1 pid2 rc1=0 rc2=0
+  local dir="$OUT/frontend" n m b t0 elapsed old_index new_index
   mkdir -p "$dir"
   trap 'for n in $NODES; do [ ! -f "$dir/$n-command" ] || cp "$dir/$n-command" "$HAFO_DIR/.${n}-cmdline"; done' EXIT
   if ! wait_roles 60 6; then
     verdict FAILOVER-FRONTEND NOT_RUN "pair did not converge before frontend validation"
     return
   fi
-  for n in $NODES; do
-    cp "$HAFO_DIR/.${n}-cmdline" "$dir/$n-command"
-    printf '%s --ha-frontend-interface=e%s%s\n' "$(cat "$dir/$n-command")" "$n" "$SW_C" > "$HAFO_DIR/.${n}-cmdline"
-    node_death "$n" >/dev/null
-  done
-  if ! node_start_pair > "$dir/pair-start.log" 2>&1; then
-    verdict FAILOVER-FRONTEND NOT_RUN "could not start both frontend test containers"
-    return
-  fi
-  read -r m b <<< "$NODES"
-  node_return "$m" > "$dir/$m-start.log" 2>&1 & pid1=$!
-  node_return "$b" > "$dir/$b-start.log" 2>&1 & pid2=$!
-  wait "$pid1" || rc1=$?
-  wait "$pid2" || rc2=$?
-  if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || ! apply_cfg "$m" "" returning ||
-     ! apply_cfg "$b" "" returning || ! wait_roles 100 6 ||
-     ! frontend_wait 10000 frontend_owned "$MASTER_NODE" "$BACKUP_NODE"; then
+  if ! frontend_start_pair "$dir"; then
     verdict FAILOVER-FRONTEND NOT_RUN "frontend-enabled pair did not reach a single VIP owner"
     return
   fi
