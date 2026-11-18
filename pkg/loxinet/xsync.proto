@@ -100,6 +100,10 @@ message RateLimiterEntry {
 message RateLimiterBatch {
     bool is_delta = 1;            // false = absolute A-P snapshot; true = A-A delta
     repeated RateLimiterEntry entries = 2;
+    // Nonzero only for complete-state pushes from a managed A-P peer.
+    uint64 snapshot_id = 3;
+    uint32 snapshot_index = 4;  // zero-based
+    uint32 snapshot_chunks = 5;
 }
 
 // VllmWorkerMetrics — placeholder (queue depth, GPU cache %).

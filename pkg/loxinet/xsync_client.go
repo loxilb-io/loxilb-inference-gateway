@@ -84,6 +84,15 @@ func dialHTTPPath(network, address, path string) (*rpc.Client, error) {
 	}
 }
 
+type sockproxyPeerClient struct {
+	XSyncClient
+	conn *grpc.ClientConn
+}
+
+func (c *sockproxyPeerClient) Close() error {
+	return c.conn.Close()
+}
+
 // DialXSyncGRPC opens a fresh gRPC connection to peerIP:SockproxyXSyncPort (22223)
 // and returns the XSyncClient stub. The sockproxy xSync consumerLoop uses this
 // dedicated port so that it speaks gRPC/HTTP2 independently of the CT-sync
@@ -92,17 +101,14 @@ func dialHTTPPath(network, address, path string) (*rpc.Client, error) {
 // SockproxyXSyncPort (22223, gRPC HTTP/2) so the protocol matches the server.
 func DialXSyncGRPC(peerIP string) (XSyncClient, error) {
 	cStr := net.JoinHostPort(peerIP, strconv.Itoa(SockproxyXSyncPort))
-	if _, err := net.DialTimeout("tcp", cStr, 2*time.Second); err != nil {
-		return nil, fmt.Errorf("TCP probe %s: %w", cStr, err)
-	}
-	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	conn, err := grpc.Dial(cStr, opts...)
-	if conn == nil || err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, cStr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithReturnConnectionError())
+	if err != nil {
 		return nil, fmt.Errorf("gRPC dial %s: %w", cStr, err)
 	}
 	tk.LogIt(tk.LogInfo, "XSync gRPC sockproxy - %s :Connected\n", cStr)
-	return NewXSyncClient(conn), nil
+	return &sockproxyPeerClient{XSyncClient: NewXSyncClient(conn), conn: conn}, nil
 }
 
 func netRPCConnect(pe *DpPeer) int {

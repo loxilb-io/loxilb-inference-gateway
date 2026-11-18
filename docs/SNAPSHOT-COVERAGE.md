@@ -140,6 +140,28 @@ a rule declares — `inherit` or an absent knob — never the value it resolves
 to. Restoring onto a node with a different environment therefore yields
 different effective settings; CI `ai-tenant` X12 pins this.
 
+
+For managed on-premises L2 BFD pairs, the active gateway sends a complete
+token-quota snapshot on the nominal 200 ms replication cycle. A restarting
+standby waits for every chunk of a scope-compatible snapshot. By default a
+cold active can admit TPM-limited requests after the `LLB_AI_QUOTA_WARMUP_MS` deadline
+(3000 ms), with a log and the `loxilb_ai_token_quota_cold_open_total`
+metric. The deadline begins when the cold gateway starts serving or publishing
+as active.
+
+Set `LLB_AI_QUOTA_REQUIRE_SYNC=1` on a managed pair member to return HTTP
+429 `token_quota_warming` for TPM-limited requests if the promoted member
+has received no complete snapshot in the last two seconds. Other admissions
+follow their existing policies. Upgrade both members first. To enable strict
+mode, restart the standby in strict mode, verify it logs that it warmed from
+peer state, hand off the active role, and repeat for the former active.
+After a simultaneous loss of both in-memory stores, strict mode holds
+TPM-limited admissions. To resume from fresh counters, make a member using
+the default bounded warmup profile active, confirm that its standby has
+received a complete snapshot, and roll strict mode back in. Snapshot
+replication is asynchronous, so a debit made after the last received snapshot
+can still be lost in a hard failure.
+
 ### Lifecycle operations
 
 `/config/persist`, `/config/restore`, `/config/import` move configuration
