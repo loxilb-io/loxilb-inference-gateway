@@ -10,18 +10,14 @@
 #   FAILOVER-8a  the session_header_name rule: which mechanism picks the endpoint,
 #          and what share of 100 pinned conversations lands on the same
 #          endpoint after the fault. RECORDED.
-#   FAILOVER-8b  the same question as a PASS/FAIL at 0.90 (the documented claim),
-#          with the precondition that the peer held the entries before the
-#          fault. Only meaningful when the choice is held as synced state.
+#   The dedicated affinity case qualifies the peer's installed mappings.
 #
-# Mutations: fo5-cut-xsync / fo8-cut-xsync cut the sync channel before the
-# state is created (the three guards are then skipped on purpose, so the
-# oracle itself has to fail); fo8-ep-order gives the peer the affinity rule
-# with its endpoints in the opposite order (config.sh).
+# Mutations: fo5-cut-xsync cuts sync before the quota debt is created;
+# fo8-ep-order changes peer config parity (config.sh).
 
 echo; echo "FAILOVER-5 / FAILOVER-8  Quota debt and conversation affinity through a failover"
 D_DIR="$OUT/fo5-8"; mkdir -p "$D_DIR"
-d_notrun() { for c in FAILOVER-5 FAILOVER-8a FAILOVER-8b; do verdict "$c" NOT_RUN "$1"; done; }
+d_notrun() { for c in FAILOVER-5 FAILOVER-8a; do verdict "$c" NOT_RUN "$1"; done; }
 conv_gauge() { metric "$1" loxilb_proxy_conversation_sessions; }
 sess_push()  { metric "$1" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="SockproxySessionMod"'; }
 
@@ -30,7 +26,7 @@ if ! fo_begin; then
 else
   CUT=0
   case "${HAFO_MUTATE:-}" in
-    fo5-cut-xsync|fo8-cut-xsync)
+    fo5-cut-xsync)
       CUT=1; xsync_cut; sleep 1
       note "FAILOVER-5/8: MUTATION, the sync channel is cut before any state is created" ;;
   esac
@@ -66,7 +62,6 @@ else
   if sync_advanced; then sync_txt="advanced $SYNC_MARK -> $SYNC_NOW"; else sync_txt="did NOT advance ($SYNC_MARK)"; [ "$CUT" = 1 ] || pre_ok=0; fi
   sleep 1
   conv_after_s=$(conv_gauge "$S"); conv_m=$(conv_gauge "$M"); push_after=$(sess_push "$M")
-  peer_held=$(awk "BEGIN{print ($conv_after_s - $conv_before_s >= 100) ? 1 : 0}" 2>/dev/null)
   {
     echo "RateLimiterSync push count on $M: $sync_txt"
     echo "SockproxySessionMod push count on $M: $push_before -> $push_after"
@@ -111,15 +106,6 @@ else
     read -r same total share distinct <<<"$(conv_share "$D_DIR/conv-turn1.json" "$D_DIR/conv-turn3.json")"
     failed3=$(jget "sum(1 for v in d.values() if v.startswith('!'))" < "$D_DIR/conv-turn3.json")
     verdict FAILOVER-8a RECORDED "after the fault $same of $total conversations landed on their pinned endpoint (share $share; $failed3 requests failed). Peer table gauge on $S before the fault: $conv_before_s -> $conv_after_s; session pushes on $M: $push_before -> $push_after; sync cut: $CUT"
-    if [ "$peer_held" != 1 ]; then
-      # No downgrade and no PASS by another mechanism: 8b judges synced
-      # state only, and says so when there was none to judge.
-      verdict FAILOVER-8b NOT_RUN "precondition: the peer's conversation table did not show the 100 entries before the fault (gauge on $S $conv_before_s -> $conv_after_s; sync cut: $CUT), so the share of $share above was not produced by synced state"
-    elif awk "BEGIN{exit !($share >= 0.90)}"; then
-      verdict FAILOVER-8b PASS "same-endpoint share $share >= 0.90 over $total conversations (four endpoints, chance 0.25); the peer held the entries before the fault ($conv_before_s -> $conv_after_s)"
-    else
-      verdict FAILOVER-8b FAIL "same-endpoint share $share < 0.90 over $total conversations ($failed3 requests failed)"
-    fi
     [ "$CUT" = 1 ] && { note "sync cut dropped $(xsync_dropped) packets"; xsync_restore; }
     fo_restore
   fi

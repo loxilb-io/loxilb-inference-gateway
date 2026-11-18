@@ -7350,6 +7350,8 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.ModelName = r.tuples.modelName         // AI model name for pool selection
 	nWork.BackendProtocol = r.backendProtocol    // Backend protocol capability
 	nWork.MCPProtocolVersion = r.mcpProtocolVersion
+	// The guard keeps the VIP unroutable on BACKUP while the affinity pool is prepared.
+	nWork.HAListenerFreebind = r.haForwardGuard && r.sessionHeaderName != "" && !r.pdDisaggMode
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
 	nWork.SSEMode = r.sseMode                                         // SSE streaming mode
 	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane credential policy, as declared (encoder resolves)

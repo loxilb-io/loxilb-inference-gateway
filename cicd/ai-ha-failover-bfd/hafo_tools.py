@@ -295,7 +295,11 @@ def cmd_burst(args):
 
 def cmd_conv(args):
     """One request per conversation id; prints {id: backend label or outcome}."""
-    ids = ["%s-%d" % (args.prefix, i) for i in range(args.n)]
+    if args.ids_file:
+        with open(args.ids_file, encoding="ascii") as source:
+            ids = source.read().splitlines()
+    else:
+        ids = ["%s-%d" % (args.prefix, i) for i in range(args.n)]
     res = {}
     lock = threading.Lock()
     sem = threading.Semaphore(args.parallel)
@@ -658,7 +662,10 @@ def main():
     p.add_argument("--model", required=True)
     p.add_argument("--header", action="append", default=[])
     p.add_argument("--conv-header", default="X-Conversation-Id")
-    p.add_argument("--prefix", required=True)
+    ids = p.add_mutually_exclusive_group(required=True)
+    ids.add_argument("--prefix")
+    ids.add_argument("--ids-file")
+    p.add_argument("--require-content-length", action="store_true")
     p.add_argument("--n", type=int, default=100)
     p.add_argument("--parallel", type=int, default=8)
     p.add_argument("--connect-timeout", type=float, default=0.5)
