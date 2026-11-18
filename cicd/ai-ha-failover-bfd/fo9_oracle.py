@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check FO-9 from timestamped client and survivor observations."""
+"""Check policy store failover from timestamped client and survivor observations."""
 import json
 import sys
 from pathlib import Path

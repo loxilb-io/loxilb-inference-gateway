@@ -136,8 +136,8 @@ def one_request(args, seq, out=None, lock=None, headers=None):
             # A 200 status line and then a body that ended without its terminator.
             rec["cls"] = "closed_without_done"
         elif rec["status"] == 200:
-            # FO-9 uses the fixed-length echo. A clean TCP EOF after a
-            # partial body still fails that customer's request.
+            # Store failover probes use the fixed-length echo. A clean TCP
+            # EOF after a partial body still fails that customer's request.
             body = data.split(b"\r\n\r\n", 1)
             length = re.search(rb"\r\nContent-Length:[ \t]*([0-9]+)[ \t]*(?:\r\n|$)", body[0], re.I)
             if getattr(args, "require_content_length", False) and (
