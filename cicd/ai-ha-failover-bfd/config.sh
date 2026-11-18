@@ -264,7 +264,7 @@ rule $PORT_KEY $MODEL_KEY "$EPS1" ',"api_key_auth":"required"'
 rule $PORT_JWT $MODEL_JWT "$EPS1" ',"api_key_auth":"jwt","jwt_auth_profile":"kc"'
 rule $PORT_FC  $MODEL_FC  "$EPSW" ',"fc_mode":"enforce","fc_max_outstanding":2,"fc_max_queue_depth":4,"fc_max_queue_wait_ms":20000'
 rule $PORT_WIT $MODEL_WIT "$EPSW" ',"api_key_auth":"required"'
-rule $PORT_AFF $MODEL_AFF "$EPS4" ',"session_header_name":"X-Conversation-Id"'
+rule $PORT_AFF $MODEL_AFF "$EPS4" ',"session_header_name":"X-Conversation-Id","monitor":true,"probetype":"tcp","probeport":8080,"probeTimeout":3,"probeRetries":1'
 # Tenants. The debt tenants have a bound of 10 tokens/min; a case puts one in
 # debt with a single answer that reports 60 tokens (the witness backend), so
 # the debt outlasts a failover. How long a refusal must last is never assumed:

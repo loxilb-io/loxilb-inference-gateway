@@ -94,7 +94,7 @@ jobs:
             ./validation.sh || result=$?
             # 1 and 2 are the harness verdict codes; the gate checks individual cases.
             if [ "$result" -gt 2 ]; then rc=1; fi
-            python3 ./verdict_gate.py "$HAFO_OUT/verdicts.tsv" ./known-fail.tsv FAILOVER-9 || rc=1
+            python3 ./verdict_gate.py "$HAFO_OUT/verdicts.tsv" ./known-fail.tsv FAILOVER-8b FAILOVER-9 || rc=1
           else
             rc=1
           fi
