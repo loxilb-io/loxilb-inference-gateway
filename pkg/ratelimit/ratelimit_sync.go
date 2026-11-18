@@ -346,7 +346,7 @@ func (s *RateLimiterStore) ImportState(entries []RateLimiterEntry) {
 	// opposite of the truth. A batch that merged nothing leaves the warmup
 	// running, so the next chunk — or the deadline, honestly reported —
 	// settles it instead.
-	if merged > 0 {
+	if merged > 0 && !s.snapshotWarmup {
 		s.endQuotaWarmup(false)
 	}
 }
@@ -451,7 +451,7 @@ func (s *RateLimiterStore) ApplyGossipDelta(entries []RateLimiterEntry) {
 	}
 	// Same rule as ImportState: a batch that taught this node no quota
 	// state does not end the cold-start warmup.
-	if merged > 0 {
+	if merged > 0 && !s.snapshotWarmup {
 		s.endQuotaWarmup(false)
 	}
 }

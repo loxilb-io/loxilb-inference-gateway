@@ -3,8 +3,8 @@
 # State is built on the MASTER (a tenant in quota debt, 100 pinned
 # conversations). The standby is then taken away and returned (reboot
 # emulation), and the moment the roles hold for two samples the MASTER dies.
-# Everything here is RECORDED: the affinity share, what the tenant in debt
-# gets, the cold-open metric, and the token_quota_warming answers.
+# Judge quota continuity using the old master's Retry-After and independent
+# backend receipts. Record the affinity share and cold-open metric.
 
 echo; echo "FAILOVER-10  Promotion of a standby that just restarted"
 F10_DIR="$OUT/fo10"; mkdir -p "$F10_DIR"
@@ -50,7 +50,20 @@ else
         rc=$(vretry $PORT_KEY $MODEL_KEY "X-Api-Key: $KC" 60 fo10-ctl); echo "$rc" > "$F10_DIR/ctl-retry.json"
         vconv $PORT_AFF $MODEL_AFF "t$$" 100 > "$F10_DIR/conv-turn3.json"
         read -r same total share distinct <<<"$(conv_share "$F10_DIR/conv-turn1.json" "$F10_DIR/conv-turn3.json")"
-        verdict FAILOVER-10.quota RECORDED "tenant in debt on the promoted, just-restarted standby: $(echo "$w" | jget "' '.join('%s x%d' % (a, b) for a, b in d['sequence'])"); admissions earlier than the gateway's own Retry-After allowed: $(echo "$w" | jget "d['leaks']") (horizon from the old master: refresh saw $DEBT_REFRESH, usable=$([ $refresh_ok = 0 ] && echo yes || echo no)); refused attempts that reached a backend: $leak_rcpt; control tenant: $(echo "$rc" | jget "' '.join('%s x%d' % (a, b) for a, b in d['sequence'])")"
+        leaks=$(echo "$w" | jget "d['leaks']")
+        n429=$(echo "$w" | jget "d['refused_429_after_mark']")
+        gctl=$(receipts "$(echo "$rc" | jget "d['last_nonce']")")
+        ctl_ok=$(echo "$rc" | jget "d['ok']")
+        detail="Retry-After refresh saw $DEBT_REFRESH; early admissions=$leaks refusals=$n429 refused receipts=$leak_rcpt control ok=$ctl_ok receipts=$gctl"
+        if [ "$refresh_ok" != 0 ]; then
+          verdict FAILOVER-10.quota NOT_RUN "no usable Retry-After from the incumbent; $detail"
+        elif [ "$leaks" != 0 ] || [ "$leak_rcpt" != 0 ] || [ "$ctl_ok" != True ] || [ "$gctl" != 1 ]; then
+          verdict FAILOVER-10.quota FAIL "$detail"
+        elif [ "$n429" -ge 5 ]; then
+          verdict FAILOVER-10.quota PASS "$detail"
+        else
+          verdict FAILOVER-10.quota NOT_RUN "too few refusals after failover; $detail"
+        fi
         verdict FAILOVER-10.affinity RECORDED "$same of $total conversations pinned before the standby restarted landed on their endpoint after it was promoted (share $share, four endpoints); conversation gauge on $S: $conv_s_before before its restart, $conv_s_restarted after it, before the fault"
         verdict FAILOVER-10.cold-open RECORDED "loxilb_ai_token_quota_cold_open_total: before [$cold_before]; on $S after its restart $cold_restarted, after promotion $(metric "$S" loxilb_ai_token_quota_cold_open_total)"
         verdict FAILOVER-10 RECORDED "roles held $conv_ms ms after the standby's return began and the master died $(( T0 - rs0 - conv_ms )) ms after that; see FAILOVER-10.quota, FAILOVER-10.affinity, FAILOVER-10.cold-open"
