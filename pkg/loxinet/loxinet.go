@@ -719,6 +719,10 @@ func loxiNetInit() {
 			copy(out, mh.dp.Peers)
 			return out
 		}
+		// Register the store on both nodes before election and customer traffic.
+		if mh.has.protectsL2VIP(cmn.CIDefault) {
+			getGlobalRL()
+		}
 		mh.sockproxySync.Start(peersFn)
 
 		// Bug Fix: CT-sync uses net/rpc and sets

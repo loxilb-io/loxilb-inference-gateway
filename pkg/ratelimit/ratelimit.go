@@ -201,6 +201,11 @@ type RateLimiterStore struct {
 	// guarantees it), with failOpen=true when the warmup deadline expired
 	// before any peer state arrived. Immutable after StartQuotaWarmup.
 	warmDone func(failOpen bool)
+	// Managed A-P warmup requires a complete snapshot. For the compatible
+	// fail-open profile the deadline starts only when serving becomes possible.
+	snapshotWarmup   bool
+	snapshotDeadline time.Duration
+	snapshotTimer    sync.Once
 }
 
 // Token-quota warm states (RateLimiterStore.warmState).
@@ -270,7 +275,7 @@ type tokenWindowEntry struct {
 	//
 	// Only local activity advances it, so no peer can reach it.
 	reservedEpoch int64
-	limitTokens int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
+	limitTokens   int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
 	// burstPct is the tenant's bucket-capacity knob in percent of
 	// limitTokens, published alongside limitTokens on every charge and
 	// reservation. Keeping it on the entry rather than passing it to every
@@ -359,9 +364,39 @@ func (s *RateLimiterStore) StartQuotaWarmup(timeout time.Duration, onDone func(f
 	time.AfterFunc(timeout, func() { s.endQuotaWarmup(true) })
 }
 
-// QuotaWarming reports whether the store is still waiting for peer quota
-// state after a cold start. Atomic read — safe on the hot path.
+// StartQuotaSnapshotWarmup selects the managed A-P readiness contract.
+// Configure it before registering the store. With no deadline the store
+// waits for a complete peer snapshot.
+func (s *RateLimiterStore) StartQuotaSnapshotWarmup(timeout time.Duration, onDone func(bool)) {
+	s.snapshotWarmup = true
+	s.snapshotDeadline = timeout
+	s.warmDone = onDone
+	s.warmState.Store(quotaWarming)
+}
+
+// ConfirmQuotaSnapshot is called only after all chunks were validated and merged.
+func (s *RateLimiterStore) ConfirmQuotaSnapshot() {
+	s.endQuotaWarmup(false)
+}
+
+// RequireQuotaSnapshot closes the strict gate after role change invalidates
+// the receiver's last confirmation.
+func (s *RateLimiterStore) RequireQuotaSnapshot() {
+	s.warmState.Store(quotaWarming)
+}
+
+// QuotaWarming reports whether the store is waiting for quota state. Managed
+// A-P callers invoke this on quota admission and on MASTER publication, so a
+// standby cannot exhaust its fail-open deadline while waiting for the incumbent.
 func (s *RateLimiterStore) QuotaWarming() bool {
+	if s.warmState.Load() != quotaWarming {
+		return false
+	}
+	if s.snapshotDeadline > 0 {
+		s.snapshotTimer.Do(func() {
+			time.AfterFunc(s.snapshotDeadline, func() { s.endQuotaWarmup(true) })
+		})
+	}
 	return s.warmState.Load() == quotaWarming
 }
 

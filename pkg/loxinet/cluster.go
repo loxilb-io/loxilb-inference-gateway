@@ -673,6 +673,9 @@ func (ch *CIStateH) CIStateUpdate(cm cmn.HASMod) (int, error) {
 		ci.State = ch.StateMap[cm.State]
 		ci.Vip = cm.Vip
 
+		if mh.sockproxySync != nil && ch.protectsL2VIP(cm.Instance) {
+			mh.sockproxySync.updateQuotaSnapshotRole(cm.State == cmn.CIMasterStateString)
+		}
 		if mh.bgp != nil {
 			mh.bgp.UpdateCIState(cm.Instance, ci.State, ci.Vip)
 		}

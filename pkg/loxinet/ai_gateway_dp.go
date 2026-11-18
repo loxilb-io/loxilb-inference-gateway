@@ -723,31 +723,50 @@ func quotaWarmupTimeout() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
+func quotaSyncPeersConfigured() bool {
+	if mh.dp == nil {
+		return false
+	}
+	mh.dp.SyncMtx.RLock()
+	defer mh.dp.SyncMtx.RUnlock()
+	return len(mh.dp.Peers) > 0
+}
+
 func getGlobalRL() *rl.RateLimiterStore {
 	globalRLOnce.Do(func() {
 		globalRL = rl.New()
-		// Cold-start posture (design decision: warm from peers with a
-		// bounded timeout, then fail-open — never silently). The store
-		// starts empty on every process start; with sync peers configured
-		// we hold quota-limited admissions until the first peer batch
-		// re-teaches the counters or the deadline passes. Without peers
-		// (single-node edge) there is nothing to warm from: serve
-		// immediately, but mark the cold fail-open window with the metric.
-		// Must run BEFORE SetRateLimiterStore — a peer batch that landed
-		// between registration and a later warmup arm would have its
-		// warm signal dropped.
+		// Configure the admission gate before publishing the shared store
+		// so even the first incoming batch can contribute to its warmup.
 		warmup := quotaWarmupTimeout()
-		if warmup > 0 && mh.dp != nil && len(mh.dp.Peers) > 0 {
+		coord := NewSockproxySync()
+		managedPair := mh.has != nil && mh.has.protectsL2VIP(cmn.CIDefault)
+		strict := managedPair && os.Getenv("LLB_AI_QUOTA_REQUIRE_SYNC") == "1"
+		onDone := func(failOpen bool) {
+			if failOpen {
+				prom.RecordTokenQuotaColdOpen()
+				tk.LogIt(tk.LogWarning, "[AIGateway] token-quota cold-start fail-open: no peer state within %v\n", warmup)
+				return
+			}
+			tk.LogIt(tk.LogInfo, "[AIGateway] token-quota: warmed from peer state\n")
+		}
+		switch {
+		case managedPair:
+			coord.quotaSnapshotPeer = mh.has.l2PairPeer
+			coord.quotaSnapshotStrict = strict
+			switch {
+			case strict:
+				globalRL.StartQuotaSnapshotWarmup(0, onDone)
+			case warmup > 0:
+				globalRL.StartQuotaSnapshotWarmup(warmup, onDone)
+			default:
+				prom.RecordTokenQuotaColdOpen()
+				tk.LogIt(tk.LogWarning, "[AIGateway] token-quota cold-start fail-open: warmup disabled\n")
+			}
+			tk.LogIt(tk.LogInfo, "[AIGateway] managed A-P token-quota sync: strict=%t, fallback deadline=%v\n", strict, warmup)
+		case warmup > 0 && quotaSyncPeersConfigured():
 			tk.LogIt(tk.LogInfo, "[AIGateway] token-quota cold-start: warming from peers (deadline %v)\n", warmup)
-			globalRL.StartQuotaWarmup(warmup, func(failOpen bool) {
-				if failOpen {
-					prom.RecordTokenQuotaColdOpen()
-					tk.LogIt(tk.LogWarning, "[AIGateway] token-quota cold-start fail-open: no peer state within %v\n", warmup)
-					return
-				}
-				tk.LogIt(tk.LogInfo, "[AIGateway] token-quota cold-start: warmed from peer state\n")
-			})
-		} else {
+			globalRL.StartQuotaWarmup(warmup, onDone)
+		default:
 			prom.RecordTokenQuotaColdOpen()
 			tk.LogIt(tk.LogWarning, "[AIGateway] token-quota cold-start fail-open: cold quota state (no sync peers or warmup disabled)\n")
 		}
@@ -760,7 +779,7 @@ func getGlobalRL() *rl.RateLimiterStore {
 		// StartRateLimiterPushLoop on each peer-add event) sleep on
 		// their ticker until rlStore is non-nil, so this registration
 		// can happen at any point in the loxilb startup sequence.
-		NewSockproxySync().SetRateLimiterStore(globalRL)
+		coord.SetRateLimiterStore(globalRL)
 		// Back the scrape-time token-quota utilization/limit series with
 		// the shared store. Registered here (not init) so the collector
 		// can never observe a nil store.
