@@ -5,17 +5,30 @@ f9_pair_up() {
   frontend_owned "$1" "$2" && frontend_bfd_up "$1" && frontend_bfd_up "$2"
 }
 
+f9_client_ready() {
+  local from=$1 to=$2 expected_mac=$3 tag=$4 neighbor VREQ_TIMEOUT=1
+  # Use the shared fixture key so this check does not warm a tenant under test.
+  vreq "$PORT_KEY" "$MODEL_KEY" "X-Api-Key: $(key_raw fo-seed-key)" "$tag"
+  neighbor=$($hexec "$CLIENT" ip neigh show to "$VIP")
+  printf '%s->%s: %s; %s\n' "$from" "$to" "$VREQ_OUT" "${neighbor:-no neighbor}" >> "$dir/handoffs.txt"
+  [[ "$neighbor" == *" lladdr $expected_mac "* ]] && [ "$VREQ_OUT" = 200 ] &&
+    [ "$(receipts "$VREQ_NONCE")" = 1 ] && f9_pair_up "$to" "$from"
+}
+
 # Transfer the VIP with PostgreSQL healthy and both processes kept alive. A
 # key or policy is warm only if that very process served it while it was MASTER.
 f9_move_vip() {
-  local from=$1 to=$2 iface="e${1}${SW_C}"
+  local from=$1 to=$2 iface="e${1}${SW_C}" mac
+  mac=$(node_mac "$to") || return 1
+  [ -n "$mac" ] || return 1
   $hexec "$from" ip link set "$iface" down || return 1
   local result=0
   frontend_wait 5000 f9_pair_up "$to" "$from" || result=1
   $hexec "$from" ip link set "$iface" up || return 1
   [ "$result" = 0 ] || return 1
   sleep 5.5 # The restored frontend has a 5 s eligibility hold.
-  f9_pair_up "$to" "$from"
+  f9_pair_up "$to" "$from" &&
+    frontend_wait 15000 f9_client_ready "$from" "$to" "$mac" "$tag-handoff-$to"
 }
 
 f9_expect() {
