@@ -1,5 +1,8 @@
 # HA and BGP startup
 
+For an on-prem IPv4 L2 BFD pair, see the startup, clean-shutdown, and
+frontend eligibility procedures. [Two-node L2 HA election](ha-l2-election.md)
+
 The BGP daemon and its configuration start independently of the HA initial
 hello wait. A healthy peer should not impose a 90-second speaker startup delay.
 BGP configuration readiness and HA role readiness are separate conditions.

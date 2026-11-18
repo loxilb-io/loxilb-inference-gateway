@@ -1042,7 +1042,7 @@ func ModLink(link nlp.Link, add bool) int {
 		}
 		applyConfigMap(name, state, add)
 	} else if attrs.MasterIndex == 0 {
-		ret, err = hooks.NetPortDel(&cmn.PortMod{Dev: name, Ptype: pType})
+		ret, err = hooks.NetPortDel(&cmn.PortMod{Dev: name, Ptype: pType, LinkIndex: idx})
 		if err != nil {
 			tk.LogIt(tk.LogError, "nlp: Port %v, %v, %v, %v delete failed (%s)\n", name, ifMac, state, mtu, err)
 		} else {

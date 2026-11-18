@@ -21,9 +21,13 @@ on:
       - 'pkg/loxinet/xsync*.go'
       - 'pkg/loxinet/sockproxy_sync*.go'
       - 'pkg/ratelimit/**'
+      - 'pkg/snapshot/**'
+      - 'options/options.go'
       - 'api/loxinlp/**'
       - 'api/restapi/handler/cluster.go'
+      - 'api/restapi/handler/snapshot.go'
       - 'cicd/ai-ha-failover-bfd/**'
+      - 'cicd/ha-l2-mixed-version/**'
       - 'cicd/common.sh'
       - 'cicd/common/reflect-echo/**'
       - 'cicd/ai-jwtauth/hdr_echo.py'
@@ -39,6 +43,11 @@ on:
   schedule:
     - cron: '35 19 * * *'
   workflow_dispatch:
+    inputs:
+      oldImage:
+        description: 'Override the released L2 HA baseline with an official ghcr.io image digest'
+        required: false
+        type: string
 
 jobs:
   ai-ha-failover-bfd:
@@ -96,5 +105,49 @@ jobs:
           name: ai-ha-failover-bfd-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             /tmp/ai-ha-failover-bfd/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ha-l2-mixed-version:
+    name: ha-l2-mixed-version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    env:
+      LOXILB_DOCKER_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      HA_L2_OLD_IMAGE: ${{ inputs.oldImage || vars.HA_L2_OLD_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: ./.github/actions/ai-sanity-setup
+        with:
+          ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}
+          loxicmd-pin: 'false'
+      - name: Released L2 BFD pair upgrade and rollback
+        run: |
+          dir=cicd/ha-l2-mixed-version
+          out=/tmp/ha-l2-mixed-version
+          mkdir -m 700 "$out"
+          export HA_L2_OLD_IMAGE="${HA_L2_OLD_IMAGE:-$(cat "$dir/old-image.txt")}"
+          if [[ ! "$HA_L2_OLD_IMAGE" =~ ^ghcr\.io/loxilb-io/loxilb-inference-gateway@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::HA_L2_OLD_IMAGE must be an official gateway image pinned by digest"
+            exit 1
+          fi
+          printf '%s\n' "$GITHUB_SHA" > "$out/gateway-commit.txt"
+          git ls-tree HEAD loxilb-ebpf > "$out/candidate-native-pin.txt"
+          command -v tcpdump >/dev/null || sudo apt-get install -y tcpdump
+          docker pull "$HA_L2_OLD_IMAGE"
+          python3 "$dir/validation.py" --out "$out"
+      - name: Keep the version pair and handoff evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ha-l2-mixed-version-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/ha-l2-mixed-version/
           if-no-files-found: ignore
           retention-days: 14
