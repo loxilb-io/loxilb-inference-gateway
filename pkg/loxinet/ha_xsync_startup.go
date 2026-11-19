@@ -173,8 +173,14 @@ func (dp *DpH) callPeer(snapshot DpPeer, op DpSyncOpT, arg interface{}) int {
 		return 0
 	}
 	fail := func() int {
+		// An initial outbound failure does not invalidate a hello already
+		// accepted on the inbound connection. The peer may not repeat it
+		// until its next periodic hello. Readiness still requires CT get.
+		if pe.ctRequested {
+			dp.forgetPeerGenerationHello(pe)
+		}
 		pe.ctRequested = false
-		dp.forgetPeerGenerationHello(pe)
+		state.nextHello = time.Time{}
 		if pe.Client != nil {
 			dp.RPC.RPCHooks.RPCClose(&pe)
 		}
