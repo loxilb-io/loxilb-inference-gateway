@@ -15,6 +15,7 @@ on:
       - 'pkg/loxinet/rules*.go'
       - 'pkg/loxinet/layer3.go'
       - 'pkg/loxinet/neighbor.go'
+      - 'pkg/utils/net.go'
       - 'pkg/loxinet/dpebpf_linux.go'
       - 'pkg/loxinet/shutdown*.go'
       - 'pkg/loxinet/ha_*.go'

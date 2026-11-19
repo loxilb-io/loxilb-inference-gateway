@@ -91,6 +91,32 @@ func TestHAPeerHelloIdentityAndFailureIsolation(t *testing.T) {
 	}
 }
 
+func TestHAFirstOutboundFailurePreservesInboundHello(t *testing.T) {
+	const peer = "192.0.2.2"
+	now := time.Now()
+	rpc := &probeRPC{failing: peer}
+	dp := &DpH{RPC: &XSync{RPCHooks: rpc}, syncNow: func() time.Time { return now }}
+	dp.FinishPeerInit()
+	addProbePeer(t, dp, peer)
+
+	// The two peers dial independently. The remote may have received a
+	// success reply for this hello before our first outbound call fails.
+	if !dp.receivePeerHello(peer, 0) {
+		t.Fatal("configured peer hello rejected")
+	}
+	dp.RequestPeerSync()
+	if dp.DpXsyncInSync() {
+		t.Fatal("inbound hello alone must not release the startup gate")
+	}
+
+	rpc.failing = ""
+	now = now.Add(peerRetryMin)
+	dp.RequestPeerSync()
+	if !dp.DpXsyncInSync() {
+		t.Fatal("startup gate still waiting for a second inbound hello after outbound recovery")
+	}
+}
+
 func TestHAPeerBackoffAndHealthyHelloCadence(t *testing.T) {
 	now := time.Now()
 	rpc := &probeRPC{failing: "192.0.2.2"}
