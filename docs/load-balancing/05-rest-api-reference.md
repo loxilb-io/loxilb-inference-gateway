@@ -180,6 +180,33 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `trace_type` | string | `"mcp"` tags proxy traces as MCP traffic |
 | `model_name` | string | route by requested model (`X-Model` header or body `model`); `""` = catch-all; requires `path_prefix` + `path_match_mode` |
 | `path_prefix`, `path_match_mode` | string | e.g. `"/"` + `"prefix"` |
+| `no_endpoint_status` | int | what the rule answers while it has no endpoints: `503` (default) or `500`; see below |
+
+**A host|path rule with no endpoints.** A fullproxy rule with a `host` or a `path_prefix` may be
+created or replaced with `"endpoints": []`, and keeps standing when its last endpoint is detached.
+Every request it takes is then answered by the gateway, on HTTP/1.1 and HTTP/2, and goes to no other
+rule: not to a shorter `path_prefix` of the same host, which would serve it with another rule's
+backend. A controller keeps such a rule while its backend has no ready endpoint or is invalid.
+
+| `no_endpoint_status` | Answer |
+|---|---|
+| `503` (or absent) | `503 {"error":"no_healthy_backend","detail":"the rule has no endpoints"}` |
+| `500` | `500 {"error":"no_backend","detail":"the rule has no usable backend"}` |
+
+- Both are outages, not refusals: no `X-Loxilb-Refusal-Stage`
+  ([doc 27](27-ai-gateway-client-refusal-contract.md#outages-before-dispatch)). HTTP/1.1 closes the
+  connection; HTTP/2 ends the stream (its body says `message` for `detail`).
+- The value is the rule's own, never the listener's: two rules on one VIP:port may answer differently.
+  It is not consulted while the rule has endpoints; all of them down answers `503 no_healthy_backend`.
+- Only an IPv4 `tcp` rule of `mode` 4 that declares no `model_name`, `pd_disagg_mode`, `kvExactMode`,
+  Endpoint Picker or `mcp_protocol_version`, and whose `sel` is not n2, chwbl or wrr-hash, may have no
+  endpoints. An empty list on any other rule is refused `400` (`endpoints-range error: ...`), and so
+  is `500` on such a rule.
+- A replace that only empties or refills the rule, or only changes `no_endpoint_status`, is applied in
+  place: no request meets the address without the rule in between.
+- GET reads the rule back with `"endpoints": []` and the value in force; `no_endpoint_status` is absent
+  on a rule that may not have no endpoints. Builds that do this advertise `no_endpoint_rule` in
+  `GET /version` `features`.
 
 **Deleting an L7-keyed rule.** `host`, `path_prefix`, `path_match_mode` and `model_name` are part of
 the rule key, so a rule created with them is only matched by a delete that repeats them — use the

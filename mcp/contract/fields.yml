@@ -134,6 +134,9 @@ models:
       sockMapMode:
         label: extra-only
         desc_sha256: cfa9c99fd7f48860ce4b16733b4ea107c747322ebab1eb2708ed7529175d664b
+      no_endpoint_status:
+        label: extra-only
+        desc_sha256: 80eae712a985ce43b401f5f0b703eb505d1d2574c52184df7b39c7f183e2919c
       half_close_mode:
         label: extra-only
         desc_sha256: d10fa7ab46d2ee211888eb0f8710f74a184d3854ba49e4f8c43a4bea954c9689

@@ -297,6 +297,8 @@ request still has its ID (the rules above), on HTTP/1.1 and HTTP/2, and no stage
 | Status | `error` | When | Dispatch | Retry-safe |
 |---|---|---|---|---|
 | `503` | `no_healthy_backend` | every endpoint of the pool (or of the route's subset) is down or circuit-broken | none | cond. — safe to send again, but only an endpoint coming back changes the answer; no `Retry-After` |
+| `503` | `no_healthy_backend` with `detail` `the rule has no endpoints` | the rule that took the request has no endpoints and leaves `no_endpoint_status` at its default ([doc 05](05-rest-api-reference.md)); the request goes to no other rule | none | as above |
+| `500` | `no_backend` | the rule that took the request has no endpoints and sets `no_endpoint_status` 500: its controller knows its backend to be invalid | none | no, until the rule changes |
 | `503` | `service_unavailable` | every endpoint refused the connection | none | as above |
 | `502` (HTTP/1.1), `503` (HTTP/2) | `backend_unreachable` | the chosen endpoint, and every failover candidate, did not accept the connection | none | as above |
 | `503` | `no_route` with a `detail` naming a listener "kept open after its last rule was deleted" | the rule was deleted; see [doc 26](26-endpoint-picker-epp.md). **Carries `X-Loxilb-Refusal-Stage: route`** although the gateway writes no record for it (no rule, so no AI service to record under): the one stage header with no deny record | none | no, until a rule takes the address |

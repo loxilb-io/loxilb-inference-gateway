@@ -6139,6 +6139,15 @@ func init() {
               "description": "Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.",
               "type": "string"
             },
+            "no_endpoint_status": {
+              "description": "What a rule with no endpoints answers the requests it takes, on HTTP/1.1 and HTTP/2: 503 (the default when absent) answers {\"error\":\"no_healthy_backend\"}, 500 answers {\"error\":\"no_backend\"}. The request goes to no other rule, not to a shorter path prefix of the same host. A rule may have no endpoints (endpoints [] on create or replace, or its last one detached) only when it is a fullproxy (mode 4) IPv4 tcp rule with a host or a path_prefix that declares no model_name, pd_disagg_mode, kvExactMode, Endpoint Picker or mcp_protocol_version and whose sel is not n2, chwbl or wrr-hash; an empty list on any other rule is refused 400 (\"endpoints-range error: ...\"), and so is 500 on such a rule. The value applies to the rule alone, never to the listener, and is ignored while the rule has endpoints (all of them down answers 503 no_healthy_backend). A replace that only empties or refills the rule, or only changes this value, is applied in place. Read back on a rule that may have no endpoints as the value in force; absent on any other. Advertised by the version feature \"no_endpoint_rule\".",
+              "enum": [
+                503,
+                500
+              ],
+              "format": "int32",
+              "type": "integer"
+            },
             "oper": {
               "description": "Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.",
               "enum": [
@@ -8993,7 +9002,7 @@ func init() {
           "type": "string"
         },
         "features": {
-          "description": "Gateway-only capabilities this build implements, as stable tokens a controller checks before it sends the matching rule fields; absent on builds that predate the field. \"epp\": loadbalancer rules accept the Endpoint Picker fields (eppEndpoint, eppFailureMode, eppTimeoutMs, eppPlaintext) and the data plane consults the picker. \"api_key_auth\": the serviceArguments api_key_auth credential-policy declaration is accepted and enforced. \"jwt_auth_profile\": the Bearer arm (api_key_auth \"jwt\" and \"apikey-or-jwt\") and the jwt_auth_profile reference are accepted and enforced. The REST layer ignores fields it does not know, so a build without a token would install a rule WITHOUT that policy and report success: a controller that does not find the token for a field it needs must not send the rule.",
+          "description": "Gateway-only capabilities this build implements, as stable tokens a controller checks before it sends the matching rule fields; absent on builds that predate the field. \"epp\": loadbalancer rules accept the Endpoint Picker fields (eppEndpoint, eppFailureMode, eppTimeoutMs, eppPlaintext) and the data plane consults the picker. \"api_key_auth\": the serviceArguments api_key_auth credential-policy declaration is accepted and enforced. \"jwt_auth_profile\": the Bearer arm (api_key_auth \"jwt\" and \"apikey-or-jwt\") and the jwt_auth_profile reference are accepted and enforced. \"no_endpoint_rule\": a host|path fullproxy rule is accepted with no endpoints, created or replaced, and answers the requests it takes by serviceArguments.no_endpoint_status (503 no_healthy_backend or 500 no_backend) on HTTP/1.1 and HTTP/2; emptying or refilling it is applied in place, so its requests never reach another rule in between. The REST layer ignores fields it does not know, so a build without a token would install a rule WITHOUT that policy and report success: a controller that does not find the token for a field it needs must not send the rule.",
           "items": {
             "type": "string"
           },
@@ -41937,10 +41946,25 @@ func init() {
               ],
               "x-nullable": false
             },
+            "eppLastError": {
+              "description": "Read-only: the last request-phase error the gateway got from this EPP (connection refused, deadline, NOT_SERVING, ...); empty once the connection is up again. Ignored on create or replace.",
+              "type": "string",
+              "x-nullable": false
+            },
             "eppPlaintext": {
               "description": "true connects to the EPP without TLS. The default (false) uses TLS without certificate verification, matching the insecureSkipVerify DestinationRule the llm-d charts install for the EPP's self-signed certificate. Only meaningful with eppEndpoint; accepted but inert otherwise.",
               "type": "boolean",
               "default": false,
+              "x-nullable": false
+            },
+            "eppState": {
+              "description": "Read-only, reported on GET for rules with an eppEndpoint: the gateway's connection to the EPP. up = the gRPC connection is ready; connecting = dialing or idle, not yet proven; down = the dial fails and gRPC is backing off; unknown = no connection attempted yet. Sampled every 5 seconds whether or not requests flow, so an idle EPP that dies is reported within a few seconds. Ignored on create or replace.",
+              "type": "string",
+              "x-nullable": false
+            },
+            "eppStateSince": {
+              "description": "Read-only: RFC3339 time at which eppState last changed. Ignored on create or replace.",
+              "type": "string",
               "x-nullable": false
             },
             "eppTimeoutMs": {
@@ -42931,6 +42955,15 @@ func init() {
               "description": "Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.",
               "type": "string"
             },
+            "no_endpoint_status": {
+              "description": "What a rule with no endpoints answers the requests it takes, on HTTP/1.1 and HTTP/2: 503 (the default when absent) answers {\"error\":\"no_healthy_backend\"}, 500 answers {\"error\":\"no_backend\"}. The request goes to no other rule, not to a shorter path prefix of the same host. A rule may have no endpoints (endpoints [] on create or replace, or its last one detached) only when it is a fullproxy (mode 4) IPv4 tcp rule with a host or a path_prefix that declares no model_name, pd_disagg_mode, kvExactMode, Endpoint Picker or mcp_protocol_version and whose sel is not n2, chwbl or wrr-hash; an empty list on any other rule is refused 400 (\"endpoints-range error: ...\"), and so is 500 on such a rule. The value applies to the rule alone, never to the listener, and is ignored while the rule has endpoints (all of them down answers 503 no_healthy_backend). A replace that only empties or refills the rule, or only changes this value, is applied in place. Read back on a rule that may have no endpoints as the value in force; absent on any other. Advertised by the version feature \"no_endpoint_rule\".",
+              "type": "integer",
+              "format": "int32",
+              "enum": [
+                503,
+                500
+              ]
+            },
             "oper": {
               "description": "Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.",
               "type": "integer",
@@ -43495,10 +43528,25 @@ func init() {
           ],
           "x-nullable": false
         },
+        "eppLastError": {
+          "description": "Read-only: the last request-phase error the gateway got from this EPP (connection refused, deadline, NOT_SERVING, ...); empty once the connection is up again. Ignored on create or replace.",
+          "type": "string",
+          "x-nullable": false
+        },
         "eppPlaintext": {
           "description": "true connects to the EPP without TLS. The default (false) uses TLS without certificate verification, matching the insecureSkipVerify DestinationRule the llm-d charts install for the EPP's self-signed certificate. Only meaningful with eppEndpoint; accepted but inert otherwise.",
           "type": "boolean",
           "default": false,
+          "x-nullable": false
+        },
+        "eppState": {
+          "description": "Read-only, reported on GET for rules with an eppEndpoint: the gateway's connection to the EPP. up = the gRPC connection is ready; connecting = dialing or idle, not yet proven; down = the dial fails and gRPC is backing off; unknown = no connection attempted yet. Sampled every 5 seconds whether or not requests flow, so an idle EPP that dies is reported within a few seconds. Ignored on create or replace.",
+          "type": "string",
+          "x-nullable": false
+        },
+        "eppStateSince": {
+          "description": "Read-only: RFC3339 time at which eppState last changed. Ignored on create or replace.",
+          "type": "string",
           "x-nullable": false
         },
         "eppTimeoutMs": {
@@ -44488,6 +44536,15 @@ func init() {
         "name": {
           "description": "Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.",
           "type": "string"
+        },
+        "no_endpoint_status": {
+          "description": "What a rule with no endpoints answers the requests it takes, on HTTP/1.1 and HTTP/2: 503 (the default when absent) answers {\"error\":\"no_healthy_backend\"}, 500 answers {\"error\":\"no_backend\"}. The request goes to no other rule, not to a shorter path prefix of the same host. A rule may have no endpoints (endpoints [] on create or replace, or its last one detached) only when it is a fullproxy (mode 4) IPv4 tcp rule with a host or a path_prefix that declares no model_name, pd_disagg_mode, kvExactMode, Endpoint Picker or mcp_protocol_version and whose sel is not n2, chwbl or wrr-hash; an empty list on any other rule is refused 400 (\"endpoints-range error: ...\"), and so is 500 on such a rule. The value applies to the rule alone, never to the listener, and is ignored while the rule has endpoints (all of them down answers 503 no_healthy_backend). A replace that only empties or refills the rule, or only changes this value, is applied in place. Read back on a rule that may have no endpoints as the value in force; absent on any other. Advertised by the version feature \"no_endpoint_rule\".",
+          "type": "integer",
+          "format": "int32",
+          "enum": [
+            503,
+            500
+          ]
         },
         "oper": {
           "description": "Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.",
@@ -48638,7 +48695,7 @@ func init() {
           "type": "string"
         },
         "features": {
-          "description": "Gateway-only capabilities this build implements, as stable tokens a controller checks before it sends the matching rule fields; absent on builds that predate the field. \"epp\": loadbalancer rules accept the Endpoint Picker fields (eppEndpoint, eppFailureMode, eppTimeoutMs, eppPlaintext) and the data plane consults the picker. \"api_key_auth\": the serviceArguments api_key_auth credential-policy declaration is accepted and enforced. \"jwt_auth_profile\": the Bearer arm (api_key_auth \"jwt\" and \"apikey-or-jwt\") and the jwt_auth_profile reference are accepted and enforced. The REST layer ignores fields it does not know, so a build without a token would install a rule WITHOUT that policy and report success: a controller that does not find the token for a field it needs must not send the rule.",
+          "description": "Gateway-only capabilities this build implements, as stable tokens a controller checks before it sends the matching rule fields; absent on builds that predate the field. \"epp\": loadbalancer rules accept the Endpoint Picker fields (eppEndpoint, eppFailureMode, eppTimeoutMs, eppPlaintext) and the data plane consults the picker. \"api_key_auth\": the serviceArguments api_key_auth credential-policy declaration is accepted and enforced. \"jwt_auth_profile\": the Bearer arm (api_key_auth \"jwt\" and \"apikey-or-jwt\") and the jwt_auth_profile reference are accepted and enforced. \"no_endpoint_rule\": a host|path fullproxy rule is accepted with no endpoints, created or replaced, and answers the requests it takes by serviceArguments.no_endpoint_status (503 no_healthy_backend or 500 no_backend) on HTTP/1.1 and HTTP/2; emptying or refilling it is applied in place, so its requests never reach another rule in between. The REST layer ignores fields it does not know, so a build without a token would install a rule WITHOUT that policy and report success: a controller that does not find the token for a field it needs must not send the rule.",
           "type": "array",
           "items": {
             "type": "string"

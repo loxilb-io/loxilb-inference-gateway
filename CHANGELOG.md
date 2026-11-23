@@ -113,6 +113,17 @@ inference-gateway delta is enumerated in detail.
 
 ### Added
 
+- Load balancer: a host|path fullproxy rule may stand with no endpoints
+  (`"endpoints": []` on create or replace, or its last endpoint detached). It
+  answers every request it takes, on HTTP/1.1 and HTTP/2: `503
+  no_healthy_backend` by default, `500 no_backend` with the new
+  `no_endpoint_status: 500`. None of them goes to a shorter path prefix of the
+  same host, which used to serve them with another rule's backend. Emptying or
+  refilling such a rule is applied in place. GET reads it back with
+  `"endpoints": []` and the status in force. An empty list on any other rule is
+  still refused 400. Advertised as the `no_endpoint_rule` version feature.
+  Requires the datapath at `f1b925c`. See
+  [the REST reference](docs/load-balancing/05-rest-api-reference.md).
 - AI gateway: a request's refusal (`sec.ai.deny`), completion (`data.ai.complete`)
   and token settlement (`data.ai.settle`) audit records carry its W3C `traceparent`
   as `trace_id` and `parent_span_id` (new, add-only), and its `X-Client-Session-Id`

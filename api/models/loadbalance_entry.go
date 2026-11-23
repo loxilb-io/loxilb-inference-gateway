@@ -961,6 +961,10 @@ type LoadbalanceEntryServiceArguments struct {
 	// Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.
 	Name string `json:"name,omitempty"`
 
+	// What a rule with no endpoints answers the requests it takes, on HTTP/1.1 and HTTP/2: 503 (the default when absent) answers {"error":"no_healthy_backend"}, 500 answers {"error":"no_backend"}. The request goes to no other rule, not to a shorter path prefix of the same host. A rule may have no endpoints (endpoints [] on create or replace, or its last one detached) only when it is a fullproxy (mode 4) IPv4 tcp rule with a host or a path_prefix that declares no model_name, pd_disagg_mode, kvExactMode, Endpoint Picker or mcp_protocol_version and whose sel is not n2, chwbl or wrr-hash; an empty list on any other rule is refused 400 ("endpoints-range error: ..."), and so is 500 on such a rule. The value applies to the rule alone, never to the listener, and is ignored while the rule has endpoints (all of them down answers 503 no_healthy_backend). A replace that only empties or refills the rule, or only changes this value, is applied in place. Read back on a rule that may have no endpoints as the value in force; absent on any other. Advertised by the version feature "no_endpoint_rule".
+	// Enum: [503 500]
+	NoEndpointStatus int32 `json:"no_endpoint_status,omitempty"`
+
 	// Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.
 	// Enum: [0 1 2]
 	Oper int32 `json:"oper,omitempty"`
@@ -1276,6 +1280,10 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 	}
 
 	if err := m.validateMtlsFrontend(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateNoEndpointStatus(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -2602,6 +2610,39 @@ func (m *LoadbalanceEntryServiceArguments) validateMtlsFrontend(formats strfmt.R
 			}
 			return err
 		}
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeNoEndpointStatusPropEnum []interface{}
+
+func init() {
+	var res []int32
+	if err := json.Unmarshal([]byte(`[503,500]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeNoEndpointStatusPropEnum = append(loadbalanceEntryServiceArgumentsTypeNoEndpointStatusPropEnum, v)
+	}
+}
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateNoEndpointStatusEnum(path, location string, value int32) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeNoEndpointStatusPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateNoEndpointStatus(formats strfmt.Registry) error {
+	if swag.IsZero(m.NoEndpointStatus) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateNoEndpointStatusEnum("serviceArguments"+"."+"no_endpoint_status", "body", m.NoEndpointStatus); err != nil {
+		return err
 	}
 
 	return nil

@@ -1954,6 +1954,7 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.fc_band_wait_ms[b] = C.uint32_t(w.FcBandWaitMs[b])
 	}
 	dat.half_close_mode = C.uint8_t(w.HalfCloseMode)
+	dat.no_ep_status = C.uint8_t(w.NoEndpointStatus)
 	dat.ai_default_tokens = C.uint32_t(w.AIDefaultTokens)
 	if w.AIObjectiveStrict {
 		dat.ai_objective_strict = 1
