@@ -34,7 +34,7 @@ func NewPostConfigCert(ctx *middleware.Context, handler PostConfigCertHandler) *
 
 # Upload a TLS certificate under an opaque certId
 
-Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/<certId>/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. Malformed PEM / missing key is rejected with 400 (never a panic).
+Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/<certId>/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. At handshake the SNI name selects the certificate registered under it, else the one registered under the wildcard for its left-most label (*.example.com serves a.example.com, not example.com or a.b.example.com), else the listener's own; names compare without regard to case. certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.
 */
 type PostConfigCert struct {
 	Context *middleware.Context
