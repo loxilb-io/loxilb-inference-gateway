@@ -1053,16 +1053,16 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5811,
+     "def_line": 4203,
+     "call_line": 5856,
      "calls": "syncVllmScraper",
-     "note": "on create; the replace path calls it too (rules.go:5339), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
+     "note": "on create; the replace path calls it too (rules.go:5383), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1385, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4192, "call_line": 5763, "calls": "KvSubscriberStartRank" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4203, "call_line": 5808, "calls": "KvSubscriberStartRank" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-attest-controller-loop": [
@@ -1071,7 +1071,7 @@
     { "symbol": "KvAttestStart", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 331, "call_line": 356, "calls": "loop" },
     { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 955, "call_line": 962, "calls": "KvAttestStart" },
     { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 383, "call_line": 387, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4192, "call_line": 5334, "calls": "kvDataplaneContractInstallAsync" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4203, "call_line": 5378, "calls": "kvDataplaneContractInstallAsync" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-best-worker-cgo": [
@@ -3414,7 +3414,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1207, "writes": "pdTrieNodes", "note": "size of the Tier-1 prefix trie; 0 means the trie is empty, which is a real state and not an absent feature" },
      { "tail": "prom-init-sockproxy-main" }
     ],
-    "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-trie', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 12/12 checks, exact source-predicted node counts. The gate is the per-rule API field pd_cache_aware_mode (api/models/loadbalance_entry.go:834 -> api/restapi/handler/loadbalancer.go:150 -> pkg/loxinet/rules.go:4738 -> pkg/loxinet/dpebpf_linux.go:1809), not an engine property, and the one build gate that would degrade the mode to 0 never logged, consistent with the datapath CFLAGS defining HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally. The drive is staged so the two writer classes are separated rather than summed: with the gate closed the gauge is EXACTLY 0 (pd_trie is NULL, so the collector skips the family) while 3/3 requests still terminated at Tier 2, which is what makes the control non-vacuous; opening the gate with NO traffic reads EXACTLY 1, the root node created at rule add; three requests whose system prompts have distinct first bytes then read EXACTLY 1+3=4, one single-leaf insert apiece. Which insert site moved is settled by an independent family: loxilb_ai_pd_tier_selected_total{tier=\"tier2\"} moved +3 while {tier=\"tier1\"} stayed 0, so every insert is attributable to the Tier-2 selection site and the Tier-1 site is asserted silent rather than assumed. Restoring the gate re-POSTs the rule and returns the gauge to EXACTLY 0, which rules out the rule re-add as the cause. Fleet proof still belongs to M08."
+    "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-trie', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 12/12 checks, exact source-predicted node counts. The gate is the per-rule API field pd_cache_aware_mode (api/models/loadbalance_entry.go:834 -> api/restapi/handler/loadbalancer.go:150 -> pkg/loxinet/rules.go:4763 -> pkg/loxinet/dpebpf_linux.go:1809), not an engine property, and the one build gate that would degrade the mode to 0 never logged, consistent with the datapath CFLAGS defining HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally. The drive is staged so the two writer classes are separated rather than summed: with the gate closed the gauge is EXACTLY 0 (pd_trie is NULL, so the collector skips the family) while 3/3 requests still terminated at Tier 2, which is what makes the control non-vacuous; opening the gate with NO traffic reads EXACTLY 1, the root node created at rule add; three requests whose system prompts have distinct first bytes then read EXACTLY 1+3=4, one single-leaf insert apiece. Which insert site moved is settled by an independent family: loxilb_ai_pd_tier_selected_total{tier=\"tier2\"} moved +3 while {tier=\"tier1\"} stayed 0, so every insert is attributable to the Tier-2 selection site and the Tier-1 site is asserted silent rather than assumed. Restoring the gate re-POSTs the rule and returns the gauge to EXACTLY 0, which rules out the rule re-add as the cause. Fleet proof still belongs to M08."
    },
    "loxilb_pd_cb_flips_total": {
     "status": "verified-runtime",
@@ -4185,7 +4185,7 @@
     "writer_sources": [
      { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1519, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1279, "calls": "SetKvEpInfo" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4192, "call_line": 5763, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4203, "call_line": 5808, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1273. Scenario M08 owns the runtime proof."
@@ -4309,7 +4309,7 @@
     "writer_sources": [
      { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1525, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4192, "call_line": 5806, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4203, "call_line": 5851, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
@@ -4320,7 +4320,7 @@
     "writer_sources": [
      { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1531, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4192, "call_line": 5806, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4203, "call_line": 5851, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 391, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:198. WP-5 owns the known-mismatch arm."

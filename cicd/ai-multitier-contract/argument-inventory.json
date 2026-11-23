@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "ce71c78472c97eafcacacc097f1cd99f62ece70f78ec09a514a029dd53abac1c",
-    "swagger.yml": "545bf0165668d00759524b7fb66fbceb6efe24179c41bf722e8d78111af7c0e3"
+    "swagger.yml": "3469f9520189867aa095d4860dfa55253838d643082f3d0a33ee718ac7fa2fd2"
   },
   "fields": [
     {
@@ -2497,6 +2497,19 @@
       "contract": {
         "description": "Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.",
         "type": "string"
+      }
+    },
+    {
+      "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/no_endpoint_status",
+      "required": false,
+      "contract": {
+        "description": "What a rule with no endpoints answers the requests it takes, on HTTP/1.1 and HTTP/2: 503 (the default when absent) answers {\"error\":\"no_healthy_backend\"}, 500 answers {\"error\":\"no_backend\"}. The request goes to no other rule, not to a shorter path prefix of the same host. A rule may have no endpoints (endpoints [] on create or replace, or its last one detached) only when it is a fullproxy (mode 4) IPv4 tcp rule with a host or a path_prefix that declares no model_name, pd_disagg_mode, kvExactMode, Endpoint Picker or mcp_protocol_version and whose sel is not n2, chwbl or wrr-hash; an empty list on any other rule is refused 400 (\"endpoints-range error: ...\"), and so is 500 on such a rule. The value applies to the rule alone, never to the listener, and is ignored while the rule has endpoints (all of them down answers 503 no_healthy_backend). A replace that only empties or refills the rule, or only changes this value, is applied in place. Read back on a rule that may have no endpoints as the value in force; absent on any other. Advertised by the version feature \"no_endpoint_rule\".",
+        "enum": [
+          503,
+          500
+        ],
+        "format": "int32",
+        "type": "integer"
       }
     },
     {

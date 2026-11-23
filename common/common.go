@@ -70,13 +70,27 @@ const (
 	FeatureAPIKeyAuth = "api_key_auth"
 	// FeatureJWTAuthProfile - the Bearer arm and serviceArguments.jwt_auth_profile.
 	FeatureJWTAuthProfile = "jwt_auth_profile"
+	// FeatureNoEndpointRule - a host|path fullproxy rule is accepted with no
+	// endpoints, created or replaced, and answers the requests it takes by
+	// serviceArguments.no_endpoint_status on HTTP/1.1 and HTTP/2; emptying or
+	// refilling it is applied in place.
+	FeatureNoEndpointRule = "no_endpoint_rule"
 )
 
 // VersionFeatures - the features this build advertises, in a fixed order. A
 // fresh slice each call: callers may append to it.
 func VersionFeatures() []string {
-	return []string{FeatureEpp, FeatureAPIKeyAuth, FeatureJWTAuthProfile}
+	return []string{FeatureEpp, FeatureAPIKeyAuth, FeatureJWTAuthProfile, FeatureNoEndpointRule}
 }
+
+// The answers no_endpoint_status may name: what a rule with no endpoints
+// answers the requests it takes. 0 on input is the default, 503.
+const (
+	// NoEndpointStatusUnavailable - 503 no_healthy_backend, the default.
+	NoEndpointStatusUnavailable = 503
+	// NoEndpointStatusInternal - 500 no_backend, for a rule whose backend is invalid.
+	NoEndpointStatusInternal = 500
+)
 
 // This file defines the go interface implementation needed to interact with loxinet go module
 
@@ -1117,6 +1131,12 @@ type LbServiceArg struct {
 	PathPrefix string `json:"path_prefix,omitempty"`
 	// PathMatchMode - Path matching mode: disabled, prefix, exact (P6)
 	PathMatchMode string `json:"path_match_mode,omitempty"`
+	// NoEndpointStatus - what a rule with no endpoints answers the requests it
+	// takes: 503 (NoEndpointStatusUnavailable, the default; 0 on input) or
+	// 500 (NoEndpointStatusInternal). Only a rule that may have no endpoints
+	// takes 500 (see the rules' zero-endpoint conditions); read back on such
+	// a rule as the value in force, absent on any other.
+	NoEndpointStatus int `json:"no_endpoint_status,omitempty"`
 	// ProxyProtocolV2 - Enable proxy protocol v2
 	ProxyProtocolV2 bool `json:"proxyprotocolv2"`
 	// SockMapMode - Directional sockmap acceleration for this FullProxy service.

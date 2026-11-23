@@ -11032,6 +11032,27 @@ definitions:
             enum: ["off", "both", "request", "response"]
             default: "off"
             description: Directional sockmap acceleration for this FullProxy service - off (default), both, request (client->backend only), response (backend->client only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes in the direction being accelerated is rejected with 400, and the check is per direction. sse_mode, pd_disagg_mode and an attached L7 policy own BOTH directions and accept only off. ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - owns the REQUEST direction only - both and request are rejected with 400, response is accepted because validating the credential and stripping X-Api-Key both happen before dispatch and neither rewrites a response byte. Accepting it logs a warning, since api_key_auth arms ai_gw_mode and an accelerated response is not recorded. On a connection whose REQUEST direction is accelerated the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip; on one whose RESPONSE direction is accelerated the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.
+          no_endpoint_status:
+            type: integer
+            format: int32
+            enum: [503, 500]
+            description: >-
+              What a rule with no endpoints answers the requests it takes, on HTTP/1.1
+              and HTTP/2: 503 (the default when absent) answers
+              {"error":"no_healthy_backend"}, 500 answers {"error":"no_backend"}. The
+              request goes to no other rule, not to a shorter path prefix of the same
+              host. A rule may have no endpoints (endpoints [] on create or replace, or
+              its last one detached) only when it is a fullproxy (mode 4) IPv4 tcp rule
+              with a host or a path_prefix that declares no model_name, pd_disagg_mode,
+              kvExactMode, Endpoint Picker or mcp_protocol_version and whose sel is not
+              n2, chwbl or wrr-hash; an empty list on any other rule is refused 400
+              ("endpoints-range error: ..."), and so is 500 on such a rule. The value
+              applies to the rule alone, never to the listener, and is ignored while the
+              rule has endpoints (all of them down answers 503 no_healthy_backend). A
+              replace that only empties or refills the rule, or only changes this value,
+              is applied in place. Read back on a rule that may have no endpoints as the
+              value in force; absent on any other. Advertised by the version feature
+              "no_endpoint_rule".
           half_close_mode:
             type: string
             x-nullable: false
@@ -15016,7 +15037,12 @@ definitions:
           data plane consults the picker. "api_key_auth": the serviceArguments
           api_key_auth credential-policy declaration is accepted and enforced.
           "jwt_auth_profile": the Bearer arm (api_key_auth "jwt" and "apikey-or-jwt")
-          and the jwt_auth_profile reference are accepted and enforced. The REST layer
+          and the jwt_auth_profile reference are accepted and enforced.
+          "no_endpoint_rule": a host|path fullproxy rule is accepted with no endpoints,
+          created or replaced, and answers the requests it takes by
+          serviceArguments.no_endpoint_status (503 no_healthy_backend or 500
+          no_backend) on HTTP/1.1 and HTTP/2; emptying or refilling it is applied in
+          place, so its requests never reach another rule in between. The REST layer
           ignores fields it does not know, so a build without a token would install a
           rule WITHOUT that policy and report success: a controller that does not find
           the token for a field it needs must not send the rule.

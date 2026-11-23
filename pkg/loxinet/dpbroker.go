@@ -420,6 +420,7 @@ type LBDpWorkQ struct {
 	FcBandQueuePct              [3]uint8                // share of the queue depth, by band (0 = the shared depth)
 	FcBandWaitMs                [3]uint32               // wait window, by band (0 = the queue's)
 	HalfCloseMode               uint8                   // half-close hold, enum sp_hold_mode (0 = process default)
+	NoEndpointStatus            uint8                   // answer while the rule has no endpoints: 0 = 503, 1 = 500 (sockproxy_no_ep.h)
 	AIDefaultTokens             uint32                  // default reservation in force for a request without max_tokens (0 = off)
 	AIObjectiveStrict           bool                    // a request naming an objective it may not use is refused 403
 	CbEnable                    bool                    // per-endpoint circuit breaker for full-proxy rules

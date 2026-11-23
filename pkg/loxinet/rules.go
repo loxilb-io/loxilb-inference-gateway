@@ -607,6 +607,7 @@ type ruleEnt struct {
 	ppv2En                      bool
 	sockMapMode                 uint8         // Directional sockmap accel: 0=off,1=both,2=request,3=response
 	halfCloseMode               uint8         // half-close hold, enum sp_hold_mode: 0=unset,1=off,2=hold
+	noEndpointStatus            int           // the answer while the rule has no endpoints: 503 or 500 (rules_no_endpoint.go)
 	aiDefaultResv               aiDefaultResv // default reservation for a request without max_tokens, as declared
 	aiObjectiveStrict           bool          // a request naming an objective it may not use is refused, not defaulted
 	egress                      bool
@@ -1359,6 +1360,16 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		}
 
 		data.DP(DpStatsGetImm)
+
+		// The answer in force while the rule has no endpoints, read back on
+		// a rule that may have none (a rule kept from before the field
+		// answers 503); absent on any other, as its input is refused there.
+		if lbZeroEndpointsRefusal(&ret.Serv) == nil {
+			ret.Serv.NoEndpointStatus = data.noEndpointStatus
+			if ret.Serv.NoEndpointStatus == 0 {
+				ret.Serv.NoEndpointStatus = cmn.NoEndpointStatusUnavailable
+			}
+		}
 
 		// Make Endpoints
 		tmpEp := data.act.action.(*ruleLBActs).endPoints
@@ -4303,8 +4314,10 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleArgsErr, errors.New("malformed-service-pport error")
 	}
 
-	// Currently support a maximum of MaxLBEndPoints
-	if len(servEndPoints) <= 0 || len(servEndPoints) > MaxLBEndPoints {
+	// Currently support a maximum of MaxLBEndPoints. An empty list is judged
+	// below, once the rule's MCP mode is resolved: only a rule of the shape
+	// lbZeroEndpointsRefusal admits may have no endpoints.
+	if len(servEndPoints) > MaxLBEndPoints {
 		return RuleEpCountErr, errors.New("endpoints-range error")
 	}
 
@@ -4628,6 +4641,18 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	if err := resolveMCPService(&serv, eRule); err != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
 	}
+	// A rule with no endpoints answers the requests it takes itself; one of
+	// any other shape keeps refusing an empty list, created or replaced.
+	zeroEpOK := lbZeroEndpointsRefusal(&serv) == nil
+	if len(servEndPoints) == 0 {
+		if err := lbZeroEndpointsRefusal(&serv); err != nil {
+			return RuleEpCountErr, fmt.Errorf("endpoints-range error: %w", err)
+		}
+	}
+	nextNoEndpointStatus, noEpErr := lbNoEndpointStatus(&serv)
+	if noEpErr != nil {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: noEpErr}
+	}
 	if other := R.lbListenerMCPConflict(eRule, &rt, string(serv.MCPProtocolVersion)); other != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: fmt.Errorf("mcp_protocol_version: %s shares this address and port with a different MCP transport mode; all overlapping rules must agree", listenerRuleName(&other.tuples))}
 	}
@@ -4774,6 +4799,11 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		// We will try to append the new end-points at the end, while marking any other end-points
 		// not in the new list as inactive
 		ruleChg, retEps, delEps := getLBConsolidatedEPs(eRule.act.action.(*ruleLBActs).endPoints, lBActs.endPoints, serv.Oper)
+		// The endpoint change is kept apart from the other fields until they
+		// are compared: an update that only empties or refills the rule is
+		// applied in place (zeroEpEdge below).
+		epChg := ruleChg
+		ruleChg = false
 
 		if eRule.hChk.prbType != serv.ProbeType || eRule.hChk.prbPort != serv.ProbePort ||
 			eRule.hChk.prbReq != serv.ProbeReq || eRule.hChk.prbResp != serv.ProbeResp ||
@@ -4877,6 +4907,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			return RuleExistsErr, err
 		}
 
+		fieldChg := ruleChg
+		ruleChg = ruleChg || epChg
+
 		// The admission gate (the queue pair and the rest of the gate) is
 		// applied in place: a replace that changes nothing else must not
 		// re-create a full-proxy rule's data-plane entry, which would end the
@@ -4892,7 +4925,8 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.fcCfg != nextFcCfg ||
 			eRule.halfCloseMode != nextHalfClose ||
 			eRule.aiDefaultResv != nextAIDefaultResv ||
-			eRule.aiObjectiveStrict != nextAIObjectiveStrict) {
+			eRule.aiObjectiveStrict != nextAIObjectiveStrict ||
+			eRule.noEndpointStatus != nextNoEndpointStatus) {
 			ruleChg = true
 			inPlaceOnlyChg = true
 		}
@@ -4904,7 +4938,8 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		// kept at hand until the data plane has answered.
 		backendTLSStaged := false
 		backendTLSBefore := backendTLSFieldsOf(eRule)
-		if backendTLSChanged(eRule, &serv) {
+		backendTLSChg := backendTLSChanged(eRule, &serv)
+		if backendTLSChg {
 			if (!ruleChg || inPlaceOnlyChg) && lBActs.mode == cmn.LBModeFullProxy {
 				inPlaceOnlyChg = true
 				backendTLSStaged = true
@@ -4947,10 +4982,18 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			}
 		}
 
-		if len(retEps) == 0 {
+		// A rule that may stand with no endpoints keeps standing when its
+		// last one goes (a detach, or a replace with none); any other is
+		// deleted with it, as before.
+		if len(retEps) == 0 && !zeroEpOK {
 			tk.LogIt(tk.LogDebug, "lb-rule %s has no-endpoints: to be deleted\n", eRule.tuples.String())
 			return R.DeleteLbRule(serv)
 		}
+		// Emptying or refilling the rule and nothing else: the data plane
+		// takes it in place, so no request meets the address without this
+		// rule's pool in between (rules_no_endpoint.go).
+		zeroEpEdge := epChg && !fieldChg && !backendTLSChg && zeroEpOK &&
+			lbZeroEndpointEdge(eRule.act.action.(*ruleLBActs).endPoints, retEps)
 
 		if eRule.act.action.(*ruleLBActs).mode == cmn.LBModeFullProxy && lBActs.mode != cmn.LBModeFullProxy ||
 			eRule.act.action.(*ruleLBActs).mode != cmn.LBModeFullProxy && lBActs.mode == cmn.LBModeFullProxy {
@@ -4964,7 +5007,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s reset all end-points (too many)\n", serv.ServIP, serv.ServPort, serv.Proto)
 			delEps = eRule.act.action.(*ruleLBActs).endPoints
 			retEps = lBActs.endPoints
-		} else if eRule.act.action.(*ruleLBActs).mode == cmn.LBModeFullProxy && !chwblTxn && !inPlaceOnlyChg {
+		} else if eRule.act.action.(*ruleLBActs).mode == cmn.LBModeFullProxy && !chwblTxn && !inPlaceOnlyChg && !zeroEpEdge {
 			eRule.DP(DpRemove)
 		}
 
@@ -5089,6 +5132,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.fcMaxQueueWaitMs = nextFcMaxQueueWaitMs
 		eRule.fcCfg = nextFcCfg
 		eRule.halfCloseMode = nextHalfClose
+		eRule.noEndpointStatus = nextNoEndpointStatus
 		eRule.aiDefaultResv = nextAIDefaultResv
 		eRule.aiObjectiveStrict = nextAIObjectiveStrict
 		eRule.cbEnable = serv.CbEnable
@@ -5459,6 +5503,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 
 	// Store the half-close hold mode
 	r.halfCloseMode = nextHalfClose
+	r.noEndpointStatus = nextNoEndpointStatus
 
 	// Store the default reservation
 	r.aiDefaultResv = nextAIDefaultResv
@@ -7402,6 +7447,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 		nWork.FcBandWaitMs[b] = r.fcCfg.bandWaitMs[b]
 	}
 	nWork.HalfCloseMode = r.halfCloseDpMode()
+	nWork.NoEndpointStatus = lbNoEndpointDpStatus(r.noEndpointStatus)
 	nWork.AIDefaultTokens = r.aiDefaultResv.tokensInForce()
 	nWork.AIObjectiveStrict = r.aiObjectiveStrict
 	nWork.CbEnable = r.cbEnable
@@ -7510,7 +7556,9 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 
 		// Modern MCP fullproxy selects original weighted members per request.
 		// Kernel slot replication would duplicate members and apply weights twice.
-		if at.sel == cmn.LbSelPrio && r.mcpProtocolVersion == "" {
+		// A rule standing with no endpoints (rules_no_endpoint.go) has nothing
+		// to fill the slots from: it goes down with none, as by the plain loop.
+		if at.sel == cmn.LbSelPrio && r.mcpProtocolVersion == "" && len(at.endPoints) > 0 {
 			j := 0
 			k := 0
 			var small [MaxLBEndPoints]int
@@ -7767,7 +7815,7 @@ func (r *ruleEnt) DP(work DpWorkT) int {
 			switch at := r.act.action.(type) {
 			case *ruleLBActs:
 				// Special handling for priority mode
-				if at.sel == cmn.LbSelPrio {
+				if at.sel == cmn.LbSelPrio && len(at.endPoints) > 0 {
 					// Reset all endpoint stats first
 					for i := range at.endPoints {
 						at.endPoints[i].stat.bytes = 0

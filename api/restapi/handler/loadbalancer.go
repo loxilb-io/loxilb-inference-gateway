@@ -148,6 +148,8 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	} else {
 		lbRules.Serv.PathMatchMode = "disabled" // Default to hostname-only (backward compat)
 	}
+	// What the rule answers while it has no endpoints: 0 (absent) is 503.
+	lbRules.Serv.NoEndpointStatus = int(params.Attr.ServiceArguments.NoEndpointStatus)
 
 	lbRules.Serv.ProxyProtocolV2 = params.Attr.ServiceArguments.Proxyprotocolv2
 	// Directional sockmap acceleration - optional; nil/absent means "off" (domain treats "" as off)
@@ -603,6 +605,8 @@ func ConfigDeleteLoadbalancerPortRangeWithoutPath(params operations.DeleteConfig
 func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	var tmpLB models.LoadbalanceEntry
 	var tmpSvc models.LoadbalanceEntryServiceArguments
+	// A rule with no endpoints reads back "endpoints": [], not null.
+	tmpLB.Endpoints = []*models.LoadbalanceEntryEndpointsItems0{}
 
 	// opaque id + admin_state on every GET.
 	tmpSvc.ID = lb.Serv.Id
@@ -650,6 +654,7 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 		tmpSvc.PathMatchMode = &pathMatchMode
 	}
 	tmpSvc.Proxyprotocolv2 = lb.Serv.ProxyProtocolV2
+	tmpSvc.NoEndpointStatus = int32(lb.Serv.NoEndpointStatus) // absent on a rule that may not have no endpoints
 	tmpSvc.Egress = lb.Serv.Egress
 	tmpSvc.TraceType = lb.Serv.TraceType // Tracing catalog (independent from GPU routing)
 	// Backend protocol capability - only meaningful for fullproxy mode (mode 4)

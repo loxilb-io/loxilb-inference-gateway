@@ -79,6 +79,7 @@ func fullFieldLbRule() cmn.LbRuleMod {
 			HostUrl:            "svc.example.test",
 			PathPrefix:         "/v1",
 			PathMatchMode:      "prefix",
+			NoEndpointStatus:   500,
 			ProxyProtocolV2:    true,
 			SockMapMode:        cmn.SockMapModeBoth,
 			Egress:             true,
