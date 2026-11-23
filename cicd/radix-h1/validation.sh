@@ -141,6 +141,83 @@ eps=$(jget '" ".join(str(r["ep"]) for r in rs)' < "$EVID/e2ka.jsonl")
 if [ "$okka" = True ] && [ "$mv1" -ge $((mv0 + 3)) ] 2>/dev/null; then leg E2-KA PASS "learned A,B then on one kept-alive connection: $eps; ka_moved $mv0 -> $mv1"
 else leg E2-KA FAIL "endpoints (A t1, B t1, then kept-alive A t2, B t2, A t3, B t3): $eps; [RADIX_STATS] ka_moved $mv0 -> $mv1"; fi
 
+# GUARD legs: the balance guard on the round-robin pool. A HIT falls back to
+# the selector's pick when the radix pick's in-flight minus the lowest
+# in-flight over the eligible endpoints exceeds balance_abs (3). The mock
+# holds requests at an endpoint (delay); they are sent one per second in the
+# background, so each decision sees the earlier ones in flight.
+bgreq() {  # bgreq <name> <port> <plan-json>: the plan in the background on the client
+  plan "$1" "$3" >/dev/null
+  docker exec -d "${P}h1" sh -c "python3 /opt/rx4/client.py $VIP $2 run /opt/out/$1.json > /opt/out/$1.jsonl"
+}
+hold4() {  # hold4 <tag> <ep> <conv>: four requests of the conversation's turn 2, held 8 s at <ep>
+  local i
+  mock_admin "$2" /admin/delay/8000/4
+  for i in 1 2 3 4; do
+    bgreq "$1-h$i" $PORT_RR "[{\"rid\":\"$1-h$i\",\"body\":{\"kind\":\"conv\",\"conv\":$3,\"turns\":2}}]"
+    sleep 1
+  done
+}
+held() { cat "$RUN"/h1/$1-h1.jsonl "$RUN"/h1/$1-h2.jsonl "$RUN"/h1/$1-h3.jsonl "$RUN"/h1/$1-h4.jsonl 2>/dev/null | results; }
+gu0=$(gw_log | grep -c 'underflow protection')
+
+# GUARD-FALLBACK: a prefix learned on X; four requests of it held at X (in
+# flight 0, 1, 2, 3 at their decisions: each a HIT on X); the fifth sees
+# 4 - 0 > 3: counted spread, routed by the selector.
+client $PORT_RR run "$(plan gf1 '[{"rid":"gf-t1","body":{"kind":"conv","conv":821,"turns":1}}]')" | results > "$EVID/gf-1.jsonl"
+X=$(jget 'rs[0]["ep"] if rs[0]["status"] == 200 else ""' < "$EVID/gf-1.jsonl")
+snap; gh0=$(stat hit); gs0=$(stat spread)
+if [ -n "$X" ]; then
+  hold4 gf "$X" 821
+  client $PORT_RR run "$(plan gf5 '[{"rid":"gf-5th","body":{"kind":"conv","conv":821,"turns":2}}]')" | results > "$EVID/gf-5.jsonl"
+  sleep 9
+  mock_admin "$X" /admin/reset
+fi
+snap; gh1=$(stat hit); gs1=$(stat spread)
+held gf > "$EVID/gf-held.jsonl"
+okh=$(jget "len(rs) == 4 and all(r['ep'] == '$X' and r['status'] == 200 for r in rs)" < "$EVID/gf-held.jsonl" 2>/dev/null)
+ep5=$(jget 'rs[0]["ep"] if rs and rs[0]["status"] == 200 else "none"' < "$EVID/gf-5.jsonl" 2>/dev/null)
+detail="learned on ${X:-?}; held 4 on it: $okh; fifth answered by $ep5; hit $gh0 -> $gh1, spread $gs0 -> $gs1"
+if [ -n "$X" ] && [ "$okh" = True ] && [ "$ep5" != none ] && [ "$gh1" = $((gh0 + 4)) ] && [ "$gs1" = $((gs0 + 1)) ] 2>/dev/null; then
+  leg GUARD-FALLBACK PASS "$detail"
+else
+  leg GUARD-FALLBACK FAIL "$detail (want hit +4, spread +1)"
+fi
+
+# GUARD-RULES-APART: prefixes learned on Y and on X (two consecutive round
+# robin picks); four requests held at Y; then X's prefix, X idle: a HIT on X
+# (X - min = 0). The previous rule (max - min = 4 > 3) fell back here.
+client $PORT_RR run "$(plan ga1 '[{"rid":"ga-Y-t1","body":{"kind":"conv","conv":831,"turns":1}},{"rid":"ga-X-t1","body":{"kind":"conv","conv":832,"turns":1}}]')" | results > "$EVID/ga-1.jsonl"
+Y=$(jget 'rs[0]["ep"] if rs[0]["status"] == 200 else ""' < "$EVID/ga-1.jsonl")
+X=$(jget 'rs[1]["ep"] if rs[1]["status"] == 200 and rs[1]["ep"] != rs[0]["ep"] else ""' < "$EVID/ga-1.jsonl")
+snap; ah0=$(stat hit); as0=$(stat spread)
+if [ -n "$Y" ] && [ -n "$X" ]; then
+  hold4 ga "$Y" 831
+  client $PORT_RR run "$(plan ga5 '[{"rid":"ga-X-t2","body":{"kind":"conv","conv":832,"turns":2}}]')" | results > "$EVID/ga-5.jsonl"
+  sleep 9
+  mock_admin "$Y" /admin/reset
+fi
+snap; ah1=$(stat hit); as1=$(stat spread)
+held ga > "$EVID/ga-held.jsonl"
+okh=$(jget "len(rs) == 4 and all(r['ep'] == '$Y' and r['status'] == 200 for r in rs)" < "$EVID/ga-held.jsonl" 2>/dev/null)
+epx=$(jget 'rs[0]["ep"] if rs and rs[0]["status"] == 200 else "none"' < "$EVID/ga-5.jsonl" 2>/dev/null)
+detail="Y=${Y:-?} X=${X:-?}; held 4 on Y: $okh; X's prefix answered by $epx; hit $ah0 -> $ah1, spread $as0 -> $as1"
+if [ -n "$X" ] && [ "$okh" = True ] && [ "$epx" = "$X" ] && [ "$ah1" = $((ah0 + 5)) ] && [ "$as1" = "$as0" ] 2>/dev/null; then
+  leg GUARD-RULES-APART PASS "$detail"
+else
+  leg GUARD-RULES-APART FAIL "$detail (want X, hit +5, spread +0)"
+fi
+
+# After both: the pool's admission in-flight is back to 0, no underflow line.
+sleep 2
+gu1=$(gw_log | grep -c 'underflow protection')
+ginf=$(inflight $PORT_RR)
+if [ "$gu1" = "$gu0" ] && { [ "$ginf" = 0 ] || [ "$ginf" = n/a ]; }; then
+  leg GUARD-QUIESCE PASS "admission in-flight on :$PORT_RR after both: $ginf; underflow lines $gu0 -> $gu1"
+else
+  leg GUARD-QUIESCE FAIL "admission in-flight on :$PORT_RR after both: $ginf; underflow lines $gu0 -> $gu1"
+fi
+
 # KA-session: a session-header pool on one kept-alive connection behaves as
 # today (the keep-alive rule cannot evaluate the session overlay: leg kept).
 snap; ms0=$(stat ka_moved)
