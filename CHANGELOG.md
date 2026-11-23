@@ -38,7 +38,7 @@ inference-gateway delta is enumerated in detail.
   first. SNI names compare without regard to case, and the SNI store keeps and
   lists them in lower case. Until now only the exact name selected a
   certificate, and a wildcard one was never served. Requires the datapath at
-  `7b23e05`. See
+  `5b5f0d8`. See
   [the TLS guide](docs/load-balancing/03-l7-tls.md#63-how-a-listener-picks-its-certificate).
 - HA role gating follows configured KA/BFD or a valid cistate request. CT-only
   cluster peers, role-unmanaged active-active deployments, and egress endpoints
