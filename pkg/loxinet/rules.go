@@ -668,6 +668,7 @@ type ruleEnt struct {
 	mtlsFrontend                *cmn.MTLSFrontendConfig // mTLS frontend configuration
 	mtlsBackend                 *cmn.MTLSBackendConfig  // mTLS backend configuration
 	srcList                     []*allowedSrcElem
+	haForwardGuard              bool
 	proxySrcFw                  []cmn.FwRuleArg // fullproxy per-VIP source fence currently installed in the TC firewall (see syncProxySrcFence)
 	locIPs                      map[string]struct{}
 	hwOffload                   bool              // FwRuleArg.HwOffload mirror, plumbed through Fw2DP to FwDpWorkQ.HwOffload
@@ -725,10 +726,11 @@ type epChecker struct {
 }
 
 type vipElem struct {
-	ref  int
-	pVIP net.IP
-	inst string
-	egr  bool
+	haProxyRefs int
+	ref         int
+	pVIP        net.IP
+	inst        string
+	egr         bool
 	// selfAddr is set when the rule-VIP path itself put the VIP on a kernel
 	// interface. Only such an address may be taken back down when the last
 	// rule referencing the VIP goes away.
@@ -2770,16 +2772,30 @@ func (R *RuleH) unFoldRecursiveEPs(r *ruleEnt) {
 	}
 }
 
-// addVIPSys - system specific operations for VIPs of a LB rule
-func (R *RuleH) addVIPSys(r *ruleEnt) {
-	if r.act.actType != RtActSnat && !strings.Contains(r.name, "ipvs") && !strings.Contains(r.name, "static") {
-		R.AddRuleVIP(r.tuples.l3Dst.addr.IP, r.RuleVIP2PrivIP(), r.inst, r.egress)
-
-		// Take care of any secondary VIPs
-		for _, sVIP := range r.secIP {
-			R.AddRuleVIP(sVIP.sIP, sVIP.sIP, r.inst, r.egress)
+// addVIPSys registers the addresses owned by a load-balancing rule.
+func (R *RuleH) addVIPSys(r *ruleEnt) error {
+	if r.act.actType == RtActSnat || strings.Contains(r.name, "ipvs") || strings.Contains(r.name, "static") {
+		return nil
+	}
+	vip := r.tuples.l3Dst.addr.IP
+	privateVIP := r.RuleVIP2PrivIP()
+	R.AddRuleVIP(vip, privateVIP, r.inst, r.egress)
+	for _, secondary := range r.secIP {
+		R.AddRuleVIP(secondary.sIP, secondary.sIP, r.inst, r.egress)
+	}
+	if r.act.actType != RtActFullProxy || r.egress || vip.To4() == nil ||
+		vip.IsUnspecified() || !vip.Equal(privateVIP) || mh.has == nil || !mh.has.protectsL2VIP(r.inst) {
+		return nil
+	}
+	entry := R.vipMap[vip.String()]
+	if entry.haProxyRefs == 0 {
+		if err := setHAVIPForwardGuard(vip, true); err != nil {
+			return err
 		}
 	}
+	entry.haProxyRefs++
+	r.haForwardGuard = true
+	return nil
 }
 
 // snapshotLBEndpoints returns a deep copy of an LB rule's endpoint slice so the
@@ -5568,7 +5584,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// (nlp.go applyLoadBalancerConfig -> NetLbRuleAdd -> AddLbRule), so the index
 	// rebuilds on restart with no separate persisted structure.
 	R.registerOpaqueID(r)
-	R.addVIPSys(r)
+	if err := R.addVIPSys(r); err != nil {
+		if _, cleanupErr := R.DeleteLbRule(serv); cleanupErr != nil {
+			tk.LogIt(tk.LogError, "lb-rule %s cleanup after HA forwarding guard failure: %v\n", r.id, cleanupErr)
+		}
+		return RuleArgsErr, &cmn.ServerPreconditionError{
+			Reason: cmn.ReasonLbDataplaneInstallFailed,
+			Err:    fmt.Errorf("could not prevent forwarding of unowned HA VIP %s: %w", r.tuples.l3Dst.addr.IP, err),
+		}
+	}
 
 	// Part 8B: Prepare tracing catalog ID if trace_type specified (Deep Inspection)
 	// This happens BEFORE r.DP(DpCreate) so the catalog_id can be passed through the DP work queue
@@ -5824,11 +5848,19 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 // deleteVIPSys - system specific operations for deleting VIPs of a LB rule
 func (R *RuleH) deleteVIPSys(r *ruleEnt) {
 	if r.act.actType != RtActSnat && !strings.Contains(r.name, "ipvs") && !strings.Contains(r.name, "static") {
-		R.DeleteRuleVIP(r.tuples.l3Dst.addr.IP)
-
-		// Take care of any secondary VIPs
+		vip := r.tuples.l3Dst.addr.IP
+		entry := R.vipMap[vip.String()]
+		R.DeleteRuleVIP(vip)
 		for _, sVIP := range r.secIP {
 			R.DeleteRuleVIP(sVIP.sIP)
+		}
+		if r.haForwardGuard && entry != nil {
+			entry.haProxyRefs--
+			if entry.haProxyRefs == 0 {
+				if err := setHAVIPForwardGuard(vip, false); err != nil {
+					tk.LogIt(tk.LogWarning, "lb-rule could not remove forwarding guard for HA VIP %s: %v\n", vip, err)
+				}
+			}
 		}
 	}
 }
@@ -7318,6 +7350,8 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.ModelName = r.tuples.modelName         // AI model name for pool selection
 	nWork.BackendProtocol = r.backendProtocol    // Backend protocol capability
 	nWork.MCPProtocolVersion = r.mcpProtocolVersion
+	// The guard keeps the VIP unroutable on BACKUP while the affinity pool is prepared.
+	nWork.HAListenerFreebind = r.haForwardGuard && r.sessionHeaderName != "" && !r.pdDisaggMode
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
 	nWork.SSEMode = r.sseMode                                         // SSE streaming mode
 	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane credential policy, as declared (encoder resolves)
@@ -7949,6 +7983,10 @@ func (R *RuleH) refreshPortVIPs(name string, ifindex int) {
 }
 
 func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) error {
+	return R.advRuleVIP(IP, eIP, inst, egress, nil)
+}
+
+func (R *RuleH) advRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool, listeners []*ruleEnt) error {
 	if inst == "" {
 		inst = cmn.CIDefault
 	}
@@ -7979,7 +8017,8 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 			if tk.IsNetIPv6(IP.String()) {
 				ifname = iface
 			}
-			if !utils.IsIPHostAddr(IP.String()) {
+			locallyBound := utils.IsIPHostAddr(IP.String())
+			if !locallyBound {
 				if mh.cloudHook != nil {
 					err := mh.cloudHook.CloudUpdatePrivateIP(IP, eIP, true)
 					if err != nil {
@@ -7993,8 +8032,16 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 				} else {
 					tk.LogIt(tk.LogInfo, "lb-rule vip %s:%s added\n", IP.String(), ifname)
 					R.markRuleVIPAddr(eIP, true)
+					locallyBound = true
 				}
 				loxinlp.DelNeighNoHook(IP.String(), "")
+			}
+			// A cold BACKUP cannot bind the full-proxy socket without this
+			// address. Requeue its rules now, ahead of the GARP wait.
+			if locallyBound && !mh.has.l2VIPBlocked(inst) {
+				for _, rule := range listeners {
+					rule.LB2DP(DpCreate)
+				}
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
@@ -8079,6 +8126,19 @@ func (R *RuleH) RulesSyncToClusterState(inst, ciStateStr string) {
 		}
 	}
 
+	var listenersByVIP map[string][]*ruleEnt
+	if ciStateStr == cmn.CIMasterStateString && mh.has.protectsL2VIP(inst) {
+		listenersByVIP = make(map[string][]*ruleEnt)
+		for _, rule := range R.tables[RtLB].eMap {
+			if rule.inst != inst || rule.egress || rule.act.actType != RtActFullProxy {
+				continue
+			}
+			vip := rule.tuples.l3Dst.addr.IP
+			if vip.To4() != nil {
+				listenersByVIP[vip.String()] = append(listenersByVIP[vip.String()], rule)
+			}
+		}
+	}
 	for vip, vipElem := range R.vipMap {
 		if vipElem.inst != inst {
 			continue
@@ -8088,7 +8148,7 @@ func (R *RuleH) RulesSyncToClusterState(inst, ciStateStr string) {
 			ip = net.ParseIP(vip)
 		}
 		if ip != nil {
-			R.AdvRuleVIP(ip, net.ParseIP(vip), vipElem.inst, vipElem.egr)
+			R.advRuleVIP(ip, net.ParseIP(vip), vipElem.inst, vipElem.egr, listenersByVIP[vip])
 		}
 	}
 }

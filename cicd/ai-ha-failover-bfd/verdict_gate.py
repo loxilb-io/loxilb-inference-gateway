@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gate for a run of ai-ha-failover-bfd in CI.
 
-usage: verdict_gate.py <verdicts.tsv> <known-fail.tsv>
+usage: verdict_gate.py <verdicts.tsv> <known-fail.tsv> [required-pass-id ...]
 
 validation.sh reports what the product does and exits non-zero on any FAIL
 or NOT_RUN. This gate compares the run with known-fail.tsv, the list of
@@ -16,7 +16,8 @@ and exits 0 only when the two agree exactly:
   - a listed verdict that reports anything other than what the list says
     fails the job too: the product changed, and the entry has to be changed
     or removed in the same change;
-  - a listed verdict that is absent from the run fails the job.
+  - a listed verdict that is absent from the run fails the job;
+  - every explicitly required verdict must be present and PASS.
 
 A NOT_RUN entry is for an oracle that refuses to judge for a stated reason
 (its precondition cannot be met on this product), never for a flaky check.
@@ -52,6 +53,10 @@ def main():
             bad.append("LISTED, ABSENT   %s (the case did not report)" % vid)
         elif got != want:
             bad.append("LISTED %s, NOW %s: %s (change known-fail.tsv in the same change)" % (want, got, vid))
+    for vid in sys.argv[3:]:
+        got = verdicts.get(vid)
+        if got != "PASS":
+            bad.append("REQUIRED PASS, GOT %-7s %s" % (got or "ABSENT", vid))
     count = {}
     for v in verdicts.values():
         count[v] = count.get(v, 0) + 1

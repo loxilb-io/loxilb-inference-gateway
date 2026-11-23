@@ -379,6 +379,7 @@ type LBDpWorkQ struct {
 	PathMatchMode               string // P6: Path matching mode (disabled, prefix, exact)
 	BackendProtocol             string // Backend protocol capability: "http1", "http2", or "both"
 	MCPProtocolVersion          string
+	HAListenerFreebind          bool
 	SessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
 	ModelName                   string                  // AI model name for pool selection (e.g. "llama-70b"); empty = wildcard
 	CatalogID                   uint16                  // Tracing catalog ID for deep inspection (0 = no tracing)

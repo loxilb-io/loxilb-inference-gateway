@@ -27,6 +27,10 @@ name: AI-Gateway-Sanity-CI
 #                     half                                             ~25 min
 #   ai-pd-admission   P/D bounded admission per endpoint: shed, park,
 #                     overflow (cicd/vllm-pd-admission-cpu)            ~3 min
+#   ai-radix-h1       non-P/D prefix routing on HTTP/1.1 (cicd/radix-h1):
+#                     test-switch build overlaid on the image, mock
+#                     backends; not a required check until it has passed
+#                     on its PR                          build + ~9 min
 #   ai-kv-strict      strict KV admission: profile/engine contract
 #                     refusals (cicd/kv-profile-admission) and SGLang
 #                     attestation rungs (cicd/kv-sglang-attest)        ~4 min
@@ -48,6 +52,7 @@ on:
       - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/kv-profile-admission/**'
+      - 'cicd/radix-h1/**'
       - 'cicd/kv-sglang-attest/**'
       - 'cicd/tcplbconnlimit/**'
       - 'cicd/lbreplace/**'
@@ -69,6 +74,7 @@ on:
       - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/kv-profile-admission/**'
+      - 'cicd/radix-h1/**'
       - 'cicd/kv-sglang-attest/**'
       - 'cicd/tcplbconnlimit/**'
       - 'cicd/lbreplace/**'
@@ -485,6 +491,65 @@ jobs:
   # identity); kv-sglang-attest earns the attestation rungs through the SGLang
   # simulator in cicd/common/kv_hash, whose self-test gates config.sh. Both
   # suites call sudo themselves, so the step runs them as the runner user.
+  # Non-P/D prefix routing on HTTP/1.1 (radix). The scenario needs a gateway
+  # built with -DHAVE_RADIX_TEST_SWITCH (the setting has no rule API yet), so
+  # this job rebuilds the data path with that flag and the measurement-image
+  # flag (precedent: cicd/sockmap-fullproxy/build-measure-image.sh) and
+  # overlays it on the image the setup action prepared. The runner is
+  # ubuntu-22.04 like the image, so the host build links against the same
+  # glibc. Not a required check until it has passed on its PR.
+  ai-radix-h1:
+    name: ai-radix-h1
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: ./.github/actions/ai-sanity-setup
+        with:
+          ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}
+      - name: Gateway image with the radix test switch
+        run: |
+          # objects do not depend on EXTRA_CFLAGS: rebuild them all (the
+          # native clean walks kernel* only, so common/ is cleaned too)
+          sudo -E env "PATH=$PATH" make -C loxilb-ebpf/common clean
+          sudo -E env "PATH=$PATH" make -C loxilb-ebpf clean
+          # go build does not hash the C archive it links (libloxilbdp.a): with
+          # the setup's binary in place it keeps that binary. Remove it, so the
+          # link reads the archive built with the switch.
+          sudo rm -f loxilb
+          docker run -u root --privileged -dit --name loxilb --entrypoint /bin/bash \
+            ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+          sudo -E env "PATH=$PATH" make docker-cp \
+            EXTRA_CFLAGS="-DHAVE_SOCKOPS -DHAVE_PROXY_NO_EXTRA_DEBUG -DHAVE_RADIX_TEST_SWITCH"
+          docker commit loxilb loxilb-igw:radix-test
+          docker rm -f loxilb
+          # The image the scenario runs must carry the switch: only a build with
+          # -DHAVE_RADIX_TEST_SWITCH reads LLB_RADIX_POOLS. Checked in the
+          # committed image, not in the workspace.
+          docker run --rm --network none --entrypoint grep loxilb-igw:radix-test \
+            -q LLB_RADIX_POOLS /root/loxilb-io/loxilb/loxilb || {
+            echo "::error::the gateway in loxilb-igw:radix-test was linked without the radix test switch (-DHAVE_RADIX_TEST_SWITCH)"
+            exit 1
+          }
+          docker build -t rx4-mock:ci -f cicd/radix-h1/mock.Dockerfile cicd/radix-h1
+      - name: Prefix routing on HTTP/1.1 (radix-h1)
+        run: |
+          sudo -E env RX_IMG_GW=loxilb-igw:radix-test RX_IMG_MOCK=rx4-mock:ci \
+            RX_RUN_DIR=$RUNNER_TEMP/radix-h1 cicd/radix-h1/run.sh
+      - name: Keep what a failed run left
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-radix-h1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/radix-h1/
+          if-no-files-found: ignore
+          retention-days: 14
+
   ai-kv-strict:
     name: ai-kv-strict
     runs-on: ubuntu-22.04

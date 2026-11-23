@@ -136,9 +136,16 @@ def one_request(args, seq, out=None, lock=None, headers=None):
             # A 200 status line and then a body that ended without its terminator.
             rec["cls"] = "closed_without_done"
         elif rec["status"] == 200:
-            rec["cls"] = "ok"
-            # The echo backend's body starts with its own label.
+            # Store failover probes use the fixed-length echo. A clean TCP
+            # EOF after a partial body still fails that customer's request.
             body = data.split(b"\r\n\r\n", 1)
+            length = re.search(rb"\r\nContent-Length:[ \t]*([0-9]+)[ \t]*(?:\r\n|$)", body[0], re.I)
+            if getattr(args, "require_content_length", False) and (
+                len(body) != 2 or not length or len(body[1]) != int(length.group(1)) or not body[1]
+            ):
+                rec["cls"] = "incomplete_body"
+                return
+            rec["cls"] = "ok"
             if len(body) == 2:
                 rec["label"] = body[1][:48].split(b"|")[0].decode("latin1")
         else:
@@ -288,7 +295,11 @@ def cmd_burst(args):
 
 def cmd_conv(args):
     """One request per conversation id; prints {id: backend label or outcome}."""
-    ids = ["%s-%d" % (args.prefix, i) for i in range(args.n)]
+    if args.ids_file:
+        with open(args.ids_file, encoding="ascii") as source:
+            ids = source.read().splitlines()
+    else:
+        ids = ["%s-%d" % (args.prefix, i) for i in range(args.n)]
     res = {}
     lock = threading.Lock()
     sem = threading.Semaphore(args.parallel)
@@ -625,6 +636,7 @@ def main():
     p.add_argument("--duration", type=float, default=None)
     p.add_argument("--tag", default="probe")
     p.add_argument("--out", required=True)
+    p.add_argument("--require-content-length", action="store_true")
     p.set_defaults(fn=cmd_probe)
     for name, fn in (("retry", cmd_retry), ("burst", cmd_burst), ("debtwatch", cmd_debtwatch)):
         p = sub.add_parser(name)
@@ -650,7 +662,10 @@ def main():
     p.add_argument("--model", required=True)
     p.add_argument("--header", action="append", default=[])
     p.add_argument("--conv-header", default="X-Conversation-Id")
-    p.add_argument("--prefix", required=True)
+    ids = p.add_mutually_exclusive_group(required=True)
+    ids.add_argument("--prefix")
+    ids.add_argument("--ids-file")
+    p.add_argument("--require-content-length", action="store_true")
     p.add_argument("--n", type=int, default=100)
     p.add_argument("--parallel", type=int, default=8)
     p.add_argument("--connect-timeout", type=float, default=0.5)

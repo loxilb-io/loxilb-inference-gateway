@@ -256,6 +256,15 @@ type SockproxySync struct {
 	// is invoked (typically from ai_gateway_dp.go on first getGlobalRL).
 	rlStore atomic.Pointer[rl.RateLimiterStore]
 
+	// The managed A-P peer and profile are set before rlStore is published.
+	quotaSnapshotPeer   string
+	quotaSnapshotStrict bool
+	quotaSnapshotSeq    atomic.Uint64
+	quotaSnapshotMu     sync.Mutex
+	quotaSnapshot       quotaSnapshotProgress
+	quotaSnapshotAt     time.Time
+	quotaSnapshotMaster atomic.Bool
+
 	// rlPrevSnapshot is the per-peer last-pushed-Consumed map for the
 	// A-A gossip-delta path. Keyed first by peer.IP.String, then by
 	// the RateLimiterEntry.KeyID (either "t:<id>" for the value or
@@ -385,7 +394,21 @@ func (s *SockproxySync) SetConnectFn(fn func(peerKey string)) {
 // spClients. Called by the connectFn injected from loxinet.go after a
 // successful DialXSyncGRPC. Bug Fix.
 func (s *SockproxySync) StoreGRPCClient(peerKey string, c XSyncClient) {
-	s.spClients.Store(peerKey, c)
+	if current, loaded := s.spClients.LoadOrStore(peerKey, c); loaded && current != c {
+		closeSockproxyClient(c)
+	}
+}
+
+func closeSockproxyClient(client XSyncClient) {
+	if conn, ok := client.(interface{ Close() error }); ok {
+		_ = conn.Close()
+	}
+}
+
+func (s *SockproxySync) discardSockproxyClient(peerKey string, client XSyncClient) {
+	if s.spClients.CompareAndDelete(peerKey, client) {
+		closeSockproxyClient(client)
+	}
 }
 
 // spawnConsumersForKnownPeers iterates s.peersFn and for each peer that
@@ -509,7 +532,7 @@ func (s *SockproxySync) sendWithRetry(peer *DpPeer, peerKey string, clientFn fun
 		}
 		// On error, decide whether to retry.
 		if attempt >= maxRetries {
-			s.spClients.Delete(peerKey) // stale conn; force reconnect on next batch
+			s.discardSockproxyClient(peerKey, client)
 			tk.LogIt(tk.LogWarning, "[SOCKPROXY_SYNC] consumerLoop peer=%s dropping batch after %d retries: %v\n",
 				peerKey, maxRetries, err)
 			prom.SockproxySyncDropInc("peer_unreachable")
@@ -1199,10 +1222,18 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 		}
 
 		entries = rlWireEntries(entries)
-		if len(entries) == 0 {
+		var snapshotID uint64
+		if mode2 != "AA" && peerKey == s.quotaSnapshotPeer {
+			// A warming store must never vouch for an empty or partial state.
+			if !s.quotaSnapshotMaster.Load() || store.QuotaWarming() {
+				continue
+			}
+			snapshotID = s.nextQuotaSnapshotID()
+		}
+		if len(entries) == 0 && snapshotID == 0 {
 			continue
 		}
-		if err := s.sendRateLimiterBatch(peer, client, entries, isDelta); err != nil {
+		if err := s.sendRateLimiterBatch(peer, client, entries, isDelta, snapshotID); err != nil {
 			tk.LogIt(tk.LogDebug, "[SOCKPROXY_SYNC] RateLimiterSync push to peer=%s failed: %v\n", peerKey, err)
 		}
 	}
@@ -1301,6 +1332,88 @@ func (s *SockproxySync) dialForRateLimiterPush(peerKey string, clientFn func() X
 	return nil
 }
 
+// quotaSnapshotProgress holds the contiguous prefix of the latest managed
+// A-P push. The existing max-counter merge makes repeated rows idempotent.
+type quotaSnapshotProgress struct {
+	id     uint64
+	next   uint32
+	chunks uint32
+}
+
+// Ten missed publication ticks invalidate a strict takeover. Receipt time
+// uses the local monotonic clock, independent of the sender's clock.
+const quotaSnapshotMaxAge = 10 * rlPushIntervalAP
+
+func (s *SockproxySync) nextQuotaSnapshotID() uint64 {
+	for {
+		previous := s.quotaSnapshotSeq.Load()
+		next := max(previous+1, uint64(time.Now().UnixNano()))
+		if s.quotaSnapshotSeq.CompareAndSwap(previous, next) {
+			return next
+		}
+	}
+}
+
+// Called under the cluster lock before exposing a MASTER's VIP. The receive
+// path never takes that lock.
+func (s *SockproxySync) updateQuotaSnapshotRole(master bool) {
+	store := s.rlStore.Load()
+	if store == nil || s.quotaSnapshotPeer == "" {
+		return
+	}
+	s.quotaSnapshotMu.Lock()
+	defer s.quotaSnapshotMu.Unlock()
+	if s.quotaSnapshotMaster.Load() == master {
+		return
+	}
+	if s.quotaSnapshotStrict && (!master || s.quotaSnapshotAt.IsZero() || time.Since(s.quotaSnapshotAt) > quotaSnapshotMaxAge) {
+		s.quotaSnapshotAt = time.Time{}
+		store.RequireQuotaSnapshot()
+		if master {
+			tk.LogIt(tk.LogWarning, "[SOCKPROXY_SYNC] strict token-quota takeover: no recent complete snapshot from peer=%s\n", s.quotaSnapshotPeer)
+		}
+	}
+	s.quotaSnapshot.next = s.quotaSnapshot.chunks
+	s.quotaSnapshotMaster.Store(master)
+}
+
+func (s *SockproxySync) applyQuotaSnapshotChunk(store *rl.RateLimiterStore, batch *RateLimiterBatch, entries []rl.RateLimiterEntry) {
+	s.quotaSnapshotMu.Lock()
+	defer s.quotaSnapshotMu.Unlock()
+
+	if s.quotaSnapshotMaster.Load() || batch.SnapshotIndex >= batch.SnapshotChunks {
+		return
+	}
+	// Each nonfinal part is full, and even an empty snapshot is sent as
+	// one part with the scope sentinel. Invalid shapes cannot warm a peer.
+	capacity := rlPushBatchMax - 1
+	if len(batch.Entries) != 1+len(entries) ||
+		(batch.SnapshotIndex+1 < batch.SnapshotChunks && len(entries) != capacity) ||
+		(batch.SnapshotChunks > 1 && len(entries) == 0) || len(entries) > capacity {
+		return
+	}
+
+	for _, entry := range entries {
+		if _, valid := rl.QuotaMapKey(entry.KeyID); !valid {
+			return
+		}
+	}
+
+	p := &s.quotaSnapshot
+	if batch.SnapshotIndex == 0 && batch.SnapshotId > p.id {
+		*p = quotaSnapshotProgress{id: batch.SnapshotId, chunks: batch.SnapshotChunks}
+	}
+	if batch.SnapshotId != p.id || batch.SnapshotIndex != p.next || batch.SnapshotChunks != p.chunks {
+		return
+	}
+	store.ImportState(entries)
+	p.next++
+	if p.next == p.chunks {
+		s.quotaSnapshotAt = time.Now()
+		store.ConfirmQuotaSnapshot()
+	}
+}
+
 // sendRateLimiterBatch chunks `entries` at rlPushBatchMax and dispatches
 // them via sequential RateLimiterSync RPCs. On codes.Unimplemented the
 // capRateLimiterSync bit is cleared and a single WARN logged.
@@ -1311,10 +1424,15 @@ func (s *SockproxySync) dialForRateLimiterPush(peerKey string, clientFn func() X
 // therefore runs with NO RateLimiterStore lock held. The grep gate in
 // 70-B-PLAN verify step proves this property at the source level.
 func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
-	entries []rl.RateLimiterEntry, isDelta bool) error {
+	entries []rl.RateLimiterEntry, isDelta bool, snapshotID uint64) error {
 
 	peerKey := peer.Peer.String()
-	for start := 0; start < len(entries); {
+	capacity := rlPushBatchMax - 1
+	chunks := (len(entries) + capacity - 1) / capacity
+	if snapshotID != 0 {
+		chunks = max(chunks, 1)
+	}
+	for index := 0; index < chunks; index++ {
 		// The 500-entry RPC ceiling includes the sentinel, and EVERY chunk
 		// carries one, so the ceiling reserves its slot on every chunk.
 		//
@@ -1325,12 +1443,17 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 		// every push above the ceiling report its own up-to-date sender as an
 		// old peer — inverting the one signal operators have for the
 		// unsupported mixed-version posture.
-		capacity := rlPushBatchMax - 1
+		start := index * capacity
 		end := min(start+capacity, len(entries))
 		batch := entries[start:end]
 		protoBatch := &RateLimiterBatch{
 			IsDelta: isDelta,
 			Entries: make([]*RateLimiterEntry, 0, len(batch)+1),
+		}
+		if snapshotID != 0 {
+			protoBatch.SnapshotId = snapshotID
+			protoBatch.SnapshotIndex = uint32(index)
+			protoBatch.SnapshotChunks = uint32(chunks)
 		}
 		{
 			// Scope-version announcement, first entry of every chunk. Shaped
@@ -1347,9 +1470,11 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 		for i := range batch {
 			protoBatch.Entries = append(protoBatch.Entries, rlGoEntryToProto(&batch[i]))
 		}
-		start = end
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		timeout := 10 * time.Second
+		if snapshotID != 0 {
+			timeout = time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		prom.SockproxySyncInflightRpcInc(peerKey)
 		tStart := time.Now()
 		_, err := client.RateLimiterSync(ctx, protoBatch)
@@ -1368,6 +1493,11 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 			// (Unimplemented above is a capability degrade, not a peer
 			// outage, and deliberately leaves peer_up untouched.)
 			prom.SockproxySyncPeerUpSet(peerKey, 0)
+			if snapshotID != 0 && (status.Code(err) == codes.Unavailable || status.Code(err) == codes.DeadlineExceeded) {
+				// The BFD peer can rejoin while gRPC is still backing off
+				// against its old socket. Reconnect on the next dial tick.
+				s.discardSockproxyClient(peerKey, client)
+			}
 			return err
 		}
 	}
@@ -1484,6 +1614,15 @@ func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatc
 	}
 	if m.IsDelta {
 		store.ApplyGossipDelta(goEntries)
+	} else if peerHost == s.quotaSnapshotPeer {
+		if m.GetSnapshotId() != 0 && len(m.Entries) != 0 &&
+			m.Entries[0].GetKeyId() == rl.ScopeSentinelKeyID {
+			s.applyQuotaSnapshotChunk(store, m, goEntries)
+		} else {
+			// Retain compatible counter merges from older peers. Without a
+			// complete snapshot they cannot attest to standby readiness.
+			store.ImportState(goEntries)
+		}
 	} else {
 		store.ImportState(goEntries)
 	}
