@@ -22,7 +22,7 @@ type SNICertificateEntry struct {
 	// Optional directory on the gateway node containing server.crt and server.key; omitted uses the hostname-relative location under /opt/loxilb/cert. This is not a client-side path or upload. The registration loader is invoked with mTLS disabled, so rootCA.crt alone does not enable client-certificate enforcement.
 	CertPath string `json:"certPath,omitempty"`
 
-	// Hostname for SNI certificate (e.g., api.example.com). This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.
+	// Hostname for SNI certificate (e.g., api.example.com), or a wildcard for one left-most label (e.g., *.example.com, which serves a.example.com only). Stored and listed in lower case; a client's SNI name compares without regard to case and selects an exact entry before a wildcard. This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.
 	// Required: true
 	Hostname *string `json:"hostname"`
 }
