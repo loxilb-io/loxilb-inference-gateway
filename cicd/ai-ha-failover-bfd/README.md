@@ -18,7 +18,7 @@ FAIL, 2 with at least one NOT_RUN. Evidence goes to `out/<timestamp>/`, or to
 
 | Variable / option | Effect |
 |---|---|
-| `--cases FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13,FAILOVER-FRONTEND` | select cases (default: all, in this order) |
+| `--cases FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13,FAILOVER-8,FAILOVER-9,FAILOVER-FRONTEND` | select cases (default: all, in this order) |
 | `HAFO_FO1_REPS` (5), `HAFO_FO1_CRASH_REPS` (3) | FAILOVER-1 repetitions per mode |
 | `HAFO_LONE_WATCH_S` (300) | how long FAILOVER-12 watches a gateway on its own |
 | `HAFO_MUTATE=<name>` | apply one deliberate break (see Mutations) |
@@ -100,8 +100,8 @@ eBPF map.
 | FAILOVER-5 | Can a tenant in quota debt buy fresh quota by failing over? | PASS/FAIL (+ RPS RECORDED) |
 | FAILOVER-6 | What happens to an SSE stream in flight, and does the same request complete when sent again? | PASS/FAIL (retry) + RECORDED |
 | FAILOVER-7 | What happens to a saturated flow-control gate and its queue? | RECORDED |
-| FAILOVER-8a / FAILOVER-8b | Do 100 pinned conversations land on the same endpoint afterwards? 8a records the share and the mechanism; 8b is PASS/FAIL at 0.90 when the peer held the entries. | RECORDED / PASS/FAIL |
-| FAILOVER-9 | Failover while the key store is down; recovery when it returns, with no gateway restart. | PASS/FAIL (recovery) + RECORDED |
+| FAILOVER-8a / FAILOVER-8b | Do 100 pinned conversations land on the same endpoint afterwards? 8a records ordinary header stickiness. 8b gates learned bindings that differ from the header hash, with and without XSync in both directions. | RECORDED / PASS/FAIL |
+| FAILOVER-9 | Bidirectional failover with PostgreSQL down; warm key/JWT continuity, cold credential and deleted-key refusal, and recovery within 6 s of readiness without a gateway restart. | PASS/FAIL |
 | FAILOVER-10 | Does the restarted standby enforce the old master's quota debt on promotion while admitting the control tenant? | PASS/FAIL (quota) + RECORDED |
 | FAILOVER-11 | Failback: no second MASTER, the probe keeps answering, a tenant in debt stays refused. | PASS/FAIL + RECORDED |
 | FAILOVER-11r | Repeat after restarting the standby before the fault. The survivor keeps MASTER and the returning node remains BACKUP. | PASS/FAIL + RECORDED |
@@ -177,10 +177,10 @@ NOT_RUN where the oracle refuses to judge).
 | `fo2-delete-key` | the key is deleted before the fault | FAILOVER-2 FAIL |
 | `fo3-wrong-aud` | the JWT profile expects an audience no token has | FAILOVER-3 FAIL |
 | `fo4-skip-delete` | the key is not deleted | FAILOVER-4 FAIL |
-| `fo5-cut-xsync`, `fo8-cut-xsync` | the sync channel is cut before the state exists | FAILOVER-5 FAIL / FAILOVER-8b FAIL |
+| `fo5-cut-xsync` | the sync channel is cut before quota debt exists | FAILOVER-5 FAIL |
 | `fo8-ep-order` | llb2 has the affinity rule's endpoints reversed | FAILOVER-0.readback FAIL; shows what FAILOVER-8 depends on |
 | `fo6-backend-down` | the witness backend is stopped before the retry | FAILOVER-6 FAIL |
-| `fo9-skip-pg-start` | PostgreSQL is not started again | FAILOVER-9 FAIL |
+| `fo9-skip-pg-start` | PostgreSQL is kept down during recovery measurement | FAILOVER-9 FAIL |
 | `fo11-no-debt` | the tenant is never put in debt | FAILOVER-11.debt NOT_RUN |
 
 The `fo5-cut-xsync` control cuts quota replication before the active
@@ -199,6 +199,7 @@ election and frontend loss, including both frontends down and same-name recreati
 Job `ai-ha-failover-bfd` on the schedule, on dispatch, and on same-repository
 pull requests matching the workflow paths. `validation.sh` reports the product as it
 is, and part of that is FAIL today. `known-fail.tsv` lists those verdicts;
+CI requires `FAILOVER-8b` and `FAILOVER-9` to be present and report `PASS` for both directions.
 `verdict_gate.py` makes the job green only when the run matches the list
 exactly: an unlisted FAIL or NOT_RUN and a listed verdict that reports
 something else each turn it red. An entry names the one verdict it expects:

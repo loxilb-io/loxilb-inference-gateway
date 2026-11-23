@@ -1807,6 +1807,9 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 
 	if w.NatType == DpFullProxy {
 		dat.sockmap_en = C.uchar(w.SockMapMode)
+		if w.HAListenerFreebind {
+			dat.ha_listener_freebind = 1
+		}
 	} else {
 		dat.sockmap_en = 0
 	}

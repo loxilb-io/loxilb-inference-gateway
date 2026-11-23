@@ -440,6 +440,61 @@ sys.exit(0 if len(tail) >= 5 and all(r["cls"] == "ok" for r in tail) else 1)
 PY
 }
 
+# ----------------------------------------------------------- frontend health
+frontend_vip() {
+  $hexec "$1" ip -o -4 addr show | grep -q " $VIP/"
+}
+
+frontend_bfd_up() {
+  api_get "$1" /config/bfd/all | grep -q '"BFDUp"'
+}
+
+frontend_owned() {
+  local m=$1 b=$2
+  [ "$(role "$m")" = MASTER ] && [ "$(role "$b")" = BACKUP ] &&
+    frontend_vip "$m" && ! frontend_vip "$b"
+}
+
+frontend_wait() {
+  local duration=$1 deadline
+  shift
+  deadline=$(( $(now_ms) + duration ))
+  while [ "$(now_ms)" -lt "$deadline" ]; do
+    "$@" && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+frontend_no_owner() {
+  local n
+  for n in $NODES; do
+    [ "$(role "$n")" = BACKUP ] && ! frontend_vip "$n" || return 1
+  done
+}
+
+frontend_start_pair() {
+  local dir=$1 n m b p1 p2 rc1=0 rc2=0
+  for n in $NODES; do
+    cp "$HAFO_DIR/.${n}-cmdline" "$dir/$n-command"
+    printf '%s --ha-frontend-interface=e%s%s\n' "$(cat "$dir/$n-command")" "$n" "$SW_C" > "$HAFO_DIR/.${n}-cmdline"
+    node_death "$n" >/dev/null
+  done
+  if ! node_start_pair > "$dir/pair-start.log" 2>&1; then
+    return 1
+  fi
+  read -r m b <<< "$NODES"
+  node_return "$m" > "$dir/$m-start.log" 2>&1 & pid1=$!
+  node_return "$b" > "$dir/$b-start.log" 2>&1 & pid2=$!
+  wait "$pid1" || rc1=$?
+  wait "$pid2" || rc2=$?
+  if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || ! apply_cfg "$m" "" returning ||
+     ! apply_cfg "$b" "" returning || ! wait_roles 100 6 ||
+     ! frontend_wait 10000 frontend_owned "$MASTER_NODE" "$BACKUP_NODE"; then
+    return 1
+  fi
+}
+
 # ---------------------------------------------------------------- failover
 # The state cases share one shape: build state through the VIP, prove the
 # sync channel carried something, take the MASTER away, ask again through

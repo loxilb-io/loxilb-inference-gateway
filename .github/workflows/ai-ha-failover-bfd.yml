@@ -15,17 +15,25 @@ on:
       - 'pkg/loxinet/rules*.go'
       - 'pkg/loxinet/layer3.go'
       - 'pkg/loxinet/neighbor.go'
+      - 'pkg/utils/net.go'
       - 'pkg/loxinet/dpebpf_linux.go'
       - 'pkg/loxinet/shutdown*.go'
       - 'pkg/loxinet/ha_*.go'
       - 'pkg/loxinet/xsync*.go'
       - 'pkg/loxinet/sockproxy_sync*.go'
+      - 'pkg/aikey/**'
+      - 'pkg/pgstore/**'
+      - 'pkg/jwtauth/**'
+      - 'pkg/loxinet/ai_gateway*.go'
       - 'pkg/ratelimit/**'
       - 'pkg/snapshot/**'
       - 'options/options.go'
       - 'api/loxinlp/**'
       - 'api/restapi/handler/cluster.go'
       - 'api/restapi/handler/snapshot.go'
+      - 'api/restapi/handler/ai_apikey.go'
+      - 'api/restapi/handler/ai_qos_ladder.go'
+      - 'api/restapi/handler/jwtauthprofile.go'
       - 'cicd/ai-ha-failover-bfd/**'
       - 'cicd/ha-l2-mixed-version/**'
       - 'cicd/common.sh'
@@ -87,7 +95,7 @@ jobs:
             ./validation.sh || result=$?
             # 1 and 2 are the harness verdict codes; the gate checks individual cases.
             if [ "$result" -gt 2 ]; then rc=1; fi
-            python3 ./verdict_gate.py "$HAFO_OUT/verdicts.tsv" ./known-fail.tsv || rc=1
+            python3 ./verdict_gate.py "$HAFO_OUT/verdicts.tsv" ./known-fail.tsv FAILOVER-8b FAILOVER-9 || rc=1
           else
             rc=1
           fi

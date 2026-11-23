@@ -11,18 +11,18 @@
 # NOT_RUN (a precondition or the harness itself failed).
 #
 # usage: ./validation.sh [--cases FAILOVER-0,BED]   (default: every case)
-# Case selectors: FAILOVER-0 BED FAILOVER-1 FAILOVER-2-4 FAILOVER-5-8 FAILOVER-6-7 FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13 FAILOVER-FRONTEND
+# Case selectors: FAILOVER-0 BED FAILOVER-1 FAILOVER-2-4 FAILOVER-5-8 FAILOVER-6-7 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13 FAILOVER-8 FAILOVER-9 FAILOVER-FRONTEND
 
 source ../common.sh >/dev/null
 source ./lib.sh
 CFGDIR="$HAFO_DIR"
-ALL_CASES="FAILOVER-0 BED-1 BED-2 FAILOVER-1 FAILOVER-2 FAILOVER-3 FAILOVER-4 FAILOVER-5 FAILOVER-6 FAILOVER-7 FAILOVER-8a FAILOVER-8b FAILOVER-9 FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13 FAILOVER-FRONTEND"
+ALL_CASES="FAILOVER-0 BED-1 BED-2 FAILOVER-1 FAILOVER-2 FAILOVER-3 FAILOVER-4 FAILOVER-5 FAILOVER-6 FAILOVER-7 FAILOVER-8a FAILOVER-10 FAILOVER-11 FAILOVER-11r FAILOVER-12 FAILOVER-13 FAILOVER-8b FAILOVER-9 FAILOVER-FRONTEND"
 if [ ! -f "${CFGDIR}/.unhealthy" ]; then
   [ -s "${CFGDIR}/.keys" ] && [ -f "${CFGDIR}/.env" ] || { echo "FATAL: run config.sh first"; exit 2; }
   . "${CFGDIR}/.env"
 fi
 
-CASES_WANTED="FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-9,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13,FAILOVER-FRONTEND"
+CASES_WANTED="FAILOVER-0,BED,FAILOVER-1,FAILOVER-2-4,FAILOVER-5-8,FAILOVER-6-7,FAILOVER-10,FAILOVER-11,FAILOVER-11r,FAILOVER-12,FAILOVER-13,FAILOVER-8,FAILOVER-9,FAILOVER-FRONTEND"
 while [ $# -gt 0 ]; do
   case "$1" in
     --cases) CASES_WANTED=$2; shift 2 ;;
@@ -322,12 +322,13 @@ if want FAILOVER-1; then . "$CFGDIR/cases/fo1.sh"; fi
 if want FAILOVER-2-4; then . "$CFGDIR/cases/fo2-4.sh"; fi
 if want FAILOVER-5-8; then . "$CFGDIR/cases/fo5-8.sh"; fi
 if want FAILOVER-6-7; then . "$CFGDIR/cases/fo6-7.sh"; fi
-if want FAILOVER-9; then . "$CFGDIR/cases/fo9.sh"; fi
 if want FAILOVER-10; then . "$CFGDIR/cases/fo10.sh"; fi
 if want FAILOVER-11; then F11_ID=FAILOVER-11; . "$CFGDIR/cases/fo11.sh"; fi
 if want FAILOVER-11r; then F11_ID=FAILOVER-11r; . "$CFGDIR/cases/fo11.sh"; fi
-# The two record-only cases go last: FAILOVER-13 changes a node's configuration.
+# The record-only cases restore their configuration before the frontend-enabled cases.
 if want FAILOVER-12 || want FAILOVER-13; then . "$CFGDIR/cases/fo12-13.sh"; fi
+if want FAILOVER-8; then . "$CFGDIR/cases/affinity.sh"; fi
+if want FAILOVER-9; then . "$CFGDIR/cases/fo9.sh"; fi
 if want FAILOVER-FRONTEND; then . "$CFGDIR/cases/frontend.sh"; fi
 wait_roles 60 6 || note "end of run: roles did not hold ($ROLE_LAST)"
 

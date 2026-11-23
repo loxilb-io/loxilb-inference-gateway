@@ -214,8 +214,13 @@ class Trial:
                     try:
                         duplicate = self.container_has_vip(other)
                     except subprocess.CalledProcessError as exc:
-                        # The replacement may disappear between inspect and exec.
-                        if "No such container" not in exc.stderr and "is not running" not in exc.stderr:
+                        # Removal can race either inspect or exec on this peer.
+                        peer_gone = (
+                            f"No such object: {other}",
+                            f"No such container: {other}",
+                            f"container {other} is not running",
+                        )
+                        if not any(message in (exc.stderr or "") for message in peer_gone):
                             raise
                 samples.append({"t": start, "backend": name, "incumbent_kept_vip": retained,
                                 "other_holds_vip": duplicate})

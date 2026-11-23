@@ -262,68 +262,12 @@ func IsIPHostNetAddr(ip net.IP) bool {
 	return false
 }
 
-// NetAdvertiseVIP4Req - sends a gratuitous arp reply given the DIP, SIP and interface name
-func NetAdvertiseVIP4Req(AdvIP net.IP, ifName string) (int, error) {
-	bcAddr := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
-	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_DGRAM, int(tk.Htons(syscall.ETH_P_ARP)))
-	if err != nil {
-		return -1, errors.New("af-packet-err")
-	}
-	defer syscall.Close(fd)
-
-	if err := syscall.BindToDevice(fd, ifName); err != nil {
-		return -1, errors.New("bind-err")
-	}
-
-	ifi, err := net.InterfaceByName(ifName)
-	if err != nil {
-		return -1, errors.New("intf-err")
-	}
-
-	ll := syscall.SockaddrLinklayer{
-		Protocol: tk.Htons(syscall.ETH_P_ARP),
-		Ifindex:  ifi.Index,
-		Pkttype:  0, // syscall.PACKET_HOST
-		Hatype:   1,
-		Halen:    6,
-	}
-
-	for i := 0; i < 8; i++ {
-		ll.Addr[i] = 0xff
-	}
-
-	buf := new(bytes.Buffer)
-
-	var sb = make([]byte, 2)
-	binary.BigEndian.PutUint16(sb, 1) // HwType = 1
-	buf.Write(sb)
-
-	binary.BigEndian.PutUint16(sb, 0x0800) // protoType
-	buf.Write(sb)
-
-	buf.Write([]byte{6}) // hwAddrLen
-	buf.Write([]byte{4}) // protoAddrLen
-
-	binary.BigEndian.PutUint16(sb, 0x2) // OpCode
-	buf.Write(sb)
-
-	buf.Write(ifi.HardwareAddr) // senderHwAddr
-	buf.Write(AdvIP.To4())      // senderProtoAddr
-
-	buf.Write(bcAddr)      // targetHwAddr
-	buf.Write(AdvIP.To4()) // targetProtoAddr
-
-	if err := syscall.Bind(fd, &ll); err != nil {
-		return -1, errors.New("bind-err")
-	}
-	if err := syscall.Sendto(fd, buf.Bytes(), 0, &ll); err != nil {
-		return -1, errors.New("send-err")
-	}
-
-	return 0, nil
+// NetAdvertiseVIP4Req broadcasts an IPv4 ARP Announcement (RFC 5227).
+func NetAdvertiseVIP4Req(vip net.IP, ifName string) (int, error) {
+	return sendARPRequest(vip, vip, ifName)
 }
 
-// NetAdvertiseVIPReqWithCtx - sends a gratuitous arp reply given the DIP interface name
+// NetAdvertiseVIPReqWithCtx advertises the VIP on the selected interface.
 func NetAdvertiseVIPReqWithCtx(ctx context.Context, rCh chan<- int, AdvIP net.IP, ifName string) (int, error) {
 	for {
 		select {
@@ -396,14 +340,17 @@ func GetIfaceIP6Addr(ifName string) (addr net.IP, err error) {
 	return ipAddr, nil
 }
 
-// SendArpReq - sends a  arp request given the DIP, SIP and interface name
-func SendArpReq(AdvIP net.IP, ifName string) (int, error) {
-	zeroAddr := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-
+// SendArpReq asks for the target IPv4 address from the interface's address.
+func SendArpReq(targetIP net.IP, ifName string) (int, error) {
 	srcIP, err := GetIfaceIPAddr(ifName)
 	if err != nil {
 		return -1, err
 	}
+	return sendARPRequest(srcIP, targetIP, ifName)
+}
+
+func sendARPRequest(srcIP, targetIP net.IP, ifName string) (int, error) {
+	zeroAddr := [6]byte{}
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_DGRAM, int(tk.Htons(syscall.ETH_P_ARP)))
 	if err != nil {
 		return -1, errors.New("af-packet-err")
@@ -449,8 +396,8 @@ func SendArpReq(AdvIP net.IP, ifName string) (int, error) {
 	buf.Write(ifi.HardwareAddr) // senderHwAddr
 	buf.Write(srcIP.To4())      // senderProtoAddr
 
-	buf.Write(zeroAddr)    // targetHwAddr
-	buf.Write(AdvIP.To4()) // targetProtoAddr
+	buf.Write(zeroAddr[:])    // targetHwAddr
+	buf.Write(targetIP.To4()) // targetProtoAddr
 
 	if err := syscall.Bind(fd, &ll); err != nil {
 		return -1, errors.New("bind-err")

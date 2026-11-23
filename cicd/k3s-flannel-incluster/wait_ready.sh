@@ -4,7 +4,7 @@ function wait_cluster_ready {
     PodsOut=$(sudo kubectl get pods -A)
     Res=$(echo "$PodsOut" |
     while IFS= read -r line; do
-        if [[ "$line" != *"Running"* && "$line" != *"READY"* ]]; then
+        if [[ "$line" != *"Running"* && "$line" != *"Completed"* && "$line" != *"READY"* ]]; then
             echo "not ready"
             return
         fi
@@ -12,8 +12,8 @@ function wait_cluster_ready {
     if [[ $Res == *"not ready"* ]]; then
         echo "Current kubectl get pods -A output:"
         echo "$PodsOut"
-        echo "Pods not in Running status:"
-        echo "$PodsOut" | awk 'NR==1 || $4 != "Running"'
+        echo "Pods not in Running/Completed status:"
+        echo "$PodsOut" | awk 'NR==1 || ($4 != "Running" && $4 != "Completed")'
         return 1
     fi
     return 0
