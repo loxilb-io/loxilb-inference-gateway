@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-18T02:44:35+00:00",
-  "source_revision": "f375d4acde5880f9c66a79aec7014ea57c0909b7"
+  "generated_at": "2026-11-23T06:41:07+00:00",
+  "source_revision": "fa27896a3cbc2029e803dd66f67d5b966cd79c8c"
  },
  "contract": {
   "total": 360,
@@ -1609,8 +1609,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5806,
+     "def_line": 4203,
+     "call_line": 5851,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -2591,8 +2591,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5334,
+     "def_line": 4203,
+     "call_line": 5378,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2704,8 +2704,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5334,
+     "def_line": 4203,
+     "call_line": 5378,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2828,8 +2828,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5334,
+     "def_line": 4203,
+     "call_line": 5378,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2950,8 +2950,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5334,
+     "def_line": 4203,
+     "call_line": 5378,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -3045,8 +3045,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -3136,8 +3136,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -3198,8 +3198,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5806,
+     "def_line": 4203,
+     "call_line": 5851,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -5377,10 +5377,10 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5811,
+     "def_line": 4203,
+     "call_line": 5856,
      "calls": "syncVllmScraper",
-     "note": "on create; the replace path calls it too (rules.go:5339), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
+     "note": "on create; the replace path calls it too (rules.go:5383), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
     {
      "symbol": "NetLbRuleAdd",
@@ -8797,8 +8797,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8877,8 +8877,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8960,8 +8960,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9039,8 +9039,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9128,8 +9128,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9207,8 +9207,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9289,8 +9289,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -11444,8 +11444,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank",
      "receiver": "RuleH"
     },
@@ -11607,8 +11607,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 4192,
-     "call_line": 5763,
+     "def_line": 4203,
+     "call_line": 5808,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -12629,7 +12629,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-trie', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 12/12 checks, exact source-predicted node counts. The gate is the per-rule API field pd_cache_aware_mode (api/models/loadbalance_entry.go:834 -> api/restapi/handler/loadbalancer.go:150 -> pkg/loxinet/rules.go:4738 -> pkg/loxinet/dpebpf_linux.go:1809), not an engine property, and the one build gate that would degrade the mode to 0 never logged, consistent with the datapath CFLAGS defining HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally. The drive is staged so the two writer classes are separated rather than summed: with the gate closed the gauge is EXACTLY 0 (pd_trie is NULL, so the collector skips the family) while 3/3 requests still terminated at Tier 2, which is what makes the control non-vacuous; opening the gate with NO traffic reads EXACTLY 1, the root node created at rule add; three requests whose system prompts have distinct first bytes then read EXACTLY 1+3=4, one single-leaf insert apiece. Which insert site moved is settled by an independent family: loxilb_ai_pd_tier_selected_total{tier=\"tier2\"} moved +3 while {tier=\"tier1\"} stayed 0, so every insert is attributable to the Tier-2 selection site and the Tier-1 site is asserted silent rather than assumed. Restoring the gate re-POSTs the rule and returns the gauge to EXACTLY 0, which rules out the rule re-add as the cause. Fleet proof still belongs to M08."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-trie', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 12/12 checks, exact source-predicted node counts. The gate is the per-rule API field pd_cache_aware_mode (api/models/loadbalance_entry.go:834 -> api/restapi/handler/loadbalancer.go:150 -> pkg/loxinet/rules.go:4763 -> pkg/loxinet/dpebpf_linux.go:1809), not an engine property, and the one build gate that would degrade the mode to 0 never logged, consistent with the datapath CFLAGS defining HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally. The drive is staged so the two writer classes are separated rather than summed: with the gate closed the gauge is EXACTLY 0 (pd_trie is NULL, so the collector skips the family) while 3/3 requests still terminated at Tier 2, which is what makes the control non-vacuous; opening the gate with NO traffic reads EXACTLY 1, the root node created at rule add; three requests whose system prompts have distinct first bytes then read EXACTLY 1+3=4, one single-leaf insert apiece. Which insert site moved is settled by an independent family: loxilb_ai_pd_tier_selected_total{tier=\"tier2\"} moved +3 while {tier=\"tier1\"} stayed 0, so every insert is attributable to the Tier-2 selection site and the Tier-1 site is asserted silent rather than assumed. Restoring the gate re-POSTs the rule and returns the gauge to EXACTLY 0, which rules out the rule re-add as the cause. Fleet proof still belongs to M08."
   },
   {
    "name": "loxilb_pd_trt_ctx_early_exit_total",
