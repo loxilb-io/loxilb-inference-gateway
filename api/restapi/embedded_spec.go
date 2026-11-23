@@ -8214,7 +8214,7 @@ func init() {
           "type": "string"
         },
         "hostname": {
-          "description": "Hostname for SNI certificate (e.g., api.example.com). This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.",
+          "description": "Hostname for SNI certificate (e.g., api.example.com), or a wildcard for one left-most label (e.g., *.example.com, which serves a.example.com only). Stored and listed in lower case; a client's SNI name compares without regard to case and selects an exact entry before a wildcard. This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.",
           "type": "string"
         }
       },
@@ -12474,7 +12474,7 @@ func init() {
     },
     "/config/cert": {
       "post": {
-        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.",
+        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. At handshake the SNI name selects the certificate registered under it, else the one registered under the wildcard for its left-most label (*.example.com serves a.example.com, not example.com or a.b.example.com), else the listener's own; names compare without regard to case. certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.",
         "operationId": "postConfigCert",
         "parameters": [
           {
@@ -26022,7 +26022,7 @@ func init() {
     },
     "/config/cert": {
       "post": {
-        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.",
+        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. At handshake the SNI name selects the certificate registered under it, else the one registered under the wildcard for its left-most label (*.example.com serves a.example.com, not example.com or a.b.example.com), else the listener's own; names compare without regard to case. certId is the upload/rotate/delete handle. When certId is absent the server mints one. A certId already in use returns 409 and leaves its material intact. Use PUT to rotate a registered certificate. Malformed PEM / missing key returns 400.",
         "summary": "Upload a TLS certificate under an opaque certId",
         "operationId": "postConfigCert",
         "parameters": [
@@ -47865,7 +47865,7 @@ func init() {
           "type": "string"
         },
         "hostname": {
-          "description": "Hostname for SNI certificate (e.g., api.example.com). This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.",
+          "description": "Hostname for SNI certificate (e.g., api.example.com), or a wildcard for one left-most label (e.g., *.example.com, which serves a.example.com only). Stored and listed in lower case; a client's SNI name compares without regard to case and selects an exact entry before a wildcard. This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.",
           "type": "string"
         }
       }

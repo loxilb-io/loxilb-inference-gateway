@@ -32,6 +32,14 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
+- TLS: a wildcard certificate is selected by SNI. A certificate whose SAN is
+  `*.example.com` serves `a.example.com`, and neither `example.com` nor
+  `a.b.example.com`; a certificate registered under the exact name still comes
+  first. SNI names compare without regard to case, and the SNI store keeps and
+  lists them in lower case. Until now only the exact name selected a
+  certificate, and a wildcard one was never served. Requires the datapath at
+  `5b5f0d8`. See
+  [the TLS guide](docs/load-balancing/03-l7-tls.md#63-how-a-listener-picks-its-certificate).
 - HA role gating follows configured KA/BFD or a valid cistate request. CT-only
   cluster peers, role-unmanaged active-active deployments, and egress endpoints
   retain NotDefined advertisements. Xsync startup requests run on an independent
@@ -122,7 +130,7 @@ inference-gateway delta is enumerated in detail.
   refilling such a rule is applied in place. GET reads it back with
   `"endpoints": []` and the status in force. An empty list on any other rule is
   still refused 400. Advertised as the `no_endpoint_rule` version feature.
-  Requires the datapath at `f1b925c`. See
+  Requires the datapath at `20e7a5c`. See
   [the REST reference](docs/load-balancing/05-rest-api-reference.md).
 - AI gateway: a request's refusal (`sec.ai.deny`), completion (`data.ai.complete`)
   and token settlement (`data.ai.settle`) audit records carry its W3C `traceparent`

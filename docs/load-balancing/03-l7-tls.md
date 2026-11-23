@@ -215,8 +215,17 @@ close. Unknown certId → `404`; malformed PEM → `400`.
 
 There is **no per-rule `cert_id` field**. Uploaded certificates are registered in the SNI store
 under the hostnames auto-derived from the leaf cert's SAN (DNS) / CN, and the listener selects
-the certificate at handshake time by SNI hostname. Just create the TLS listener; the matching
-cert is served automatically:
+the certificate at handshake time by the SNI host name the client sends:
+
+1. the certificate registered under that name;
+2. otherwise the one registered under the wildcard for its left-most label. The wildcard stands
+   for exactly one label (RFC 6125 §6.4.3): `*.example.com` serves `a.example.com`, and neither
+   `example.com` nor `a.b.example.com`. A wildcard over a single label (`*.com`) serves no name;
+3. otherwise the listener's own certificate. So does a handshake without SNI.
+
+Names compare without regard to case. The store keeps them in lower case, and
+`GET /sni/certificates` lists them so. Just create the TLS listener; the matching cert is served
+automatically:
 
 ```bash
 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \

@@ -3,7 +3,7 @@
 function wait_cluster_ready {
     Res=$(sudo kubectl get pods -A |
     while IFS= read -r line; do
-        if [[ "$line" != *"Running"* && "$line" != *"READY"* ]]; then
+        if [[ "$line" != *"Running"* && "$line" != *"Completed"* && "$line" != *"READY"* ]]; then
             echo "$line: not ready"
             return
         fi
