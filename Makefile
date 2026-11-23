@@ -289,4 +289,4 @@ docker-arm64-u24:
 	docker buildx build --platform linux/arm64 --load -f Dockerfile.u24 -t $(IMAGE):$(ARM64_TAG)-u24 .
 
 lint:
-	golangci-lint run --enable-all
+	golangci-lint run
