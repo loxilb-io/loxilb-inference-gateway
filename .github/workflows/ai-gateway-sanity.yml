@@ -513,6 +513,10 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      # The host check (cicd/radix-h1/hostcheck.sh, shared by radix-h2) on
+      # recorded snapshots, before the scenario relies on it.
+      - name: Host check tests
+        run: python3 -m unittest discover -s cicd/radix-h1 -p 'test_hostcheck.py' -v
       - uses: ./.github/actions/ai-sanity-setup
         with:
           ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}
@@ -565,6 +569,10 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      # The host check (cicd/radix-h1/hostcheck.sh, shared by radix-h2) on
+      # recorded snapshots, before the scenario relies on it.
+      - name: Host check tests
+        run: python3 -m unittest discover -s cicd/radix-h1 -p 'test_hostcheck.py' -v
       - uses: ./.github/actions/ai-sanity-setup
         with:
           ghcr-token: ${{ secrets.GHCR_TOKEN || github.token }}

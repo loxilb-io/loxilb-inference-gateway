@@ -1,0 +1,36 @@
+CgroupPath
+ID       AttachType      AttachFlags     Name           
+/sys/fs/cgroup/system.slice/haveged.service
+    78       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-networkd.service
+    77       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-udevd.service
+    69       cgroup_inet_ingress multi                                          
+    68       cgroup_inet_egress multi                                          
+    67       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-timedated.service
+    208      cgroup_inet_ingress multi                                          
+    207      cgroup_inet_egress multi                                          
+    206      cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-journald.service
+    75       cgroup_inet_ingress multi                                          
+    74       cgroup_inet_egress multi                                          
+    73       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/docker-87186754ebb1dc728952822049ecbb8a352d704b241c905f428bce90c3bb8818.scope
+    133      cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/chrony.service
+    63       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/docker-1b026cbcc4d62c13c57b691fda98f31d98bd74204002eeb17dc4d1f0d0a83aa1.scope
+    136      cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/docker-bb8b8bb8effff23217644587b267f53e8d920aec6989b805b50a8d50a58de11c.scope
+    188      cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/docker-908926f47887f82040603a6dc2e70d49c497915684b47655567970ea1841196a.scope
+    127      cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-resolved.service
+    76       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/docker-992bdaf8293a8aadeec8a1b024a87e41bbda1139747feed7255c12e55824f033.scope
+    130      cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-logind.service
+    72       cgroup_inet_ingress multi                                          
+    71       cgroup_inet_egress multi                                          
+    70       cgroup_device   multi                                          

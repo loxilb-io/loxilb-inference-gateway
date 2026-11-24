@@ -1,0 +1,22 @@
+CgroupPath
+ID       AttachType      AttachFlags     Name           
+/sys/fs/cgroup/system.slice/haveged.service
+    78       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-networkd.service
+    77       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-udevd.service
+    69       cgroup_inet_ingress multi                                          
+    68       cgroup_inet_egress multi                                          
+    67       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-journald.service
+    75       cgroup_inet_ingress multi                                          
+    74       cgroup_inet_egress multi                                          
+    73       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/chrony.service
+    63       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-resolved.service
+    76       cgroup_device   multi                                          
+/sys/fs/cgroup/system.slice/systemd-logind.service
+    72       cgroup_inet_ingress multi                                          
+    71       cgroup_inet_egress multi                                          
+    70       cgroup_device   multi                                          

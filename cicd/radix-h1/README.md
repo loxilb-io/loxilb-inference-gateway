@@ -40,7 +40,16 @@ leg (`LEG <id> PASS|FAIL|INFO <detail>`).
 `hostcheck.sh` compares `sysctl -a`, `lsmod` and `bpftool prog / cgroup tree
 / net` with the snapshot taken before the first container, and checks after
 the gateway starts that it loaded no host-wide program type and attached
-cgroup programs only inside its own container. A difference stops the run.
+cgroup programs only inside its own container. Two kinds of new cgroup
+program elsewhere are accepted: the container runtime's cgroup_device filter
+on the scenario's other containers, and the filters systemd attaches to its
+own units (a cgroup_device or cgroup_skb program on a .service, .scope or
+.socket unit under system.slice or user.slice, not a docker-*.scope, loaded
+by systemd and named sd_* where bpftool reports either), counted per unit in
+the "systemd unit filters accepted" notes line. Any other difference stops
+the run. The comparison is `hostcheck.py`; `test_hostcheck.py` runs it on
+snapshots recorded in `testdata/hostcheck` (a step of both radix jobs, before
+the scenario).
 
 ## Legs
 

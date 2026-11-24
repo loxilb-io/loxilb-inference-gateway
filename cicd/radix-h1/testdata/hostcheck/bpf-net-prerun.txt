@@ -1,0 +1,10 @@
+xdp:
+
+tc:
+eth0(2) clsact/ingress tc_ingress_traffic id 81
+eth0(2) clsact/egress tc_egress_traffic id 80
+
+flow_dissector:
+
+netfilter:
+
