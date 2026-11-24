@@ -32,6 +32,17 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
+- HTTP/1.1 upgrade requests (WebSocket) reach their backend. Before this fix:
+  - on an HTTPS listener a handshake was never forwarded;
+  - on any listener a handshake ignored the host of a host|path rule and could
+    reach another rule's backend;
+  - a request whose body contained "Connection: Upgrade" was forwarded empty.
+
+  Upgrade requests are now routed and forwarded like any other request, with
+  X-Forwarded-Proto and X-Forwarded-Host on HTTPS. Once the backend answers
+  101, the connection's bytes are relayed unchanged in both directions. A
+  declined switch leaves the connection on HTTP/1.1. AI-gateway and MCP
+  services still refuse upgrade requests. Requires the datapath at `c21892a`.
 - TLS: a wildcard certificate is selected by SNI. A certificate whose SAN is
   `*.example.com` serves `a.example.com`, and neither `example.com` nor
   `a.b.example.com`; a certificate registered under the exact name still comes
