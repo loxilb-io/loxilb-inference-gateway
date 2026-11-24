@@ -38,7 +38,7 @@ RX_IMG_MOCK=<mock.Dockerfile image> RX_RUN_DIR=<run folder> ./run.sh`
 | STICKY | a persistence pool is never overridden: counted `pinned`, not scanned |
 | E8 | a body above 768 KiB is answered and counted `inspect_size`, not scanned |
 | TOKENS | a body above 8,192 JSON tokens is scanned and routed by radix |
-| GUARD-FALLBACK | four streams of a prefix held on its endpoint, each a HIT; the fifth counts `spread` |
+| GUARD-FALLBACK | four streams of a prefix held on its endpoint, each a HIT; the fifth counts `balance` |
 | GUARD-RULES-APART | four streams held on Y; a prefix learned on idle X is a HIT on X |
 | QUIESCE | admission in-flight back to 0 on every pool used; no underflow or `notify-pin-FAIL` line in the run |
 | E9 | a marker string in a request is absent from the gateway log at debug level |

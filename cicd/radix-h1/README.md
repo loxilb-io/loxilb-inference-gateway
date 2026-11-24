@@ -40,7 +40,16 @@ leg (`LEG <id> PASS|FAIL|INFO <detail>`).
 `hostcheck.sh` compares `sysctl -a`, `lsmod` and `bpftool prog / cgroup tree
 / net` with the snapshot taken before the first container, and checks after
 the gateway starts that it loaded no host-wide program type and attached
-cgroup programs only inside its own container. A difference stops the run.
+cgroup programs only inside its own container. Two kinds of new cgroup
+program elsewhere are accepted: the container runtime's cgroup_device filter
+on the scenario's other containers, and the filters systemd attaches to its
+own units (a cgroup_device or cgroup_skb program on a .service, .scope or
+.socket unit under system.slice or user.slice, not a docker-*.scope, loaded
+by systemd and named sd_* where bpftool reports either), counted per unit in
+the "systemd unit filters accepted" notes line. Any other difference stops
+the run. The comparison is `hostcheck.py`; `test_hostcheck.py` runs it on
+snapshots recorded in `testdata/hostcheck` (a step of both radix jobs, before
+the scenario).
 
 ## Legs
 
@@ -52,7 +61,7 @@ cgroup programs only inside its own container. A difference stops the run.
 | KA | endpoints seen per kept-alive connection (report) |
 | E2 | turn 2 of a conversation goes to turn 1's endpoint (round robin alone: never) |
 | E2-KA | on one kept-alive connection, turns of two conversations learned on different endpoints each go to their own endpoint (keep-alive rule) |
-| GUARD-FALLBACK | balance guard: four requests of a prefix held on its endpoint X (in flight 0..3, each a HIT); the fifth sees 4 - 0 > 3 and counts `spread` |
+| GUARD-FALLBACK | balance guard: four requests of a prefix held on its endpoint X (in flight 0..3, each a HIT); the fifth sees 4 - 0 > 3 and counts `balance` |
 | GUARD-RULES-APART | four requests held on Y; a prefix learned on idle X is a HIT on X (radix pick - least loaded = 0); the previous rule (max - min) fell back |
 | GUARD-QUIESCE | after both guard legs the pool's admission in-flight is 0 and no underflow line appeared |
 | KA-session | a session-header pool on a kept-alive connection behaves as before (leg kept) |
