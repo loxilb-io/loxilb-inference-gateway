@@ -32,6 +32,13 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
+- The datapath loads on kernel 7.0 in the u24 build. From Linux 6.14 the
+  verifier tracks the conntrack key pair that `tc_packet_func_slow` keeps on
+  the stack, which multiplied the states it checks. A build with L4/HTTP trace
+  (`Dockerfile.u24`) went past the 1,000,000-instruction limit, and the gateway
+  aborted at startup. The default build loaded with 5.5% to spare. The keys now
+  live in a per-CPU map. On 7.0 the u24 build loads at 384,941 instructions and
+  the default build at 279,927. Requires the datapath at `7160d14`.
 - TLS: a wildcard certificate is selected by SNI. A certificate whose SAN is
   `*.example.com` serves `a.example.com`, and neither `example.com` nor
   `a.b.example.com`; a certificate registered under the exact name still comes
