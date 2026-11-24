@@ -84,7 +84,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: sudo apt-get update
-      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves libbsd-dev build-essential bison flex libjson-c-dev libnghttp2-dev iproute2
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves libbsd-dev build-essential bison flex libjson-c-dev libnghttp2-dev iproute2 jq
       - name: Install libtokenizers (cgo link dependency of the router)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,5 +100,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: epp-datapath-failure
-          path: ${{ runner.temp }}/epp-datapath*.log
+          path: |
+            ${{ runner.temp }}/epp-datapath*.log
+            ${{ runner.temp }}/epp-datapath*.json
           if-no-files-found: ignore

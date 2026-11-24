@@ -8,8 +8,8 @@
 #             pure-Go commands. No root, no cgo, a few seconds.
 #   datapath  the in-process data plane: the loxinet harness loads eBPF and
 #             runs the real sockproxy workers, and the EPP tests drive HTTP
-#             through a VIP to a fake EPP and fake backends. Needs root and a
-#             built loxilb-ebpf tree (make). The remote-backend test also
+#             through a VIP to a fake EPP and fake backends. Needs root, jq
+#             and a built loxilb-ebpf tree (make). The remote-backend test also
 #             needs ip, tc and the netem qdisc; it skips without them.
 #   all       both (the default).
 #
@@ -61,6 +61,10 @@ datapath_lane() {
     fail "loxilb-ebpf is not built ($lib missing): run make first"
     return
   fi
+  if ! command -v jq >/dev/null; then
+    fail "the datapath lane needs jq to read the go test -json results"
+    return
+  fi
   # The C side of the EPP stage: rule words reach the proxy pool.
   run "C unit test_epp" make -C loxilb-ebpf/common test_epp
 
@@ -80,19 +84,31 @@ datapath_lane() {
   )
   datapath_case() {
     local label=$1 pattern=$2; shift 2
-    local output="${LOG%.log}.${label}.log" passed skipped unexpected test
+    local output="${LOG%.log}.${label}.log" events="${LOG%.log}.${label}.json"
+    local rc=0 passes skips passed skipped unexpected test
     # TestMain initializes the real harness; merely compiling EPP tests does
-    # not prove that the datapath cases ran.
-    if "$@" go test -count=1 -v -ldflags="-X=main.eppbust=$bust" \
-         -run "$pattern" ./pkg/loxinet/ >"$output" 2>&1; then
+    # not prove that the datapath cases ran. The verdicts below come from go
+    # test's JSON events, not from the text log: the harness logs to the
+    # same stdout as the tests, and a log line written around a "--- PASS"
+    # line once hid a test that had passed. $output is the readable log,
+    # rebuilt from the same events.
+    "$@" go test -json -count=1 -ldflags="-X=main.eppbust=$bust" \
+      -run "$pattern" ./pkg/loxinet/ >"$events" 2>"$output.stderr" || rc=$?
+    { jq -Rj 'fromjson? | .Output // empty' "$events"; cat "$output.stderr"; } >"$output"
+    rm -f "$output.stderr"
+    if [ "$rc" = 0 ]; then
       pass "EPP datapath $label"
     else
       fail "EPP datapath $label (full log: $output)"
       tail -60 "$output"
       return 1
     fi
-    passed="$(grep -c '^--- PASS: TestEpp' "$output")"
-    skipped="$(grep -c '^[[:space:]]*--- SKIP: TestEpp' "$output")"
+    # Test names, subtests included ("TestX/case"), one per line.
+    passes="$(jq -Rr 'fromjson? | select(.Action == "pass" and .Test) | .Test' "$events")"
+    skips="$(jq -Rr 'fromjson? | select(.Action == "skip" and .Test) | .Test' "$events" |
+      grep '^TestEpp')"
+    passed="$(grep -c '^TestEpp[^/]*$' <<<"$passes")"
+    skipped="$(grep -c . <<<"$skips")"
     printf '        %s EPP tests passed, %s skipped; log: %s\n' "$passed" "$skipped" "$output"
     if [ "$passed" -lt 8 ]; then
       fail "only $passed EPP tests ran in $label: harness did not start"
@@ -100,15 +116,14 @@ datapath_lane() {
     fi
     # Only this optional netns test may skip; a skipped body/latency test is
     # a failure even if many unrelated EPP tests passed.
-    unexpected="$(grep -E '^[[:space:]]*--- SKIP: TestEpp' "$output" |
-      grep -vE -- '--- SKIP: TestEppRemoteBackendConnectsOncePerRequest([ (]|$)')"
+    unexpected="$(grep -vFx TestEppRemoteBackendConnectsOncePerRequest <<<"$skips")"
     if [ -n "$unexpected" ]; then
       fail "required datapath test skipped in $label"
       printf '%s\n' "$unexpected"
       return 1
     fi
     for test in "${required[@]}"; do
-      if ! grep -Eq -- "^--- PASS: ${test}([ (]|$)" "$output"; then
+      if ! grep -Fxq -- "$test" <<<"$passes"; then
         fail "$test did not pass in $label"
         return 1
       fi
