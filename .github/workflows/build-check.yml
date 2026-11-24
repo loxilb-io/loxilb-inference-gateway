@@ -36,6 +36,11 @@ jobs:
       with:
         go-version-file: go.mod
 
+    - name: Toolkit facade tests (loxilib imported only through internal/tk)
+      # No other job runs these, and a direct loxilib import once reached
+      # main unnoticed. They need no cgo and take seconds.
+      run: CGO_ENABLED=0 go test -count=1 ./internal/...
+
     - name: Embedded CLI identity negative controls
       run: python3 scripts/test_bundled_cli_identity.py
 

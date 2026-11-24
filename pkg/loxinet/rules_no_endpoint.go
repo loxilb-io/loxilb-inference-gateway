@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	cmn "github.com/loxilb-io/loxilb/common"
-	tk "github.com/loxilb-io/loxilib"
+	tk "github.com/loxilb-io/loxilb/internal/tk"
 )
 
 // A host|path fullproxy rule may stand with no endpoints. The data plane then
