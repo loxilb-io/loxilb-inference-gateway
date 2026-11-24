@@ -52,7 +52,7 @@ cgroup programs only inside its own container. A difference stops the run.
 | KA | endpoints seen per kept-alive connection (report) |
 | E2 | turn 2 of a conversation goes to turn 1's endpoint (round robin alone: never) |
 | E2-KA | on one kept-alive connection, turns of two conversations learned on different endpoints each go to their own endpoint (keep-alive rule) |
-| GUARD-FALLBACK | balance guard: four requests of a prefix held on its endpoint X (in flight 0..3, each a HIT); the fifth sees 4 - 0 > 3 and counts `spread` |
+| GUARD-FALLBACK | balance guard: four requests of a prefix held on its endpoint X (in flight 0..3, each a HIT); the fifth sees 4 - 0 > 3 and counts `balance` |
 | GUARD-RULES-APART | four requests held on Y; a prefix learned on idle X is a HIT on X (radix pick - least loaded = 0); the previous rule (max - min) fell back |
 | GUARD-QUIESCE | after both guard legs the pool's admission in-flight is 0 and no underflow line appeared |
 | KA-session | a session-header pool on a kept-alive connection behaves as before (leg kept) |

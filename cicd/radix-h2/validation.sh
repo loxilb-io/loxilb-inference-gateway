@@ -277,14 +277,14 @@ gu0=$(badlines)
 
 client $PORT_RR run "$(plan gf1 '[{"rid":"gf-t1","body":{"kind":"conv","conv":821,"turns":1}}]')" | results > "$EVID/gf-1.jsonl"
 X=$(jget 'rs[0]["ep"] if rs[0]["status"] == 200 else ""' < "$EVID/gf-1.jsonl")
-snap; gh0=$(stat hit); gs0=$(z $(stat spread))
+snap; gh0=$(stat hit); gs0=$(z $(stat balance))
 if [ -n "$X" ]; then
   hold4 gf "$X" 821
   client $PORT_RR run "$(plan gf5 '[{"rid":"gf-5th","body":{"kind":"conv","conv":821,"turns":2}}]')" | results > "$EVID/gf-5.jsonl"
   sleep 9
   mock_admin "$X" /admin/reset
 fi
-snap; gh1=$(stat hit); gs1=$(z $(stat spread))
+snap; gh1=$(stat hit); gs1=$(z $(stat balance))
 held gf > "$EVID/gf-held.jsonl"
 okh=$(jget "len(rs) == 4 and all(r['ep'] == '$X' and r['status'] == 200 for r in rs)" < "$EVID/gf-held.jsonl" 2>/dev/null)
 ep5=$(jget 'rs[0]["ep"] if rs and rs[0]["status"] == 200 else "none"' < "$EVID/gf-5.jsonl" 2>/dev/null)
@@ -298,14 +298,14 @@ fi
 client $PORT_RR run "$(plan ga1 '[{"rid":"ga-Y-t1","body":{"kind":"conv","conv":831,"turns":1}},{"rid":"ga-X-t1","body":{"kind":"conv","conv":832,"turns":1}}]')" | results > "$EVID/ga-1.jsonl"
 Y=$(jget 'rs[0]["ep"] if rs[0]["status"] == 200 else ""' < "$EVID/ga-1.jsonl")
 X=$(jget 'rs[1]["ep"] if rs[1]["status"] == 200 and rs[1]["ep"] != rs[0]["ep"] else ""' < "$EVID/ga-1.jsonl")
-snap; ah0=$(stat hit); as0=$(z $(stat spread))
+snap; ah0=$(stat hit); as0=$(z $(stat balance))
 if [ -n "$Y" ] && [ -n "$X" ]; then
   hold4 ga "$Y" 831
   client $PORT_RR run "$(plan ga5 '[{"rid":"ga-X-t2","body":{"kind":"conv","conv":832,"turns":2}}]')" | results > "$EVID/ga-5.jsonl"
   sleep 9
   mock_admin "$Y" /admin/reset
 fi
-snap; ah1=$(stat hit); as1=$(z $(stat spread))
+snap; ah1=$(stat hit); as1=$(z $(stat balance))
 held ga > "$EVID/ga-held.jsonl"
 okh=$(jget "len(rs) == 4 and all(r['ep'] == '$Y' and r['status'] == 200 for r in rs)" < "$EVID/ga-held.jsonl" 2>/dev/null)
 epx=$(jget 'rs[0]["ep"] if rs and rs[0]["status"] == 200 else "none"' < "$EVID/ga-5.jsonl" 2>/dev/null)
