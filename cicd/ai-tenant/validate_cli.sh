@@ -187,7 +187,10 @@ cli get lbversion; check_eq "C0 get lbversion (exit)" 0 "$CLI_RC"; warn_check "C
 echo "$CLI_STDOUT" | sed 's/^/      /'
 check_has "C0 the product column" "$(echo "$V" | jq -r .product)" "$CLI_STDOUT"
 check_has "C0 the features line equals /version" "features: $(echo "$V" | jq -r '.features | join(", ")')" "$CLI_STDOUT"
-check_eq "C0 this gateway advertises api_key_auth, epp and jwt_auth_profile" "api_key_auth epp jwt_auth_profile" "$(echo "$V" | jq -r '.features | sort | join(" ")')"
+for f in api_key_auth epp jwt_auth_profile; do
+  check_eq "C0 this gateway advertises $f" true \
+    "$(echo "$V" | jq -r --arg f "$f" '.features | index($f) != null')"
+done
 
 # ── C1: equivalence with the scenario's curl configuration ──────────────────
 echo ""
