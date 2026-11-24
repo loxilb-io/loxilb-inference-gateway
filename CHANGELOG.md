@@ -32,6 +32,13 @@ inference-gateway delta is enumerated in detail.
 
 ### Fixed
 
+- The datapath loads on kernel 7.0 in the u24 build. From Linux 6.14 the
+  verifier tracks the conntrack key pair that `tc_packet_func_slow` keeps on
+  the stack, which multiplied the states it checks. A build with L4/HTTP trace
+  (`Dockerfile.u24`) went past the 1,000,000-instruction limit, and the gateway
+  aborted at startup. The default build loaded with 5.5% to spare. The keys now
+  live in a per-CPU map. On 7.0 the u24 build loads at 384,941 instructions and
+  the default build at 279,927. Requires the datapath at `1d4c912`.
 - HTTP/1.1 upgrade requests (WebSocket) reach their backend. Before this fix:
   - on an HTTPS listener a handshake was never forwarded;
   - on any listener a handshake ignored the host of a host|path rule and could
@@ -42,7 +49,7 @@ inference-gateway delta is enumerated in detail.
   X-Forwarded-Proto and X-Forwarded-Host on HTTPS. Once the backend answers
   101, the connection's bytes are relayed unchanged in both directions. A
   declined switch leaves the connection on HTTP/1.1. AI-gateway and MCP
-  services still refuse upgrade requests. Requires the datapath at `c21892a`.
+  services still refuse upgrade requests. Requires the datapath at `0812e8e`.
 - TLS: a wildcard certificate is selected by SNI. A certificate whose SAN is
   `*.example.com` serves `a.example.com`, and neither `example.com` nor
   `a.b.example.com`; a certificate registered under the exact name still comes
