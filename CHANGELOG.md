@@ -50,6 +50,21 @@ inference-gateway delta is enumerated in detail.
   101, the connection's bytes are relayed unchanged in both directions. A
   declined switch leaves the connection on HTTP/1.1. AI-gateway and MCP
   services still refuse upgrade requests. Requires the datapath at `0812e8e`.
+- L4 datapath (default, fullnat, onearm and DSR rules), five fixes ported from
+  upstream loxilb-ebpf:
+  - a UDP datagram sent with checksum 0 ("no checksum") reaches its endpoint.
+    NAT used to turn the zero into a wrong checksum, and the endpoint dropped
+    the datagram;
+  - a TCP segment that matches no state transition leaves the conntrack entry
+    in its state instead of resetting it to closed;
+  - a retransmitted SYN no longer restarts a handshake that already saw the
+    SYN-ACK, which reset the new connection;
+  - a retransmitted SCTP SHUTDOWN that crosses the SHUTDOWN ACK no longer
+    breaks the close;
+  - neighbor resolve requests, HW offload events and packet traces from CPUs
+    16 and above are no longer lost on nodes with more than 16 CPUs.
+
+  Requires the datapath at `f435cda`.
 - TLS: a wildcard certificate is selected by SNI. A certificate whose SAN is
   `*.example.com` serves `a.example.com`, and neither `example.com` nor
   `a.b.example.com`; a certificate registered under the exact name still comes
