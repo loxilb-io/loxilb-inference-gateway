@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,9 @@ type Logger struct {
 	level   atomic.Int32
 	tty     atomic.Bool
 	writers [Trace + 1]*log.Logger
+	// ttyOut receives the terminal mirror; nil means os.Stdout at write
+	// time. Only tests set it, before the logger is used.
+	ttyOut io.Writer
 
 	// These writer fields are read-only after New. Reassigning a field does
 	// not change the writer used by Logf. Use SetOutput on the writer to
@@ -90,9 +94,25 @@ func (l *Logger) enabled(level Level) bool {
 func (l *Logger) logf(level Level, format string, args ...any) {
 	l.writers[level].Printf(format, args...)
 	if l.tty.Load() {
-		fmt.Printf("%s ", time.Now().Format("2006-01-02 15:04:05"))
-		fmt.Printf(format, args...)
+		l.mirror(format, args...)
 	}
+}
+
+// mirror copies a log line to the terminal in a single write. A timestamp
+// written apart from its message lets other output on the same stdout, such
+// as go test's "--- PASS" lines or another goroutine's log, land between
+// the two. Like the file writer, it ends the line with a newline if the
+// message has none, so the next output starts on a line of its own.
+func (l *Logger) mirror(format string, args ...any) {
+	line := fmt.Appendf(time.Now().AppendFormat(nil, "2006-01-02 15:04:05 "), format, args...)
+	if line[len(line)-1] != '\n' {
+		line = append(line, '\n')
+	}
+	out := l.ttyOut
+	if out == nil {
+		out = os.Stdout
+	}
+	_, _ = out.Write(line)
 }
 
 type publication struct {

@@ -6,6 +6,7 @@ package operlog
 import (
 	"bytes"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -103,6 +104,50 @@ func TestSwapDrainsOldPublicationWhileFormatterLogs(t *testing.T) {
 	}
 	if !strings.Contains(oldOutput.String(), "outer message") || !strings.Contains(newOutput.String(), "nested message") {
 		t.Fatalf("outer and nested messages reached the wrong sinks: old=%q new=%q", oldOutput.String(), newOutput.String())
+	}
+}
+
+// writeRecorder keeps each Write call apart, so a test can see whether a
+// line reached the sink in one piece.
+type writeRecorder struct {
+	mu     sync.Mutex
+	writes []string
+}
+
+func (w *writeRecorder) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.writes = append(w.writes, string(p))
+	return len(p), nil
+}
+
+// The terminal mirror shares stdout with go test and other goroutines. Each
+// line must be one write: a timestamp written apart from its message let a
+// "--- PASS" line land between them and fail the EPP datapath gate.
+func TestTTYMirrorWritesEachLineOnce(t *testing.T) {
+	l, err := New(io.Discard, Info, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tty writeRecorder
+	l.ttyOut = &tty
+	previous := SwapDefault(l)
+	t.Cleanup(func() { SwapDefault(previous) })
+
+	Logf(Info, "ends with a newline %d\n", 1)
+	Logf(Info, "ends without one %d", 2)
+	Logf(Debug, "filtered")
+
+	stamp := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} `)
+	want := []string{"ends with a newline 1\n", "ends without one 2\n"}
+	if len(tty.writes) != len(want) {
+		t.Fatalf("terminal writes = %q, want one per line", tty.writes)
+	}
+	for i, got := range tty.writes {
+		loc := stamp.FindStringIndex(got)
+		if loc == nil || got[loc[1]:] != want[i] {
+			t.Errorf("write %d = %q, want a timestamp then %q", i, got, want[i])
+		}
 	}
 }
 
