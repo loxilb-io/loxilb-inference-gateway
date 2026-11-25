@@ -5047,12 +5047,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		if replaceChg.TooManyEps {
 			if removePool {
 				eRule.DP(DpRemove)
+				kvStrictPoolRecreated(uint32(eRule.ruleNum))
 			}
 			tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s reset all end-points (too many)\n", serv.ServIP, serv.ServPort, serv.Proto)
 			delEps = eRule.act.action.(*ruleLBActs).endPoints
 			retEps = lBActs.endPoints
 		} else if removePool {
 			eRule.DP(DpRemove)
+			kvStrictPoolRecreated(uint32(eRule.ruleNum))
 		}
 
 		// The rule as it stands, for a replace the data plane refuses.
@@ -5348,6 +5350,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 					restoreCHWBLState()
 				}
 				R.lbReplaceUndo(eRule, replaceUndo, activateProbe)
+				if removePool {
+					kvStrictPoolRecreated(uint32(eRule.ruleNum))
+				}
 				DpBrokerSyncBarrier(mh.dp)
 				tk.LogIt(tk.LogError, "lb-rule %s replace not installed by the data plane, the rule is put back (sync %d)\n",
 					eRule.tuples.String(), eRule.sync)

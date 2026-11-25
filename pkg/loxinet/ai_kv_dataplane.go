@@ -31,6 +31,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -161,7 +162,113 @@ func kvSvcContractAckStamp(svcID uint32, applied uint64) {
 var (
 	kvSvcMu        sync.RWMutex
 	kvSvcContracts = make(map[uint32]*kvSvcContract)
+	// kvSvcRecreating is the re-create state of the rules fenced by
+	// kvStrictPoolRecreated (guarded by kvSvcMu): the generation of the
+	// latest call and whether its install still runs. Only the install of
+	// that generation may fence, release or clear; an older one writes
+	// nothing. A failed latest install leaves the entry, not running.
+	kvSvcRecreating  = make(map[uint32]*kvSvcRecreate)
+	kvSvcRecreateGen uint64
+	// kvSvcInstallMu serializes the contract-word installs of one rule (a
+	// re-create's and attestation's), so that the check of the generation and
+	// the word written stay in order (guarded by kvSvcMu).
+	kvSvcInstallMu = make(map[uint32]*sync.Mutex)
 )
+
+// kvRecreateRetryNs paces the retries of a re-create's install after it
+// failed for good (nanoseconds; tests shorten it).
+var kvRecreateRetryNs atomic.Int64
+
+func init() { kvRecreateRetryNs.Store(int64(30 * time.Second)) }
+
+type kvSvcRecreate struct {
+	gen     uint64
+	running bool
+}
+
+var (
+	errKvRecreateSuperseded = errors.New("a later re-create of the pool took over")
+	errKvRecreateRunning    = errors.New("the rule's pool is being re-created; its own install releases the fence")
+)
+
+func kvSvcInstallLock(svcID uint32) *sync.Mutex {
+	kvSvcMu.Lock()
+	defer kvSvcMu.Unlock()
+	m := kvSvcInstallMu[svcID]
+	if m == nil {
+		m = &sync.Mutex{}
+		kvSvcInstallMu[svcID] = m
+	}
+	return m
+}
+
+// kvSvcRecreateCurrent: gen 0 (an install outside a re-create) is always
+// current; a re-create's install only while it is the latest.
+func kvSvcRecreateCurrent(svcID uint32, gen uint64) bool {
+	if gen == 0 {
+		return true
+	}
+	kvSvcMu.RLock()
+	defer kvSvcMu.RUnlock()
+	st := kvSvcRecreating[svcID]
+	return st != nil && st.gen == gen
+}
+
+func kvSvcRecreateRunning(svcID uint32) bool {
+	kvSvcMu.RLock()
+	defer kvSvcMu.RUnlock()
+	st := kvSvcRecreating[svcID]
+	return st != nil && st.running
+}
+
+// kvSvcContractFenceGen records a failed install: the rule stays fenced with
+// the fault. A superseded re-create's install records nothing.
+func kvSvcContractFenceGen(svcID uint32, gen uint64, fault string) {
+	kvSvcMu.Lock()
+	defer kvSvcMu.Unlock()
+	if gen != 0 {
+		if st := kvSvcRecreating[svcID]; st == nil || st.gen != gen {
+			return
+		}
+	}
+	if c := kvSvcContracts[svcID]; c != nil {
+		c.denied = true
+		c.fault = fault
+	}
+}
+
+// kvSvcContractReleaseGen lifts the fence after a full ACK. A re-create's
+// install releases only while it is the latest, and clears the state; any
+// other install releases only while no re-create of the rule is running.
+func kvSvcContractReleaseGen(svcID uint32, gen uint64) error {
+	kvSvcMu.Lock()
+	defer kvSvcMu.Unlock()
+	st := kvSvcRecreating[svcID]
+	if gen != 0 {
+		if st == nil || st.gen != gen {
+			return errKvRecreateSuperseded
+		}
+	} else if st != nil && st.running {
+		return errKvRecreateRunning
+	}
+	delete(kvSvcRecreating, svcID)
+	if c := kvSvcContracts[svcID]; c != nil {
+		c.denied = false
+		c.fault = ""
+	}
+	return nil
+}
+
+// kvSvcRecreateEnded marks the latest re-create's install as no longer
+// running after it failed: the rule stays fenced, a later re-create installs
+// again, and attestation may release it.
+func kvSvcRecreateEnded(svcID uint32, gen uint64) {
+	kvSvcMu.Lock()
+	defer kvSvcMu.Unlock()
+	if st := kvSvcRecreating[svcID]; st != nil && st.gen == gen {
+		st.running = false
+	}
+}
 
 // kvContractSetter is the injected data-plane setter seam (production: a
 // closure over DpEbpfH.DpKvExactContractUpdate; tests: a fake). It returns
@@ -214,6 +321,7 @@ func KvSvcContractRegister(svcID uint32, ruleIdent string, vip net.IP,
 func KvSvcContractDeregister(svcID uint32) {
 	kvSvcMu.Lock()
 	delete(kvSvcContracts, svcID)
+	delete(kvSvcRecreating, svcID)
 	kvSvcMu.Unlock()
 }
 
@@ -221,6 +329,7 @@ func KvSvcContractDeregister(svcID uint32) {
 func KvSvcContractReset() {
 	kvSvcMu.Lock()
 	kvSvcContracts = make(map[uint32]*kvSvcContract)
+	kvSvcRecreating = make(map[uint32]*kvSvcRecreate)
 	kvSvcMu.Unlock()
 }
 
@@ -305,8 +414,17 @@ func kvSvcContractOutcome(svcID uint32, denied bool, fault string) {
 // transition (ai_kv_attest.go); every other caller installs at eligible=0.
 func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
 	attempts int, backoff time.Duration, eligible uint8) error {
+	return kvDataplaneContractApplyGen(svcID, setter, attempts, backoff, eligible, 0)
+}
+
+// kvDataplaneContractApplyGen is kvDataplaneContractApply for an install
+// that belongs to re-create generation gen (0: none). Each attempt runs
+// under the rule's install lock; a superseded re-create's install stops
+// without writing the word or the fence.
+func kvDataplaneContractApplyGen(svcID uint32, setter kvContractSetter,
+	attempts int, backoff time.Duration, eligible uint8, gen uint64) error {
 	if setter == nil {
-		kvSvcContractOutcome(svcID, true, "no_dataplane_setter")
+		kvSvcContractFenceGen(svcID, gen, "no_dataplane_setter")
 		return fmt.Errorf("kv-contract: svc %d: no data-plane setter registered", svcID)
 	}
 	if attempts < 1 {
@@ -318,52 +436,78 @@ func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
 		if i > 0 && backoff > 0 {
 			time.Sleep(backoff)
 		}
-		snap, ok := kvSvcContractSnapshot(svcID)
-		if !ok {
-			// Deregistered mid-flight (rule teardown) — nothing to fence.
-			return nil
+		lk := kvSvcInstallLock(svcID)
+		lk.Lock()
+		done, err := kvDataplaneContractAttempt(svcID, setter, eligible, gen)
+		lk.Unlock()
+		if done {
+			return err
 		}
-		b, ok := KvBindingCurrent(snap.ruleIdent)
-		if !ok {
-			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: binding state missing", svcID, snap.ruleIdent)
-			kvSvcContractOutcome(svcID, true, "binding_state_missing")
-			continue
-		}
-		want := KvContractPack(b.BindingGen, 0, snap.apiMode, eligible)
-		applied, ok := setter(snap.vip, snap.port, snap.proto,
-			b.BindingGen, snap.apiMode, eligible)
-		if !ok {
-			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: setter failed", svcID, snap.ruleIdent)
-			kvSvcContractOutcome(svcID, true, "dataplane_setter_failed")
-			continue
-		}
-		if applied != want {
-			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: readback 0x%x != requested 0x%x",
-				svcID, snap.ruleIdent, applied, want)
-			kvSvcContractOutcome(svcID, true, "dataplane_ack_mismatch")
-			continue
-		}
-		// Digest half of the ACK: the generation we just installed must
-		// still be the rule's CURRENT binding with an unchanged digest —
-		// otherwise a concurrent re-allocation raced the install and the
-		// word on the wire is stale; retry converges on the new generation.
-		cur, ok := KvBindingCurrent(snap.ruleIdent)
-		if !ok || cur.BindingGen != b.BindingGen ||
-			!KvBindingVerify(snap.ruleIdent, b.BindingGen, b.Digest) {
-			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: binding changed during install (gen %d)",
-				svcID, snap.ruleIdent, b.BindingGen)
-			kvSvcContractOutcome(svcID, true, "binding_changed_during_install")
-			continue
-		}
-		kvSvcContractOutcome(svcID, false, "")
-		kvSvcContractAckStamp(svcID, want)
-		tk.LogIt(tk.LogInfo, "kv-contract: svc %d rule %s gen %d api_mode %d eligible %d applied\n",
-			svcID, snap.ruleIdent, b.BindingGen, snap.apiMode, eligible)
-		return nil
+		lastErr = err
 	}
 	tk.LogIt(tk.LogError, "kv-contract: svc %d apply(eligible=%d) failed after %d attempts: %v — rule stays Go-fenced (ENFORCEMENT_FAULT path)\n",
 		svcID, eligible, attempts, lastErr)
 	return lastErr
+}
+
+// kvDataplaneContractAttempt is one attempt of the install transaction,
+// under the rule's install lock. done: stop retrying and return err.
+func kvDataplaneContractAttempt(svcID uint32, setter kvContractSetter,
+	eligible uint8, gen uint64) (done bool, err error) {
+	if !kvSvcRecreateCurrent(svcID, gen) {
+		return true, errKvRecreateSuperseded
+	}
+	if gen == 0 && kvSvcRecreateRunning(svcID) {
+		// The pool is being re-created: an install outside the re-create
+		// (attestation, a restore's kick) writes nothing; the re-create's
+		// install writes the word and hands the rule to attestation.
+		return true, errKvRecreateRunning
+	}
+	snap, ok := kvSvcContractSnapshot(svcID)
+	if !ok {
+		// Deregistered mid-flight (rule teardown) — nothing to fence.
+		return true, nil
+	}
+	b, ok := KvBindingCurrent(snap.ruleIdent)
+	if !ok {
+		kvSvcContractFenceGen(svcID, gen, "binding_state_missing")
+		return false, fmt.Errorf("kv-contract: svc %d rule %s: binding state missing", svcID, snap.ruleIdent)
+	}
+	want := KvContractPack(b.BindingGen, 0, snap.apiMode, eligible)
+	applied, ok := setter(snap.vip, snap.port, snap.proto,
+		b.BindingGen, snap.apiMode, eligible)
+	if !ok {
+		kvSvcContractFenceGen(svcID, gen, "dataplane_setter_failed")
+		return false, fmt.Errorf("kv-contract: svc %d rule %s: setter failed", svcID, snap.ruleIdent)
+	}
+	if applied != want {
+		kvSvcContractFenceGen(svcID, gen, "dataplane_ack_mismatch")
+		return false, fmt.Errorf("kv-contract: svc %d rule %s: readback 0x%x != requested 0x%x",
+			svcID, snap.ruleIdent, applied, want)
+	}
+	// Digest half of the ACK: the generation we just installed must
+	// still be the rule's CURRENT binding with an unchanged digest —
+	// otherwise a concurrent re-allocation raced the install and the
+	// word on the wire is stale; retry converges on the new generation.
+	cur, ok := KvBindingCurrent(snap.ruleIdent)
+	if !ok || cur.BindingGen != b.BindingGen ||
+		!KvBindingVerify(snap.ruleIdent, b.BindingGen, b.Digest) {
+		kvSvcContractFenceGen(svcID, gen, "binding_changed_during_install")
+		return false, fmt.Errorf("kv-contract: svc %d rule %s: binding changed during install (gen %d)",
+			svcID, snap.ruleIdent, b.BindingGen)
+	}
+	// A full ACK releases the fence, unless a re-create of the rule's pool
+	// took over meanwhile (this install's word may be on a pool that is
+	// gone) or is running (its own install releases the fence).
+	if err := kvSvcContractReleaseGen(svcID, gen); err != nil {
+		tk.LogIt(tk.LogInfo, "kv-contract: svc %d rule %s gen %d eligible %d written, fence kept: %v\n",
+			svcID, snap.ruleIdent, b.BindingGen, eligible, err)
+		return true, err
+	}
+	kvSvcContractAckStamp(svcID, want)
+	tk.LogIt(tk.LogInfo, "kv-contract: svc %d rule %s gen %d api_mode %d eligible %d applied\n",
+		svcID, snap.ruleIdent, b.BindingGen, snap.apiMode, eligible)
+	return true, nil
 }
 
 // kvDataplaneContractInstall is the install-shaped transaction (eligible=0):
@@ -387,6 +531,85 @@ func kvDataplaneContractInstallAsync(svcID uint32) {
 			kvAttestActivate(svcID)
 		}
 	}()
+}
+
+// kvStrictPoolRecreated is called when a replace removes a rule's data-plane
+// pool, and when the undo of a refused replace creates a removed pool again.
+// The new pool starts without the contract word, and a pool without the word
+// is served as a rule without a contract. So a strict rule is fenced at once,
+// as a new strict rule is, and the word is installed again (eligible 0) once
+// the removal has reached the data plane; the install ACK lifts the fence and
+// hands the rule to attestation, the only writer of eligible 1. A rule
+// without a contract is left as it is, and so is a rule that is already
+// fenced for a reason of its own (a restored rule waiting for migration or
+// for its profile, an install not yet acknowledged, a fault): its fence is
+// lifted only by the path that set it, as before. Each call takes a new
+// generation; when re-creates follow each other, only the install of the
+// latest may release the fence, and no other install of the rule releases
+// it while that one runs.
+func kvStrictPoolRecreated(svcID uint32) {
+	kvSvcMu.Lock()
+	c := kvSvcContracts[svcID]
+	st := kvSvcRecreating[svcID]
+	if c == nil || (c.denied && st == nil) {
+		kvSvcMu.Unlock()
+		return
+	}
+	kvSvcRecreateGen++
+	gen := kvSvcRecreateGen
+	kvSvcRecreating[svcID] = &kvSvcRecreate{gen: gen, running: true}
+	c.denied, c.fault = true, ""
+	kvSvcMu.Unlock()
+	go func() {
+		// Every data-plane work queued before this point, the removal
+		// included, is done after the barrier: the install cannot land on
+		// the pool that is going away. Until the new pool exists the install
+		// retries. Only the latest re-create's install releases the fence.
+		if mh.dp != nil {
+			DpBrokerSyncBarrier(mh.dp)
+		}
+		if kvDataplaneContractApplyGen(svcID, kvContractSetter_get(),
+			20, 200*time.Millisecond, 0, gen) == nil {
+			kvAttestActivate(svcID)
+			return
+		}
+		kvSvcRecreateEnded(svcID, gen)
+		// Failed for good: the rule stays fenced. Its attestation
+		// controller re-runs its fence step, which meets the same data
+		// plane and publishes the fault (reason: the binding's data-plane
+		// word is pending); the install is then tried again
+		// on a slow pace until it takes, a later re-create supersedes it,
+		// or the rule is deleted.
+		KvAttestKick(svcID, KvAttestReasonBindingDataplanePending)
+		kvStrictRecreateRetry(svcID, gen)
+	}()
+}
+
+// kvStrictRecreateRetry tries a failed re-create's install again, one
+// attempt every kvRecreateRetryNs, until it is acknowledged (the ladder
+// then runs again), superseded, or the rule is gone.
+func kvStrictRecreateRetry(svcID uint32, gen uint64) {
+	for {
+		time.Sleep(time.Duration(kvRecreateRetryNs.Load()))
+		setter := kvContractSetter_get()
+		if setter == nil {
+			continue
+		}
+		lk := kvSvcInstallLock(svcID)
+		lk.Lock()
+		done, err := kvDataplaneContractAttempt(svcID, setter, 0, gen)
+		lk.Unlock()
+		if !done {
+			continue
+		}
+		if err == nil {
+			if _, ok := kvSvcContractSnapshot(svcID); ok {
+				tk.LogIt(tk.LogInfo, "kv-contract: svc %d re-created pool's word installed on retry\n", svcID)
+				kvAttestActivate(svcID)
+			}
+		}
+		return
+	}
 }
 
 // KvSvcContractKickInstall re-runs the install for a rule identified by its
