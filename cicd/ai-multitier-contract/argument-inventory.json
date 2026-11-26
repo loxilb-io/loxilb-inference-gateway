@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "ce71c78472c97eafcacacc097f1cd99f62ece70f78ec09a514a029dd53abac1c",
-    "swagger.yml": "3469f9520189867aa095d4860dfa55253838d643082f3d0a33ee718ac7fa2fd2"
+    "swagger.yml": "208ac124ce146bc3394633642590375376557cf84eaa65e7851e2a0673c70060"
   },
   "fields": [
     {
@@ -2129,7 +2129,7 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/host",
       "required": false,
       "contract": {
-        "description": "Host routing key for the proxy pool, distinct from path_prefix. It participates in the LB rule key, but L7 policy attachment is currently keyed only by listener VIP/port/protocol. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. Together with path_prefix and model_name, the conditional host, host|path, host||model or host|path|model key must not exceed 511 UTF-8 bytes including separators.",
+        "description": "Host routing key for the proxy pool, distinct from path_prefix. It participates in the LB rule key, but L7 policy attachment is currently keyed only by listener VIP/port/protocol. Hosts compare without regard to case; the host is stored, matched and read back in lower case. A wildcard host \"*.\u003csuffix\u003e\" (such as \"*.example.com\") routes the requests whose host has one or more labels in front of \u003csuffix\u003e, never \u003csuffix\u003e itself, after any exact host rule and before the listener's host-less rules; among wildcards the longer suffix is tried first, and one whose rules match no path passes the request on to the next. \"*\" anywhere else, alone or with nothing after \"*.\" is refused 400. Advertised by the version feature \"wildcard_host\". The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. Together with path_prefix and model_name, the conditional host, host|path, host||model or host|path|model key must not exceed 511 UTF-8 bytes including separators.",
         "type": "string",
         "x-loxilb-max-utf8-bytes": 255
       }

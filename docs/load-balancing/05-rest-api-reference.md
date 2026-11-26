@@ -208,6 +208,22 @@ backend. A controller keeps such a rule while its backend has no ready endpoint 
   on a rule that may not have no endpoints. Builds that do this advertise `no_endpoint_rule` in
   `GET /version` `features`.
 
+**Wildcard and case-insensitive hosts.** Hosts compare without regard to case: `host` is stored,
+matched and read back in lower case, and a request host in any case reaches it. A `host` of the form
+`*.<suffix>` is a wildcard with Gateway API hostname semantics:
+
+- It matches a request host with one or more labels in front of `<suffix>`: `*.example.com` takes
+  `a.example.com` and `a.b.example.com`, not `example.com`.
+- A request is matched by an exact host rule first, then by the wildcards from the longest suffix to
+  the shortest, then by the listener's host-less rules. Inside each, path and model rank as usual
+  (Exact, then the longest prefix). A host whose rules match no path of the request passes it on to
+  the next one.
+- `*` anywhere else (`a*.b`, `x.*.b`), alone, or with nothing after `*.` is refused `400`.
+- Builds that do this advertise `wildcard_host` in `GET /version` `features`.
+
+The TLS certificate for a wildcard host is chosen separately, by SNI, where a wildcard certificate
+covers one label only.
+
 **Deleting an L7-keyed rule.** `host`, `path_prefix`, `path_match_mode` and `model_name` are part of
 the rule key, so a rule created with them is only matched by a delete that repeats them — use the
 `/config/loadbalancer/hosturl/{host}/externalipaddress/{ip}/port/{port}/protocol/{proto}` route with

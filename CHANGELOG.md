@@ -139,6 +139,19 @@ inference-gateway delta is enumerated in detail.
 
 ### Added
 
+- Load balancer: wildcard hosts. A rule host `*.example.com` routes the
+  requests whose host has one or more labels in front of `example.com`, never
+  `example.com` itself (Gateway API hostname semantics). It is tried after any
+  exact host rule and before the listener's host-less rules; among wildcards
+  the longer suffix goes first, and one whose rules match no path passes the
+  request on to the next. Path and model rank inside a wildcard as they do
+  for an exact host, on HTTP/1.1 and HTTP/2. Such a rule used to be stored as
+  a literal no request matched, so its requests got `503 no_route`. A host
+  with `*` anywhere else (`a*.b`, `x.*.b`, `*`, `*.`) is refused 400. A rule
+  an earlier build stored with such a host is restored as it was, still
+  matching no request, with a warning in the log, so the restore of the other
+  rules goes on. Advertised as the `wildcard_host` version feature. Requires the datapath at
+  `f78d82f`. See [the REST reference](docs/load-balancing/05-rest-api-reference.md).
 - Load balancer: a host|path fullproxy rule may stand with no endpoints
   (`"endpoints": []` on create or replace, or its last endpoint detached). It
   answers every request it takes, on HTTP/1.1 and HTTP/2: `503
@@ -161,6 +174,15 @@ inference-gateway delta is enumerated in detail.
   [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md#trace-and-session-correlation).
 
 ### Changed
+
+- **Behaviour change.** Load balancer: hosts compare without regard to case.
+  A rule's host is stored, matched and read back in lower case, so a rule sent
+  as `API.Example.com` is the rule `api.example.com`: a create replaces it and
+  a delete removes it. A request for `API.EXAMPLE.COM` reaches it; it used to
+  need the case the rule was written in. An L7 policy HOST condition follows:
+  `EQUAL`, `PREFIX`, `SUFFIX` and `CONTAINS` compare without case, and a HOST
+  `REGEX` matches with its pattern unchanged but case ignored. Paths and model
+  names keep their case. Requires the datapath at `f78d82f`.
 
 - When a snapshot is selected at boot, a stale `BFDconfig.txt` is no longer
   applied before it. Strict failures retain snapshot authority; legacy replay

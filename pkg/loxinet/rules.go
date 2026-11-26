@@ -1960,6 +1960,7 @@ func (R *RuleH) RuleQosPolInSync(lbKey string, polid uint16) bool {
 
 // GetLBRuleByServArgs - Get a LB rule by its service args
 func (R *RuleH) GetLBRuleByServArgs(serv cmn.LbServiceArg) *ruleEnt {
+	serv.HostUrl = canonicalLBHost(serv.HostUrl)
 	var ipProto uint8
 	service := ""
 	if tk.IsNetIPv4(serv.ServIP) {
@@ -2010,6 +2011,7 @@ func (R *RuleH) GetLBRuleByServArgs(serv cmn.LbServiceArg) *ruleEnt {
 
 // GetLBRuleSecIPs - Get secondary IPs for LB rule by its service args
 func (R *RuleH) GetLBRuleSecIPs(serv cmn.LbServiceArg) []string {
+	serv.HostUrl = canonicalLBHost(serv.HostUrl)
 	var ipProto uint8
 	var ips []string
 	service := ""
@@ -4202,6 +4204,7 @@ func canonicalLBPortMax(port, max uint16) uint16 {
 
 func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, servSecVIPs []cmn.LbSecVIPArg, allowedSources []cmn.LbAllowedSrcIPArg, servEndPoints []cmn.LbEndPointArg) (int, error) {
 	serv.ServPortMax = canonicalLBPortMax(serv.ServPort, serv.ServPortMax)
+	serv.HostUrl = canonicalLBHost(serv.HostUrl)
 	var lBActs ruleLBActs
 	var nSecIP []ruleLBSIP
 	var ipProto uint8
@@ -4214,6 +4217,16 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	}
 	if err := validateLBFixedCStringFields(serv); err != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
+	}
+	if err := validateLBHostWildcard(serv.HostUrl); err != nil {
+		// A build before the check stored such a host as a literal no request
+		// matches. Its replay keeps it so, rather than failing the restore of
+		// every other rule; a new create is refused.
+		if !serv.RestoreReplay && !serv.BootReplay {
+			return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
+		}
+		tk.LogIt(tk.LogWarning, "lb-rule: %s:%d restored with a host no request matches: %v\n",
+			serv.ServIP, serv.ServPort, err)
 	}
 	if err := prepareFrontendMTLS(&serv); err != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
@@ -5915,6 +5928,7 @@ func (R *RuleH) deleteVIPSys(r *ruleEnt) {
 // error string will be set
 func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	serv.ServPortMax = canonicalLBPortMax(serv.ServPort, serv.ServPortMax)
+	serv.HostUrl = canonicalLBHost(serv.HostUrl)
 	var ipProto uint8
 
 	service := ""

@@ -374,6 +374,9 @@ func (na *NetAPIStruct) NetRouteDel(rm *cmn.RouteMod) (int, error) {
 
 // NetLbRuleAdd - Add a load-balancer rule in loxinet
 func (na *NetAPIStruct) NetLbRuleAdd(lm *cmn.LbRuleMod) (int, error) {
+	// The host in the case the rule is stored in, before the lookup of the
+	// rule it may replace.
+	lm.Serv.HostUrl = canonicalLBHost(lm.Serv.HostUrl)
 	if na.BgpPeerMode {
 		return RuleErrBase, errors.New("running in bgp only mode")
 	}
@@ -412,6 +415,7 @@ func (na *NetAPIStruct) NetLbRuleAdd(lm *cmn.LbRuleMod) (int, error) {
 
 // NetLbRuleDel - Delete a load-balancer rule in loxinet
 func (na *NetAPIStruct) NetLbRuleDel(lm *cmn.LbRuleMod) (int, error) {
+	lm.Serv.HostUrl = canonicalLBHost(lm.Serv.HostUrl)
 	if na.BgpPeerMode {
 		return RuleErrBase, errors.New("running in bgp only mode")
 	}
