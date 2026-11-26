@@ -13,6 +13,22 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
+## [v0.9.9.2] - 2026-11-26
+
+`v0.9.9.2` follows `v0.9.9.1` (2026-11-03) and holds everything merged since.
+It adds wildcard hosts (`*.example.com`) to host routing, host|path fullproxy
+rules with no endpoints, and a non-preemptive two-node L2 HA election with a
+standby that is ready to take over. It fixes HTTP/1.1 upgrade (WebSocket)
+relay, the selection of a wildcard certificate by SNI, the u24 datapath on
+kernel 7.0, five L4 datapath faults ported from upstream loxilb-ebpf, and HA,
+BFD and BGP recovery. It builds with Go 1.26.11 and updated Go modules for
+GO-2026-6859, GO-2026-6860, GO-2026-6866 and GO-2026-6974. Behaviour changes
+are marked under Changed: among them, hosts compare without regard to case on
+every load-balancer rule, `POST /config/cert` answers 409 for a `certId` in
+use, ambiguous JSON bodies are refused, and on AI gateway rules over HTTP/1.1
+`X-Request-Id` is no longer a conversation ID. Read Upgrade notes before
+upgrading: snapshots move to schema 1.13.
+
 ### Build
 
 - Build with Go 1.26.11 (was 1.26.10): it fixes GO-2026-6859, an HTTP/1 server
@@ -26,6 +42,15 @@ inference-gateway delta is enumerated in detail.
   such as `v0.9.9.1-279-g7e7f1e61`, instead of `dev`. The same value is in the
   image label `org.opencontainers.image.version`. Release images still report
   their tag.
+
+- Go modules with security fixes: `golang.org/x/net` v0.62.0 (was v0.60.0),
+  for GO-2026-6860 and GO-2026-6866, with `golang.org/x/crypto` v0.58.0; and
+  `go.opentelemetry.io/otel`, `otel/sdk` and `otel/trace` v1.47.0 (was
+  v1.45.0), for GO-2026-6974, where an attribute value with U+FFFD runes
+  bypassed `AttributeValueLengthLimit`. The OTLP trace exporters, grpc-gateway
+  and go-openapi move with them. A `date-time` field given a date alone (such
+  as `expires_at: "2026-11-24"`) is still refused with 422; the new go-openapi
+  would have read it as midnight UTC. (#560, #610, #611)
 
 ### Bundled CLI
 
@@ -157,6 +182,33 @@ inference-gateway delta is enumerated in detail.
   one read. Only the first head of the read was cleaned. Nothing after a final
   head or a `101` is touched.
 
+- L4: a frontend interface recreated under the same name with a new ifindex
+  (for example a Docker network detached and attached again) gets its datapath
+  port binding rebuilt, its next-hop source MAC refreshed, and its IPv4 VIPs
+  advertised once more. Forwarding through it used to stop after the
+  replacement. (#589)
+- TLS: an inline frontend client CA (`mtls_frontend.client_ca_cert_data`) is
+  applied. It used to be stored and never reach the TLS context, so clients
+  with valid certificates were refused. A value that is not standard Base64
+  PEM is refused 400 on create and on replay. When SNI selects a per-host
+  certificate, the listener's client verification still applies. (#583)
+- L4: a rule's live connection count for `connectionLimit`, and the
+  per-endpoint session counts least-connections uses, no longer stay above
+  the real number after a rule is deleted with connections open, an idle
+  timeout, an endpoint leaving, or a SYN that was counted and dropped. The
+  data plane recounts them, and `loxilb_lb_conn_count_corrections_total`
+  counts the corrections. (#568)
+- BGP: the withdrawal of an IPv6 VIP goes out in the IPv6 address family; it
+  went out in IPv4. An endpoint update no longer adds to a VIP's advertisement
+  ownership, and ownership is counted by canonical address, whatever spelling
+  a rule used. (#555)
+- AI gateway, HTTP/1.1: a streamed request refused at admission yields one
+  policy decision and one `sec.ai.deny` record. A queued read could enter the
+  gate again and record a second one. (#545)
+- AI gateway, prefill/decode: the prefix trie stays intact when an insert
+  cannot allocate, and concurrent lookups no longer race on the prefix's
+  access time. (#594)
+
 ### Added
 
 - Load balancer: wildcard hosts. A rule host `*.example.com` routes the
@@ -193,6 +245,55 @@ inference-gateway delta is enumerated in detail.
   identity, and both reach the backend unchanged. Requires the datapath at
   `97228aef`. See
   [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md#trace-and-session-correlation).
+- **Two-node L2 HA.** On an on-premises IPv4 L2 pair started with `--ka`:
+  - the election is non-preemptive: a returning node stays BACKUP while an
+    active peer is heard;
+  - an isolated node starts alone after 95 seconds, and L2 VIPs are advertised
+    only after an election outcome;
+  - a node withdraws its VIPs and sends withdrawal rank 1 on SIGTERM or
+    SIGINT;
+  - `--ha-frontend-interface=<ifname>` makes that interface part of the
+    election: a node withdraws after 300 ms of frontend loss and becomes a
+    candidate again after five seconds Up;
+  - `loxilb_ha_election_events_total{reason}` records the transitions.
+
+  The standby prepares for failover:
+  - it installs the full-proxy listeners of the elected VIPs, with a
+    priority-1 `ip rule` that keeps traffic from transiting it;
+  - it receives the token-quota snapshot every 200 ms;
+  - with a session header (not P/D), it opens the listeners before it owns the
+    VIP, so conversation affinity survives the promotion.
+
+  `LLB_AI_QUOTA_REQUIRE_SYNC=1` answers 429 `token_quota_warming` to
+  TPM-limited requests on a promoted member with no complete snapshot in the
+  last two seconds. VIPs are announced with RFC 5227 ARP Announcements. See
+  Upgrade notes and [L2 HA election](docs/operations/ha-l2-election.md).
+  (#595, #596, #600, #601)
+- Endpoint Picker: a rule with an `eppEndpoint` reports the gateway's
+  connection to the picker on GET: `eppState` (`up`, `connecting`, `down`,
+  `unknown`), `eppStateSince` and `eppLastError`. The connection is checked
+  every 5 seconds whether or not requests flow. The fields are read-only and
+  ignored on create or replace. (#538)
+- The gateway detaches the XDP and tc programs it owns on a clean shutdown.
+  `--datapath-state` (`LOXILB_DATAPATH_STATE`) names the record of what it
+  attached, and `--detach-datapath=<file>` detaches from that record and
+  exits. The packaged systemd unit runs it as `ExecStopPost`, with the record
+  at `/run/loxilb-datapath.json`. (#540)
+- KV-exact routing: `LOXILB_KV_TOOLS_EXACT=1` (default off) renders `tools`,
+  assistant `tool_calls`, tool turns and an allowlisted `chat_template_kwargs`
+  exactly as the engine does, for one attested target: profile
+  `qwen3-32b-fp8-v1` on vLLM 0.30.0. Other targets keep the
+  `unsupported_feature` refusal. See
+  [KV cache aware routing](docs/load-balancing/08-kv-cache-aware-routing.md). (#543)
+- BGP: after gobgpd restarts, the gateway applies the BGP configuration it was
+  given through the API again (global, neighbors, defined sets, policies).
+  With a static GoBGP file, that file owns BGP until a BGP REST change or a
+  committed BGP restore adopts it. `loxilb_bgp_daemon_config_pending` and
+  `loxilb_bgp_adoption_dropped_attributes` report it. See
+  [HA and BGP startup](docs/operations/ha-bgp-startup.md). (#562)
+- Metrics: `loxilb_datapath_metrics_available` is 0 in `--peer` mode, where the
+  collectors that read the datapath are left out. See
+  [peer-only metrics](docs/operations/peer-only-metrics.md). (#561)
 
 ### Changed
 
@@ -280,6 +381,54 @@ inference-gateway delta is enumerated in detail.
   answer the gateway itself ends while its head is incomplete closes with no
   byte of that head. No header, `error` code, body field, status or audit
   field changes; a client that read the headers as optional needs no change.
+
+- **Behaviour change.** `POST /config/cert` with a `certId` already in use
+  answers 409 and leaves that certificate as it was. It used to overwrite a
+  server certificate, or answer 400 for other usages. Material left on disk
+  or in the data plane without a registration also answers 409, with how to
+  recover. A failed write answers 500 instead of 400. Use PUT to rotate a
+  registered certificate. (#541)
+
+- **Behaviour change.** A JSON request body the gateway reads for routing or
+  AI admission is refused with 400 when it is ambiguous:
+  `duplicate_model_field` for a second top-level `model` (escapes decoded),
+  `duplicate_user_field` for a second top-level `user`, and
+  `duplicate_content_type` for a repeated `Content-Type` header. A top-level
+  `model` that is not a string, or is 128 bytes or longer, is refused with
+  `invalid_model_field`, keyless requests included; earlier builds could
+  truncate it or fail later at routing. Large and chunked bodies are checked
+  to the end. (#542)
+
+- The `bgp` flag of an existing load-balancer rule can no longer be changed:
+  the request answers 400; delete and re-create the rule. (#555)
+
+- Deleting a BFD session waits up to one second for its notifier callback. If
+  the callback has not returned, the delete answers an error and the session
+  stays stopping: updates to it are refused, and the delete can be retried.
+  See [BFD session lifecycle](docs/operations/bfd-lifecycle.md). (#556)
+
+- The gateway refuses to start (exit 1) when the NAT map is missing or has an
+  incompatible layout, and when its binary and its BPF objects come from
+  different builds: both carry a shared-header ABI fingerprint. Building from
+  source needs Python 3. (#564)
+
+- Enabling `/config/metrics` while the previous disable has not finished
+  draining answers 503; retry the DELETE first. (#561)
+
+### Upgrade notes
+
+- **Snapshots move to schema 1.13** (`bgp_api_adopted`). Earlier binaries
+  refuse them, so keep a pre-upgrade snapshot for a planned downgrade. (#562)
+- **L2 HA pair.** Upgrade the BACKUP first, then stop the old MASTER; expect
+  one planned handover. Leave `--ha-frontend-interface` unset until both nodes
+  run this release. Enable `LLB_AI_QUOTA_REQUIRE_SYNC` only after both are
+  upgraded, in the order [the snapshot coverage](docs/SNAPSHOT-COVERAGE.md)
+  gives. See [L2 HA election](docs/operations/ha-l2-election.md#upgrade).
+  (#595, #596)
+- **Install the binary and the BPF objects from one build.** A mix refuses to
+  start (Changed). (#564)
+- **Hosts are stored in lower case.** A controller that compares a rule read
+  back with GET against what it sent compares hosts without case (Changed).
 
 ## [v0.9.9.1] - 2026-11-03
 

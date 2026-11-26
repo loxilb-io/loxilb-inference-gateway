@@ -79,7 +79,7 @@ first install, never upgraded or deleted by Helm.
 
 | Image | Default | What to do |
 |---|---|---|
-| loxilb-inference-gateway | `ghcr.io/loxilb-io/loxilb-inference-gateway:v0.9.9.1` (Ubuntu 22.04 base) | use a tag you have tested, or build your own per [BUILD.md](BUILD.md); for the Endpoint Picker and authenticated pools it must list `epp`, `api_key_auth` and `jwt_auth_profile` (below) |
+| loxilb-inference-gateway | `ghcr.io/loxilb-io/loxilb-inference-gateway:v0.9.9.2` (Ubuntu 22.04 base) | use a tag you have tested, or build your own per [BUILD.md](BUILD.md); for the Endpoint Picker and authenticated pools it must list `epp`, `api_key_auth` and `jwt_auth_profile` (below) |
 | kube-loxilb | `ghcr.io/loxilb-io/kube-loxilb:latest` | **must be built**: no published tag carries the inference-gateway integration, and `:latest` does not know `--inferenceExtension` |
 | precheck, drain and `helm test` helpers | `alpine/k8s:1.34.12`, `curlimages/curl:8.23.0` | mirror them in a private registry if your nodes cannot reach Docker Hub (`crds.precheck.image`, `hooks.drain.image`, `tests.curlImage`, `tests.kubectlImage`) |
 
@@ -103,7 +103,7 @@ subchart go in `global.imagePullSecrets`.
 kube-loxilb checks what the gateway image can enforce in `/netlox/v1/version`
 under `features` before it sends a rule: `epp` for an Endpoint Picker (§9),
 `api_key_auth` and `jwt_auth_profile` for authenticated pools (§8). The default
-`v0.9.9.1` lists all three, as does a `main` build since the Endpoint Picker
+`v0.9.9.2` lists all three, as does a `main` build since the Endpoint Picker
 merge (2026-10-27). If you override the tag: a `:latest` a node pulled before
 that merge does not list `epp`, and with the default
 `pullPolicy: IfNotPresent` it stays; pull it again or pin a newer tag. Check a
@@ -163,7 +163,7 @@ kube-loxilb:
 loxilb-igw:
   image:
     repository: ghcr.io/loxilb-io/loxilb-inference-gateway
-    tag: v0.9.9.1
+    tag: v0.9.9.2
 
 inference:
   gateway:
@@ -504,7 +504,7 @@ Four things to know:
   pools are served by loxilb, and `FailClose` pools answer every request with
   503.
 - **The gateway needs the picker client.** Only a build that lists `epp` under
-  `features` in `/netlox/v1/version` calls the picker; v0.9.9.1 and `main`
+  `features` in `/netlox/v1/version` calls the picker; v0.9.9.1 and later, and `main`
   builds since 2026-10-27
   do (§2.3). On any other build kube-loxilb sends a `FailOpen` rule without the
   picker, with a warning event, and refuses a `FailClose` one
