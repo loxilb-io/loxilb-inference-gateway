@@ -43,14 +43,25 @@ jobs:
       with:
         submodules: recursive
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+        fetch-depth: 0
+
+    # .dockerignore strips .git, so the Makefile cannot derive the version
+    # inside the build and the binary would report "dev". Resolve it here
+    # from the checked-out tree, with the Makefile's own definition: a
+    # `git describe` such as v0.9.9.1-279-g7e7f1e61.
+    - name: Resolve version
+      id: version
+      run: echo "version=$(make --no-print-directory -s version)" >> "$GITHUB_OUTPUT"
 
     - name: Build amd64 image
       env:
         GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         docker build --secret id=github_token,env=GH_TOKEN \
           --progress=plain \
           --build-arg TAG=${BUILD_REF} \
+          --build-arg VERSION="${VERSION}" \
           --tag ${IMAGE_NAME}:buildcheck-amd64 \
           .
 
@@ -63,14 +74,25 @@ jobs:
       with:
         submodules: recursive
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+        fetch-depth: 0
+
+    # .dockerignore strips .git, so the Makefile cannot derive the version
+    # inside the build and the binary would report "dev". Resolve it here
+    # from the checked-out tree, with the Makefile's own definition: a
+    # `git describe` such as v0.9.9.1-279-g7e7f1e61.
+    - name: Resolve version
+      id: version
+      run: echo "version=$(make --no-print-directory -s version)" >> "$GITHUB_OUTPUT"
 
     - name: Build arm64 image
       env:
         GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         docker build --secret id=github_token,env=GH_TOKEN \
           --progress=plain \
           --build-arg TAG=${BUILD_REF} \
+          --build-arg VERSION="${VERSION}" \
           --build-arg USE_DOCKER_BUILDX_ARM64=false \
           --tag ${IMAGE_NAME}:buildcheck-arm64 \
           .
@@ -87,6 +109,15 @@ jobs:
       with:
         submodules: recursive
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+        fetch-depth: 0
+
+    # .dockerignore strips .git, so the Makefile cannot derive the version
+    # inside the build and the binary would report "dev". Resolve it here
+    # from the checked-out tree, with the Makefile's own definition: a
+    # `git describe` such as v0.9.9.1-279-g7e7f1e61.
+    - name: Resolve version
+      id: version
+      run: echo "version=$(make --no-print-directory -s version)" >> "$GITHUB_OUTPUT"
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
@@ -108,6 +139,7 @@ jobs:
         push: true
         build-args: |
           TAG=${{ env.BUILD_REF }}
+          VERSION=${{ steps.version.outputs.version }}
         tags: ${{ env.IMAGE_NAME }}:${{ env.TARGET_TAG }}-amd64
         cache-from: type=gha,scope=amd64
         cache-to: type=gha,mode=max,scope=amd64
@@ -124,6 +156,15 @@ jobs:
       with:
         submodules: recursive
         token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+        fetch-depth: 0
+
+    # .dockerignore strips .git, so the Makefile cannot derive the version
+    # inside the build and the binary would report "dev". Resolve it here
+    # from the checked-out tree, with the Makefile's own definition: a
+    # `git describe` such as v0.9.9.1-279-g7e7f1e61.
+    - name: Resolve version
+      id: version
+      run: echo "version=$(make --no-print-directory -s version)" >> "$GITHUB_OUTPUT"
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
@@ -145,6 +186,7 @@ jobs:
         push: true
         build-args: |
           TAG=${{ env.BUILD_REF }}
+          VERSION=${{ steps.version.outputs.version }}
           USE_DOCKER_BUILDX_ARM64=false
         tags: ${{ env.IMAGE_NAME }}:${{ env.TARGET_TAG }}-arm64
         cache-from: type=gha,scope=arm64
