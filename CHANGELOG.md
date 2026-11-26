@@ -21,6 +21,11 @@ inference-gateway delta is enumerated in detail.
   of `-l:lib<name>.a` in the cgo directives. Go 1.26.11 and 1.27.4 reject the
   colon form in `#cgo LDFLAGS`; the archives, the search path and the static
   linkage are unchanged.
+- Images built from `main` (`latest`, and the manual multi-arch build) report
+  the commit they were built from as their version, in `git describe` form
+  such as `v0.9.9.1-279-g7e7f1e61`, instead of `dev`. The same value is in the
+  image label `org.opencontainers.image.version`. Release images still report
+  their tag.
 
 ### Bundled CLI
 
