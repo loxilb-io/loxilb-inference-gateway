@@ -75,12 +75,17 @@ const (
 	// serviceArguments.no_endpoint_status on HTTP/1.1 and HTTP/2; emptying or
 	// refilling it is applied in place.
 	FeatureNoEndpointRule = "no_endpoint_rule"
+	// FeatureWildcardHost - a rule host "*.<suffix>" routes the requests whose
+	// host has one or more labels in front of <suffix> (Gateway API hostname
+	// semantics), after the exact host and before the host-less rules; any
+	// other host holding "*" is refused 400. Hosts compare without case.
+	FeatureWildcardHost = "wildcard_host"
 )
 
 // VersionFeatures - the features this build advertises, in a fixed order. A
 // fresh slice each call: callers may append to it.
 func VersionFeatures() []string {
-	return []string{FeatureEpp, FeatureAPIKeyAuth, FeatureJWTAuthProfile, FeatureNoEndpointRule}
+	return []string{FeatureEpp, FeatureAPIKeyAuth, FeatureJWTAuthProfile, FeatureNoEndpointRule, FeatureWildcardHost}
 }
 
 // The answers no_endpoint_status may name: what a rule with no endpoints
