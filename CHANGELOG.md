@@ -170,8 +170,9 @@ inference-gateway delta is enumerated in detail.
   with `*` anywhere else (`a*.b`, `x.*.b`, `*`, `*.`) is refused 400. A rule
   an earlier build stored with such a host is restored as it was, still
   matching no request, with a warning in the log, so the restore of the other
-  rules goes on. Advertised as the `wildcard_host` version feature. Requires the datapath at
-  `f78d82f`. See [the REST reference](docs/load-balancing/05-rest-api-reference.md).
+  rules goes on. Advertised as the `wildcard_host` version feature. Requires
+  the datapath at `5d68c16`. See
+  [the REST reference](docs/load-balancing/05-rest-api-reference.md).
 - Load balancer: a host|path fullproxy rule may stand with no endpoints
   (`"endpoints": []` on create or replace, or its last endpoint detached). It
   answers every request it takes, on HTTP/1.1 and HTTP/2: `503
@@ -202,7 +203,7 @@ inference-gateway delta is enumerated in detail.
   need the case the rule was written in. An L7 policy HOST condition follows:
   `EQUAL`, `PREFIX`, `SUFFIX` and `CONTAINS` compare without case, and a HOST
   `REGEX` matches with its pattern unchanged but case ignored. Paths and model
-  names keep their case. Requires the datapath at `f78d82f`.
+  names keep their case. Requires the datapath at `5d68c16`.
 
 - When a snapshot is selected at boot, a stale `BFDconfig.txt` is no longer
   applied before it. Strict failures retain snapshot authority; legacy replay
