@@ -25,9 +25,9 @@ BFD and BGP recovery. It builds with Go 1.26.11 and updated Go modules for
 GO-2026-6859, GO-2026-6860, GO-2026-6866 and GO-2026-6974. Behaviour changes
 are marked under Changed: among them, hosts compare without regard to case on
 every load-balancer rule, `POST /config/cert` answers 409 for a `certId` in
-use, ambiguous JSON bodies are refused, and on AI gateway rules over HTTP/1.1
-`X-Request-Id` is no longer a conversation ID. Read Upgrade notes before
-upgrading: snapshots move to schema 1.13.
+use, ambiguous JSON bodies are refused, and on HTTP/1.1 rules `X-Request-Id`
+is no longer a conversation ID. Read Upgrade notes before upgrading:
+snapshots move to schema 1.13.
 
 ### Build
 
@@ -171,11 +171,6 @@ upgrading: snapshots move to schema 1.13.
   alone: it answers a connection with two requests in its buffer, and the
   gateway does not name one of them. Status, body and audit record are
   unchanged.
-- AI gateway, HTTP/1.1: a backend's `X-Loxilb-Refusal-*` fields are now also
-  removed from the final response head when the backend sends an interim head
-  (`100 Continue`, another `1xx`) and the final head in one read. Only the
-  interim head was cleaned, so a backend could put `X-Loxilb-Refusal-Stage` on
-  an answer that way. Nothing after a `101` is touched.
 - AI gateway, HTTP/1.1: on a service that declares `api_key_auth`, a backend's
   `X-Api-Key` is now also removed from the final response head when the backend
   sends an interim head (`100 Continue`, another `1xx`) and the final head in
@@ -294,6 +289,18 @@ upgrading: snapshots move to schema 1.13.
 - Metrics: `loxilb_datapath_metrics_available` is 0 in `--peer` mode, where the
   collectors that read the datapath are left out. See
   [peer-only metrics](docs/operations/peer-only-metrics.md). (#561)
+- AI gateway: on a rule with `fc_expose_headers` on, the response to a
+  request that named an objective it may not use, and was admitted on its
+  default, carries `X-Loxilb-Admission-Objective-Requested` with what it asked
+  for: the objective name as sent, `(oversize)` for a name of 64 bytes or
+  more, or `tier:<value>` for a body `service_tier`. The header is left out
+  when that value has a space or a control character. HTTP/1.1 and HTTP/2.
+  The gateway writes it on no other response, so where the class headers are
+  present a client can tell "asked and was defaulted" from "asked nothing". A
+  `service_tier` in an HTTP/1.1 body too large to buffer is not read: that
+  request asked nothing. A backend's header of that name is removed where the
+  gateway writes the class headers. `ai_objective_strict` rules still refuse
+  with 403 `objective_not_allowed`.
 
 ### Changed
 
@@ -310,23 +317,37 @@ upgrading: snapshots move to schema 1.13.
   applied before it. Strict failures retain snapshot authority; legacy replay
   remains available only through the explicit compat fallback.
 
-- **OWNER REVIEW PENDING.** AI gateway: a refusal the gateway writes before any
-  request byte reaches a backend now carries `X-Loxilb-Refusal-Stage` with the
-  stage of its `sec.ai.deny` record (`auth`, `conflict`, `ratelimit`, `reserve`,
-  `capacity`, `objective`, `route`, `framing`, `security`), or `queue` for a
-  request that ended while it waited for capacity. Only `capacity` and `queue`
-  are congestion. Additive: no existing header, `error` code, body field, status or
-  audit field changes. See
+- HTTP rules: a refusal the gateway writes before any request byte reaches a
+  backend now carries `X-Loxilb-Refusal-Stage`, the stage that refused it:
+  `auth`, `conflict`, `ratelimit`, `reserve`, `capacity`, `objective`,
+  `route`, `framing` or `security`, or `queue` (HTTP/1.1) for a request that
+  ended while it waited for capacity. On an AI-gateway service it is the stage
+  of the refusal's `sec.ai.deny` record; a `queue` refusal is recorded at
+  `capacity`. `route` is not limited to AI-gateway services: on any HTTP rule
+  a `503 no_route` and an L7 policy reject or no-match carry it, with a deny
+  record only on an AI-gateway service. Outages, among them
+  `no_healthy_backend`, `epp_unavailable` and `epp_evicted`, carry no stage.
+  Only `capacity` and `queue` are congestion. Additive: no existing header,
+  `error` code, body field, status or audit field changes. See
   [the client refusal contract](docs/load-balancing/27-ai-gateway-client-refusal-contract.md).
 
-- **OWNER REVIEW PENDING.** AI gateway: an answer the gateway writes itself, a
-  refusal or an outage, echoes the request's own ID as `X-Request-Id` (the
-  client's, at most 255 bytes, or the minted one), on HTTP/1.1 and HTTP/2. The
-  header is absent when the request has no ID of its own at that moment, and it
-  is never another request's on a keep-alive connection. A relayed backend
-  response keeps the backend's own header.
+- HTTP/1.1 and HTTP/2, AI gateway or not: an answer the gateway writes
+  itself, a refusal or an outage, carries the request's own ID as
+  `X-Request-Id`: the client's (its first 255 bytes) or the one the gateway
+  minted (on AI-gateway rules, and on every HTTP/2 rule). It is absent when
+  the request has no ID yet, and on the answers the client refusal contract
+  lists, among them the prefill/decode dispatch, leg and timeout answers,
+  `epp_unavailable`, `epp_evicted` and `pd_pipelining_unsupported`. For a
+  client that waits for each answer it is never another request's. A relayed
+  backend response carries whatever `X-Request-Id` the backend sent. On
+  HTTP/1.1 the `502 backend_unreachable` for an endpoint whose connection
+  failed gains `Content-Length`, and the `502` for a backend that went away
+  without answering names no request when the gateway cannot tell which one
+  it answers: a client that pipelines or starts its next request while an
+  answer is in flight, or a connection whose response count has fallen
+  behind. Additive for a client that reads the header as optional.
 
-- **OWNER REVIEW PENDING. Behaviour change.** AI gateway, HTTP/1.1:
+- **Behaviour change.** HTTP/1.1 fullproxy rules, AI gateway or not:
   `X-Request-Id` is no longer read as a conversation ID. It used to be a
   session and affinity key: on a prefill/decode rule a client-supplied request
   ID was the session key ahead of the JSON `user` field, and on a CHWBL,
@@ -335,52 +356,51 @@ upgrading: snapshots move to schema 1.13.
   got no `user` stickiness; one that repeated an ID was pinned by it. Now the
   request ID is the correlation key only, as it always was on HTTP/2.
   `X-Conversation-ID`, `X-Session-ID`, `X-Trace-ID`, a rule's configured
-  session header and the JSON `user` field work as before. **A deployment that
-  relied on a repeated `X-Request-Id` to keep requests on one endpoint has to
-  send `X-Conversation-ID` instead.** The request trace event's
-  `conversation_id` no longer shows the request ID.
+  session header and the JSON `user` field work as before. A request that
+  sends `X-Conversation-ID`, `X-Session-ID` or `X-Trace-ID` and then
+  `X-Request-Id` is now keyed by the first; the later header used to win. A
+  rule whose configured session header is `X-Request-Id` still keys on it.
+  **A deployment that relied on a repeated `X-Request-Id` to keep requests on
+  one endpoint should send `X-Conversation-ID` instead, which HTTP/1.1 and
+  HTTP/2 both read.** The trace span attribute
+  `loxilb.session.conversation_id` no longer shows the request ID.
 
-- **OWNER REVIEW PENDING.** AI gateway, HTTP/1.1: the two `502
-  backend_unreachable` answers written after a request was handed to a backend
-  connection now carry the request's own `X-Request-Id`: the one for an
-  endpoint that refused the connection (which also gains `Content-Length`),
-  and the one for a backend that went away without answering (not when the
-  client pipelined a further request under the unanswered one: the gateway
-  cannot tell which of the two it answers and names neither). Additive for a
-  client that reads the header as optional.
+- HTTP rules, AI gateway or not: `X-Loxilb-Refusal-*` fields a backend sends
+  are removed from the response heads the gateway relays, with or without
+  `fc_expose_headers`. On HTTP/2 that is the interim and the final heads;
+  trailers pass. On HTTP/1.1 it is a head that arrives whole in one read,
+  each further head behind an interim `1xx` (`100 Continue`, another `1xx`)
+  in that read, and a head sent in pieces that the gateway puts together (see
+  the admission headers entry below). Nothing after a `101` is looked at. The
+  fields pass unchanged on a head sent in pieces that is not put together, on
+  a prefill/decode rule's prefill reply relayed as it came (an origin 4xx, a
+  TensorRT-LLM early exit), and on a connection whose response direction is
+  sockmap-accelerated.
 
-- **OWNER REVIEW PENDING.** AI gateway: `X-Loxilb-Refusal-*` fields sent by a
-  backend are removed from every relayed response head, with or without
-  `fc_expose_headers` (HTTP/1.1: a head that arrives in one read; HTTP/2: the
-  interim and the final head).
+- AI gateway: the HTTP/2 `503` capacity body gains `retry_after`, equal to the
+  `retry-after` header, as on HTTP/1.1. On HTTP/1.1 the plain fallback
+  answers of the four capacity-queue endings (`admission_queue_timeout`,
+  `admission_drained`, `admission_shed`, `admission_ttl_expired`) gain
+  `Content-Length`.
 
-- **OWNER REVIEW PENDING.** AI gateway: the HTTP/2 `503` capacity body gains
-  `retry_after`, equal to the `retry-after` header, as on HTTP/1.1; the queue
-  endings' plain fallback answers gain `Content-Length`.
-
-- **OWNER REVIEW PENDING.** AI gateway: on a rule with `fc_expose_headers` on,
-  the response to a request that named an objective it may not use, and was
-  admitted on its default, carries `X-Loxilb-Admission-Objective-Requested`
-  with what it asked for (the objective name, or `tier:<value>` for a body
-  `service_tier`), on HTTP/1.1 and HTTP/2. The header is absent on every other
-  response, so a client can tell "asked and was defaulted" from "asked
-  nothing". A backend's header of that name is removed where the gateway
-  writes the class headers. Additive; `ai_objective_strict` rules still refuse
-  with 403 `objective_not_allowed`.
-
-- **OWNER REVIEW PENDING.** AI gateway: with `fc_expose_headers` on, every
-  admitted HTTP/1.1 and HTTP/2 response whose head is ≤ 16 KiB carries the
-  admission headers (and the class headers). An HTTP/1.1 response head the
-  backend sends in several pieces used to leave without them, and with the
-  backend's own fields of those names; it is now put together first, up to
-  16 KiB, and a backend's `X-Loxilb-Refusal-*` fields are removed from it as
-  from a head that arrives whole. An interim `1xx` and the final head arriving
-  together: the final head now gets the headers. A head that arrives in pieces
-  and grows past 16 KiB is relayed as the backend sent it and counted in the
-  new `loxilb_ai_admission_anomalies_total{kind="expose_head_overflow"}`. An
-  answer the gateway itself ends while its head is incomplete closes with no
-  byte of that head. No header, `error` code, body field, status or audit
-  field changes; a client that read the headers as optional needs no change.
+- AI gateway: with `fc_expose_headers` on, the admission headers
+  (`X-Loxilb-Admission-Inflight`, `-Queued`, `-Limit`) and the class headers
+  (`X-Loxilb-Admission-Class`, `-Objective`, `-Objective-Requested`) are now
+  also put on an HTTP/1.1 response head the backend sends in several pieces,
+  up to 16 KiB. Such a head used to leave without them, and with the
+  backend's own fields of those names. It is now put together first, and a
+  backend's `X-Loxilb-Refusal-*` fields are removed from it as from a head
+  that arrives whole. On HTTP/1.1, when an interim `1xx` and the final head
+  arrive in one read, the final head now gets the headers. A head that
+  arrives in pieces and grows past 16 KiB is relayed as the backend sent it
+  and counted under the new kind `expose_head_overflow` of
+  `loxilb_ai_admission_anomalies_total`. When the gateway ends an answer while
+  its head is still being put together, the client reads the close and no
+  byte of that head; a backend that closes in the middle of a head has the
+  bytes it sent passed on, then the close. HTTP/2 responses and heads that
+  arrive whole are unchanged. No header, `error` code, body field, status or
+  audit field changes; a client that read the headers as optional needs no
+  change.
 
 - **Behaviour change.** `POST /config/cert` with a `certId` already in use
   answers 409 and leaves that certificate as it was. It used to overwrite a
