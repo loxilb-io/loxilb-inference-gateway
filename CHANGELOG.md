@@ -13,6 +13,35 @@ inference-gateway delta is enumerated in detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- A replace of a rule whose endpoint selection is CHWBL or WRR_HASH applies
+  every changed value. Until now such a replace refreshed the data-plane pool
+  in place whatever changed, so a value that the data plane takes only when
+  the pool is created kept its old setting. Such a replace now removes and
+  re-creates the pool, as a replace already does for the other selections
+  when such a value changes: client connections open on the old pool do not
+  carry over, and the hash loads start again. A change between CHWBL and
+  WRR_HASH, of the CHWBL parameters, of the sockmap mode or of the prefill
+  timeout still refreshes the pool in place and keeps its loads.
+- A replace sets the whole rule: a value the request leaves out takes its
+  default, for example `sse_mode`, the timeouts, the stream duration and the
+  TLS values. On a CHWBL or WRR_HASH rule, such a reset of a value that the
+  data plane takes only when the pool is created used to change the stored
+  rule only. It now re-creates the pool and takes effect, and the rule's open
+  client connections end. A client that sends only part of a rule on a
+  replace, for example to attach an endpoint, must send the rule's other
+  values with it.
+- A strict KV-exact rule stays fenced when a replace re-creates its data-plane
+  pool. Until now the new pool came up without the rule's contract, and the
+  data plane served the rule as one without a contract until the next
+  attestation challenge (every 30 minutes by default). The rule is now fenced
+  at once, as a newly created strict rule is, and becomes eligible for the
+  strict path again only when attestation confirms the reinstalled contract.
+  If the reinstall fails, attestation reports the fault and the reinstall is
+  retried every 30 seconds. A replace that refreshes the pool in place keeps
+  the contract and does not fence the rule.
+
 ## [v0.9.9.2] - 2026-11-26
 
 `v0.9.9.2` follows `v0.9.9.1` (2026-11-03) and holds everything merged since.
