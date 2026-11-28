@@ -63,7 +63,9 @@ jobs:
       - name: Modern MCP validator and framing regressions (sanitizers)
         run: make -C loxilb-ebpf/common test_mcp
       - name: Modern MCP API, rules, snapshot and metrics regressions
-        run: sudo -E env "PATH=$PATH" go test -count=1 ./common ./api/models ./pkg/snapshot ./api/restapi/handler ./pkg/loxinet ./api/prometheus
+        run: |
+          sudo -E env "PATH=$PATH" go test -count=1 ./common ./api/models ./pkg/snapshot ./api/restapi/handler ./api/prometheus
+          sudo -E env "PATH=$PATH" make gotest GOTEST_ARGS="-count=1" PKGS=./pkg/loxinet
       - name: Modern MCP fixture wire regressions
         run: python3 -B -m unittest discover -s cicd/mcp-stateless -v
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest

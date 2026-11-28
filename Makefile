@@ -170,6 +170,17 @@ version:
 build-tags:
 	@echo $(GO_BUILD_TAGS)
 
+# Run go test with the flags the build uses. A package that links
+# libloxilbdp.a (pkg/loxinet and its importers) must be compiled with the
+# CGO_CFLAGS and tags the library was built with, or cgo and the library
+# disagree on the layout of the structs they share. Usage:
+#   make gotest PKGS="./pkg/loxinet" GOTEST_ARGS="-count=1 -run 'TestX'"
+PKGS ?= ./...
+GOTEST_ARGS ?=
+.PHONY: gotest
+gotest:
+	go test $(GO_BUILD_TAGS) $(GOTEST_ARGS) $(PKGS)
+
 clean: subsys-clean
 	go clean
 
