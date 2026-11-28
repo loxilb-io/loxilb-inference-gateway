@@ -4818,20 +4818,46 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		epChg := ruleChg
 		ruleChg = false
 
+		// What the replace changes, by class (rules_replace_class.go). Every
+		// term is a rule change as before; the class decides whether a CHWBL
+		// or WRR_HASH pool can keep its refresh.
+		replaceChg := lbReplaceChange{Endpoints: epChg}
+
+		// Values the Gateway applies; no data-plane pool of a full-proxy
+		// rule holds them.
 		if eRule.hChk.prbType != serv.ProbeType || eRule.hChk.prbPort != serv.ProbePort ||
 			eRule.hChk.prbReq != serv.ProbeReq || eRule.hChk.prbResp != serv.ProbeResp ||
 			eRule.hChk.prbTimeo != serv.ProbeTimeout || eRule.hChk.prbRetries != serv.ProbeRetries ||
-			eRule.pTO != serv.PersistTimeout || eRule.act.action.(*ruleLBActs).sel != lBActs.sel ||
-			eRule.act.action.(*ruleLBActs).mode != lBActs.mode ||
-			eRule.sockMapMode != sockMapCode ||
-			eRule.ppv2En != serv.ProxyProtocolV2 ||
+			eRule.pTO != serv.PersistTimeout ||
 			eRule.hChk.actChk != serv.Monitor ||
-			len(allowedSources) != len(eRule.srcList) {
+			len(allowedSources) != len(eRule.srcList) ||
+			eRule.traceType != serv.TraceType ||
+			eRule.eppPlaintext != serv.EppPlaintext ||
+			eRule.name != serv.Name {
 			ruleChg = true
+			replaceChg.GatewayOnly = true
 		}
 
-		// Detect changes to all extended mutable fields
-		if eRule.traceType != serv.TraceType ||
+		// Values the data plane's refresh of an existing pool applies.
+		if (eRule.act.action.(*ruleLBActs).sel != lBActs.sel &&
+			lbSelChangeRefreshes(eRule.act.action.(*ruleLBActs).sel, lBActs.sel)) ||
+			eRule.sockMapMode != sockMapCode ||
+			eRule.pdPrefillTimeoutSec != serv.PDPrefillTimeoutSec ||
+			eRule.chwblPrefixHashLevel != serv.CHWBLPrefixHashLevel ||
+			eRule.chwblPrefixHashFlags != serv.CHWBLPrefixHashFlags ||
+			eRule.chwblMeanLoadFactor != serv.CHWBLMeanLoadFactor ||
+			eRule.chwblReplication != serv.CHWBLReplication ||
+			eRule.chwblEnableCacheSalt != serv.CHWBLEnableCacheSalt {
+			ruleChg = true
+			replaceChg.Refresh = true
+		}
+
+		// Values the data plane takes only when it creates the pool: every
+		// other value, and any value added without a class.
+		if (eRule.act.action.(*ruleLBActs).sel != lBActs.sel &&
+			!lbSelChangeRefreshes(eRule.act.action.(*ruleLBActs).sel, lBActs.sel)) ||
+			eRule.act.action.(*ruleLBActs).mode != lBActs.mode ||
+			eRule.ppv2En != serv.ProxyProtocolV2 ||
 			(serv.BackendProtocol != "" && eRule.backendProtocol != serv.BackendProtocol) ||
 			eRule.sessionHeaderName != serv.SessionHeaderName ||
 			eRule.sseMode != serv.SSEMode ||
@@ -4845,7 +4871,6 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.pdDisaggMode != serv.PDDisaggMode ||
 			eRule.pdCacheAwareMode != serv.PDCacheAwareMode ||
 			eRule.pdSessionTTLSec != serv.PDSessionTTLSec ||
-			eRule.pdPrefillTimeoutSec != serv.PDPrefillTimeoutSec ||
 			eRule.pdCacheThreshold != nextPDCacheThreshold ||
 			eRule.pdBalanceAbsThreshold != nextPDBalanceAbsThreshold ||
 			eRule.cbEnable != serv.CbEnable ||
@@ -4861,12 +4886,6 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.eppEndpoint != serv.EppEndpoint ||
 			eRule.eppFailureMode != serv.EppFailureMode ||
 			eRule.eppTimeoutMs != serv.EppTimeoutMs ||
-			eRule.eppPlaintext != serv.EppPlaintext ||
-			eRule.chwblPrefixHashLevel != serv.CHWBLPrefixHashLevel ||
-			eRule.chwblPrefixHashFlags != serv.CHWBLPrefixHashFlags ||
-			eRule.chwblMeanLoadFactor != serv.CHWBLMeanLoadFactor ||
-			eRule.chwblReplication != serv.CHWBLReplication ||
-			eRule.chwblEnableCacheSalt != serv.CHWBLEnableCacheSalt ||
 			eRule.iTO != serv.InactiveTimeout ||
 			eRule.connLimit != serv.ConnectionLimit || // connectionLimit change re-pushes the dataplane gate
 			// TLS-hardening fields — a change re-pushes the dataplane.
@@ -4876,31 +4895,36 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.hstsPreload != serv.HstsPreload ||
 			!strSliceEqual(eRule.alpnProtocols, serv.AlpnProtocols) ||
 			!strSliceEqual(eRule.tlsVersions, serv.TlsVersions) ||
-			!reflect.DeepEqual(eRule.mtlsFrontend, serv.MTLSFrontend) ||
-			eRule.name != serv.Name {
+			!reflect.DeepEqual(eRule.mtlsFrontend, serv.MTLSFrontend) {
 			ruleChg = true
+			replaceChg.Recreate = true
 		}
 
 		if lbAllowedSourcesChanged(eRule.srcList, allowedSources) {
 			ruleChg = true
+			replaceChg.GatewayOnly = true
 		}
 
 		// an explicit admin_state that differs from the current
 		// effective state is itself a rule change (pause/resume must reach DpCreate).
 		// Without this, an admin_state-only PATCH (every other field identical to
 		// current) leaves ruleChg false, short-circuits at the RuleExistsErr return
-		// below, and never reaches the admin_state apply / LB2DP drain.
+		// below, and never reaches the admin_state apply / LB2DP drain. It
+		// reaches the data plane as endpoint data (every endpoint inactive).
 		if serv.AdminStateUp != nil && resolveAdminStateUp(serv.AdminStateUp) != eRule.adminStateUp {
 			ruleChg = true
+			replaceChg.Endpoints = true
 		}
 
 		// Migration attach (profile-less -> strict) is a real change even
 		// when every other field is identical — without this it would
 		// short-circuit at the RuleExistsErr return below and the sanctioned
-		// migration replace could never commit.
+		// migration replace could never commit. Its commit block below does
+		// the attach; the data plane's pool values do not change with it.
 		kvMigrating := serv.KvExactMode != 0 && eRule.kvModelProfile == "" && serv.KvModelProfile != ""
 		if kvMigrating {
 			ruleChg = true
+			replaceChg.GatewayOnly = true
 		}
 
 		// kvEngineType is IMMUTABLE on a live rule — delete+
@@ -5013,15 +5037,24 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			return RuleExistsErr, errors.New("lbrule-exist error: cant modify fullproxy rule mode")
 		}
 
-		if len(retEps) > MaxLBEndPoints {
-			if !chwblTxn {
+		replaceChg.InPlaceOnly = inPlaceOnlyChg
+		replaceChg.ZeroEpEdge = zeroEpEdge
+		replaceChg.TooManyEps = len(retEps) > MaxLBEndPoints
+		removePool := lbReplaceRemovesPool(oldSelector, lBActs.sel, eRule.act.action.(*ruleLBActs).mode, replaceChg)
+		// A CHWBL or WRR_HASH pool that is refreshed, not removed: its own
+		// rollback and conntrack order below.
+		refreshedHashed := lbReplaceRefreshesHashedPool(chwblTxn, removePool)
+		if replaceChg.TooManyEps {
+			if removePool {
 				eRule.DP(DpRemove)
+				kvStrictPoolRecreated(uint32(eRule.ruleNum))
 			}
 			tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s reset all end-points (too many)\n", serv.ServIP, serv.ServPort, serv.Proto)
 			delEps = eRule.act.action.(*ruleLBActs).endPoints
 			retEps = lBActs.endPoints
-		} else if eRule.act.action.(*ruleLBActs).mode == cmn.LBModeFullProxy && !chwblTxn && !inPlaceOnlyChg && !zeroEpEdge {
+		} else if removePool {
 			eRule.DP(DpRemove)
+			kvStrictPoolRecreated(uint32(eRule.ruleNum))
 		}
 
 		// The rule as it stands, for a replace the data plane refuses.
@@ -5267,7 +5300,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.sT = time.Now()
 		eRule.iTO = serv.InactiveTimeout
 		tk.LogIt(tk.LogDebug, "lb-rule updated - %s:%s\n", eRule.tuples.String(), eRule.act.String())
-		if !chwblTxn {
+		if !refreshedHashed {
 			R.flushLBCtEntries(eRule, CtFlushRidMatchOrZero)
 		}
 
@@ -5288,7 +5321,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 				lbEpsMarkDetached(delEps, reprobeEps)
 			}
 			var restoreRuleState func()
-			if chwblTxn {
+			if refreshedHashed {
 				restoreRuleState = restoreCHWBLState
 			}
 			if recErr := R.reconcileLBEndpointsAtomic(eRule, retEps, delEps, activateProbe, restoreRuleState); recErr != nil {
@@ -5296,7 +5329,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			}
 		} else {
 			if rc := eRule.DP(DpCreate); rc != 0 {
-				if chwblTxn {
+				if refreshedHashed {
 					restoreCHWBLState()
 					eRule.DP(DpCreate)
 				}
@@ -5313,10 +5346,13 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 				// so that what is stored, what is reported and what is
 				// installed agree, and the same request can be sent again
 				// once its cause is gone.
-				if chwblTxn {
+				if refreshedHashed {
 					restoreCHWBLState()
 				}
 				R.lbReplaceUndo(eRule, replaceUndo, activateProbe)
+				if removePool {
+					kvStrictPoolRecreated(uint32(eRule.ruleNum))
+				}
 				DpBrokerSyncBarrier(mh.dp)
 				tk.LogIt(tk.LogError, "lb-rule %s replace not installed by the data plane, the rule is put back (sync %d)\n",
 					eRule.tuples.String(), eRule.sync)
@@ -5333,7 +5369,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			return RuleArgsErr, lbPushRefusedError(eRule.tuples.l3Dst.addr.IP, true)
 		}
 		eRule.backendTLSKept = false
-		if chwblTxn {
+		if refreshedHashed {
 			R.flushLBCtEntries(eRule, CtFlushRidMatchOrZero)
 		}
 		R.flushLBCtEntries(eRule, CtFlushRidZeroOnly)

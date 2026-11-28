@@ -562,6 +562,15 @@ func (c *kvAttestController) fenceAndReattest(reason string) {
 	c.mu.Unlock()
 
 	if err := c.deps.apply(c.info.svcID, 0); err != nil {
+		if errors.Is(err, errKvRecreateRunning) {
+			// A re-create of the rule's pool took over: its install
+			// re-runs the ladder (kvAttestActivate). Not a fault.
+			c.mu.Lock()
+			c.desired = KvExactStateReady
+			c.mu.Unlock()
+			log.Infof("kv-attest: rule %s fence left to the re-create of its pool (%s)", c.info.ruleIdent, reason)
+			return
+		}
 		// §7.4 escalation: the apply transaction has already written the Go
 		// deny set (deny-on-failure is unconditional in
 		// kvDataplaneContractApply) — exact is fenced regardless of C-side
@@ -710,6 +719,12 @@ func (c *kvAttestController) runLadder() {
 
 	// READY — the one place in the gateway that writes eligible=1.
 	if err := c.deps.apply(info.svcID, 1); err != nil {
+		if errors.Is(err, errKvRecreateRunning) {
+			// The pool this ladder attested is being re-created; the
+			// re-create's install re-runs the ladder. Not a fault.
+			log.Infof("kv-attest: rule %s eligible-flip left to the re-create of its pool", info.ruleIdent)
+			return
+		}
 		c.publish(KvExactStateEnforcementFault, KvAttestReasonEnforcementFault)
 		log.Errorf("kv-attest: rule %s eligible-flip failed (%v) — Go deny set fences, rule marked ENFORCEMENT_FAULT", info.ruleIdent, err)
 		return
