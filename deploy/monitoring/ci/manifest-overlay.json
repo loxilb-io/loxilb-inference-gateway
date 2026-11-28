@@ -1054,7 +1054,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5869,
+     "call_line": 5905,
      "calls": "syncVllmScraper",
      "note": "on create; the replace path calls it too (rules.go:5383), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
@@ -1062,16 +1062,16 @@
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1385, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5821, "calls": "KvSubscriberStartRank" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5857, "calls": "KvSubscriberStartRank" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 394, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-attest-controller-loop": [
-    { "symbol": "cadenceCheck", "kind": "method", "receiver": "kvAttestController", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 725, "call_line": 754, "calls": "runLadder" },
+    { "symbol": "cadenceCheck", "kind": "method", "receiver": "kvAttestController", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 740, "call_line": 769, "calls": "runLadder" },
     { "symbol": "loop", "kind": "method", "receiver": "kvAttestController", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 482, "call_line": 501, "calls": "cadenceCheck", "note": "single controller goroutine per rule; its deferred teardown clears this rule's series after the last publish" },
     { "symbol": "KvAttestStart", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 331, "call_line": 356, "calls": "loop" },
-    { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 955, "call_line": 962, "calls": "KvAttestStart" },
-    { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 383, "call_line": 387, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5391, "calls": "kvDataplaneContractInstallAsync" },
+    { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 970, "call_line": 977, "calls": "KvAttestStart" },
+    { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 527, "call_line": 531, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5427, "calls": "kvDataplaneContractInstallAsync" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 394, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-best-worker-cgo": [
@@ -4185,7 +4185,7 @@
     "writer_sources": [
      { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1519, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1236, "call_line": 1279, "calls": "SetKvEpInfo" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5821, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5857, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 394, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1273. Scenario M08 owns the runtime proof."
@@ -4243,7 +4243,7 @@
     "writer_sources": [
      { "symbol": "SetKvAttestState", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1887, "writes": "kvAttestState", "note": "publishes the ladder position; the empty state at :1576 is the teardown clear, not a value" },
      { "symbol": "publish", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 522, "call_line": 532, "calls": "kvAttestStateGaugeFn", "receiver": "kvAttestController", "via": {"var": "kvAttestStateGaugeFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 280}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run" },
-     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 587, "call_line": 593, "calls": "publish", "receiver": "kvAttestController" },
+     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 596, "call_line": 602, "calls": "publish", "receiver": "kvAttestController" },
      { "tail": "kv-attest-controller-loop" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_attest.go:511 through the kvAttestStateGaugeFn seam bound at :278. WP-6A owns the pinned profile/artifact digest proof; scenario M11."
@@ -4254,7 +4254,7 @@
     "writer_sources": [
      { "symbol": "SetKvAttestEnforcementFault", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1903, "writes": "kvAttestEnforcementFault" },
      { "symbol": "publish", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 522, "call_line": 533, "calls": "kvAttestFaultGaugeFn", "receiver": "kvAttestController", "via": {"var": "kvAttestFaultGaugeFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 281}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run" },
-     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 587, "call_line": 593, "calls": "publish", "receiver": "kvAttestController" },
+     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 596, "call_line": 602, "calls": "publish", "receiver": "kvAttestController" },
      { "tail": "kv-attest-controller-loop" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_attest.go:512 through the kvAttestFaultGaugeFn seam bound at :279; fenceAndReattest (:551) reaches the same publish. WP-6A owns the injected-fault proof."
@@ -4264,7 +4264,7 @@
     "activation_precondition": "Native datapath initialized (loxilb_datapath_metrics_available = 1); strict KV-exact attestation configured and a typed probe failure; a clean ladder run leaves every reason child untouched.",
     "writer_sources": [
      { "symbol": "IncKvAttestProbeFail", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1912, "writes": "kvAttestProbeFailTotal" },
-     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 587, "call_line": 648, "calls": "kvAttestProbeFailFn", "receiver": "kvAttestController", "via": {"var": "kvAttestProbeFailFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 282}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; five more reason sites at :629, :779, :790, :810 and :816" },
+     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 596, "call_line": 657, "calls": "kvAttestProbeFailFn", "receiver": "kvAttestController", "via": {"var": "kvAttestProbeFailFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 282}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; five more reason sites at :629, :779, :790, :810 and :816" },
      { "tail": "kv-attest-controller-loop" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): six increment sites in pkg/loxinet/ai_kv_attest.go, all through the kvAttestProbeFailFn seam bound at :277. WP-6A owns the injected probe-failure proof."
@@ -4274,7 +4274,7 @@
     "activation_precondition": "Native datapath initialized (loxilb_datapath_metrics_available = 1); strict KV-exact attestation configured and an echo challenge actually run: the counter has an ok and a fail child, and neither exists until the ladder reaches the echo step.",
     "writer_sources": [
      { "symbol": "IncKvAttestEcho", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1917, "writes": "kvAttestEchoTotal" },
-     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 587, "call_line": 685, "calls": "kvAttestEchoFn", "receiver": "kvAttestController", "via": {"var": "kvAttestEchoFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 283}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; result=\"fail\" here and result=\"ok\" at :661" },
+     { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 596, "call_line": 694, "calls": "kvAttestEchoFn", "receiver": "kvAttestController", "via": {"var": "kvAttestEchoFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 283}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; result=\"fail\" here and result=\"ok\" at :661" },
      { "tail": "kv-attest-controller-loop" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_attest.go:660 and :664 through the kvAttestEchoFn seam bound at :281. WP-6A owns the good-echo/bad-echo pair."
@@ -4309,7 +4309,7 @@
     "writer_sources": [
      { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1525, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5864, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5900, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 394, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
@@ -4320,7 +4320,7 @@
     "writer_sources": [
      { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1531, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5864, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 4205, "call_line": 5900, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 376, "call_line": 394, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:198. WP-5 owns the known-mismatch arm."

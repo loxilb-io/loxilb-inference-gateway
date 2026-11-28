@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-11-26T00:52:34+00:00",
-  "source_revision": "2b544cbb1e1d3490def8206fab41c77b3fc1edc0"
+  "generated_at": "2026-11-27T08:05:54+00:00",
+  "source_revision": "b0a669345a404862b3f79082583813c1edd0108b"
  },
  "contract": {
   "total": 360,
@@ -1610,7 +1610,7 @@
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5864,
+     "call_line": 5900,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -2531,8 +2531,8 @@
      "symbol": "runLadder",
      "kind": "method",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 587,
-     "call_line": 685,
+     "def_line": 596,
+     "call_line": 694,
      "calls": "kvAttestEchoFn",
      "receiver": "kvAttestController",
      "via": {
@@ -2547,8 +2547,8 @@
      "kind": "method",
      "receiver": "kvAttestController",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 725,
-     "call_line": 754,
+     "def_line": 740,
+     "call_line": 769,
      "calls": "runLadder"
     },
     {
@@ -2573,16 +2573,16 @@
      "symbol": "kvAttestActivate",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 955,
-     "call_line": 962,
+     "def_line": 970,
+     "call_line": 977,
      "calls": "KvAttestStart"
     },
     {
      "symbol": "kvDataplaneContractInstallAsync",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_dataplane.go",
-     "def_line": 383,
-     "call_line": 387,
+     "def_line": 527,
+     "call_line": 531,
      "calls": "kvAttestActivate",
      "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1"
     },
@@ -2592,7 +2592,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5391,
+     "call_line": 5427,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2644,8 +2644,8 @@
      "symbol": "runLadder",
      "kind": "method",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 587,
-     "call_line": 648,
+     "def_line": 596,
+     "call_line": 657,
      "calls": "kvAttestProbeFailFn",
      "receiver": "kvAttestController",
      "via": {
@@ -2660,8 +2660,8 @@
      "kind": "method",
      "receiver": "kvAttestController",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 725,
-     "call_line": 754,
+     "def_line": 740,
+     "call_line": 769,
      "calls": "runLadder"
     },
     {
@@ -2686,16 +2686,16 @@
      "symbol": "kvAttestActivate",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 955,
-     "call_line": 962,
+     "def_line": 970,
+     "call_line": 977,
      "calls": "KvAttestStart"
     },
     {
      "symbol": "kvDataplaneContractInstallAsync",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_dataplane.go",
-     "def_line": 383,
-     "call_line": 387,
+     "def_line": 527,
+     "call_line": 531,
      "calls": "kvAttestActivate",
      "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1"
     },
@@ -2705,7 +2705,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5391,
+     "call_line": 5427,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2774,8 +2774,8 @@
      "symbol": "runLadder",
      "kind": "method",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 587,
-     "call_line": 593,
+     "def_line": 596,
+     "call_line": 602,
      "calls": "publish",
      "receiver": "kvAttestController"
     },
@@ -2784,8 +2784,8 @@
      "kind": "method",
      "receiver": "kvAttestController",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 725,
-     "call_line": 754,
+     "def_line": 740,
+     "call_line": 769,
      "calls": "runLadder"
     },
     {
@@ -2810,16 +2810,16 @@
      "symbol": "kvAttestActivate",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 955,
-     "call_line": 962,
+     "def_line": 970,
+     "call_line": 977,
      "calls": "KvAttestStart"
     },
     {
      "symbol": "kvDataplaneContractInstallAsync",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_dataplane.go",
-     "def_line": 383,
-     "call_line": 387,
+     "def_line": 527,
+     "call_line": 531,
      "calls": "kvAttestActivate",
      "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1"
     },
@@ -2829,7 +2829,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5391,
+     "call_line": 5427,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -2896,8 +2896,8 @@
      "symbol": "runLadder",
      "kind": "method",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 587,
-     "call_line": 593,
+     "def_line": 596,
+     "call_line": 602,
      "calls": "publish",
      "receiver": "kvAttestController"
     },
@@ -2906,8 +2906,8 @@
      "kind": "method",
      "receiver": "kvAttestController",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 725,
-     "call_line": 754,
+     "def_line": 740,
+     "call_line": 769,
      "calls": "runLadder"
     },
     {
@@ -2932,16 +2932,16 @@
      "symbol": "kvAttestActivate",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_attest.go",
-     "def_line": 955,
-     "call_line": 962,
+     "def_line": 970,
+     "call_line": 977,
      "calls": "KvAttestStart"
     },
     {
      "symbol": "kvDataplaneContractInstallAsync",
      "kind": "func",
      "file": "pkg/loxinet/ai_kv_dataplane.go",
-     "def_line": 383,
-     "call_line": 387,
+     "def_line": 527,
+     "call_line": 531,
      "calls": "kvAttestActivate",
      "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1"
     },
@@ -2951,7 +2951,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5391,
+     "call_line": 5427,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -3046,7 +3046,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -3137,7 +3137,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -3199,7 +3199,7 @@
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5864,
+     "call_line": 5900,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -5378,7 +5378,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5869,
+     "call_line": 5905,
      "calls": "syncVllmScraper",
      "note": "on create; the replace path calls it too (rules.go:5383), so a replace that turns adaptation on or off, or moves the endpoints, reaches the scraper"
     },
@@ -8798,7 +8798,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8878,7 +8878,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -8961,7 +8961,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9040,7 +9040,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9129,7 +9129,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9208,7 +9208,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -9290,7 +9290,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -11445,7 +11445,7 @@
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank",
      "receiver": "RuleH"
     },
@@ -11608,7 +11608,7 @@
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
      "def_line": 4205,
-     "call_line": 5821,
+     "call_line": 5857,
      "calls": "KvSubscriberStartRank"
     },
     {
